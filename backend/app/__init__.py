@@ -1,0 +1,1 @@
+"""RISOTO FastAPI application package."""
