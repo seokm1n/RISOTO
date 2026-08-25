@@ -1,11 +1,11 @@
 // 백엔드 식별자를 화면 문구로 변환하는 표시 전용 매핑이다.
-export const KEYWORD_LABELS = { alias: "기업 별칭·약칭", peer: "유사기업", product: "제품·브랜드", risk: "키워드" };
+export const KEYWORD_LABELS = { alias: "기업 별칭·약칭", product: "제품·브랜드", risk: "키워드" };
 export const COMPANY_KEYWORD_FIELDS = [
   { field: "aliases", type: "alias", label: "기업 별칭·약칭", hint: "기업을 식별할 다른 이름을 입력하세요" },
-  { field: "peers", type: "peer", label: "유사기업", usage: "대응책 생성에 사용", hint: "비교 대상으로 삼을 기업을 입력하세요" },
   { field: "products", type: "product", label: "제품·브랜드", usage: "관련성 판별에 사용", hint: "제품·서비스명을 입력하세요" },
   { field: "risks", type: "risk", label: "키워드", usage: "위험·이슈 표현", hint: "예: 리콜, 소송, 사고" },
 ];
+export const COMPANY_SIZE_LABELS = { small_medium: "중소기업", mid_sized: "중견기업", large: "대기업" };
 export const MONITORING_LABELS = {
   backfilling: "7일 과거 수집 중",
   warming: "분석 기준 준비 중",

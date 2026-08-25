@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentAuth, require_auth
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models import (
@@ -42,6 +43,19 @@ from app.services.monitoring_pipeline import run_collection
 router = APIRouter(tags=["collection"])
 
 
+def _workspace_company(db: Session, company_id: int, workspace_id: int) -> Company:
+    """Return a company only when it belongs to the current workspace."""
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.workspace_id == workspace_id,
+        )
+    )
+    if company is None:
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    return company
+
+
 def _resumed_monitoring_status(company: Company) -> str:
     """Keep human activation when resuming; unapproved companies remain in warm-up."""
     return "active" if company.analysis_status == "ready" else "warming"
@@ -73,7 +87,10 @@ def provider_status(settings: Settings) -> CollectionProviderStatus:
 
 
 @router.get("/collection/providers", response_model=CollectionProviderStatus)
-def get_provider_status(settings: Settings = Depends(get_settings)) -> CollectionProviderStatus:
+def get_provider_status(
+    settings: Settings = Depends(get_settings),
+    auth: CurrentAuth = Depends(require_auth),
+) -> CollectionProviderStatus:
     """현재 뉴스 수집 제공자의 활성화 상태를 반환한다."""
     return provider_status(settings)
 
@@ -83,11 +100,10 @@ def collect_company_news(
     company_id: int,
     payload: CollectionRequest,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> CollectionJob:
     """지정 기업에 대해 사용자가 요청한 기간·소스로 수동 뉴스 수집을 실행한다."""
-    company = db.get(Company, company_id)
-    if company is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    company = _workspace_company(db, company_id, auth.workspace_id)
     return run_collection(
         company_id,
         "manual",
@@ -103,11 +119,14 @@ def list_collection_jobs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> CollectionJobPage:
     """기업의 뉴스 수집 작업 이력을 최신순으로 페이지네이션해 반환한다."""
-    if db.get(Company, company_id) is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
-    query = select(CollectionJob).where(CollectionJob.company_id == company_id)
+    _workspace_company(db, company_id, auth.workspace_id)
+    query = select(CollectionJob).where(
+        CollectionJob.company_id == company_id,
+        CollectionJob.workspace_id == auth.workspace_id,
+    )
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     items = list(db.scalars(
         query.order_by(CollectionJob.started_at.desc()).offset((page - 1) * page_size).limit(page_size)
@@ -122,10 +141,10 @@ def list_collection_jobs(
 def get_filter_summary(
     company_id: int,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> ArticleFilterSummary:
     """기업별 최신 기사 필터 판정을 사유와 처리 방식별로 집계한다."""
-    if db.get(Company, company_id) is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    _workspace_company(db, company_id, auth.workspace_id)
     latest = _latest_filter_results(company_id).subquery()
 
     def count_where(*conditions) -> int:
@@ -160,10 +179,10 @@ def list_filter_results(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> ArticleFilterResultPage:
     """기업의 최신 기사 필터 결과를 선택 조건과 페이지 단위로 조회한다."""
-    if db.get(Company, company_id) is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    _workspace_company(db, company_id, auth.workspace_id)
     base = (
         _latest_filter_results(company_id)
         .join(RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id)
@@ -211,6 +230,7 @@ def set_all_monitoring_states(
     action: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> BulkMonitoringStateResponse:
     """등록된 모든 기업의 모니터링을 일괄 중지하거나 재개한다."""
     if action == "pause":
@@ -220,7 +240,9 @@ def set_all_monitoring_states(
     else:
         raise HTTPException(status_code=400, detail="지원하지 않는 모니터링 작업입니다.")
 
-    companies = list(db.scalars(select(Company)))
+    companies = list(
+        db.scalars(select(Company).where(Company.workspace_id == auth.workspace_id))
+    )
     next_collection_at = datetime.now(timezone.utc) + timedelta(
         seconds=settings.realtime_interval_seconds
     )
@@ -252,11 +274,10 @@ def set_monitoring_state(
     action: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> MonitoringSummary:
     """개별 기업의 모니터링 상태를 중지 또는 재개한 뒤 최신 요약을 반환한다."""
-    company = db.get(Company, company_id)
-    if company is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    company = _workspace_company(db, company_id, auth.workspace_id)
     next_collection_at = datetime.now(timezone.utc) + timedelta(
         seconds=settings.realtime_interval_seconds
     )
@@ -269,7 +290,7 @@ def set_monitoring_state(
     else:
         raise HTTPException(status_code=400, detail="지원하지 않는 모니터링 작업입니다.")
     db.commit()
-    return get_monitoring_summary(company_id, db, settings)
+    return get_monitoring_summary(company_id, db, settings, auth)
 
 
 @router.get("/companies/{company_id}/articles", response_model=NewsArticlePage)
@@ -279,10 +300,10 @@ def list_company_articles(
     page_size: int = Query(default=10, ge=1, le=100),
     source: str | None = Query(default=None, min_length=1, max_length=40),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> NewsArticlePage:
     """기업에 연결된 기사를 출처 필터와 페이지 정보에 맞춰 반환한다."""
-    if db.get(Company, company_id) is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    _workspace_company(db, company_id, auth.workspace_id)
     company_articles = (
         select(
             NewsArticle,
@@ -351,11 +372,10 @@ def get_monitoring_summary(
     company_id: int,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> MonitoringSummary:
     """기업의 기사 분석, 이상 징후, 기준선 학습 및 다음 수집 상태를 집계한다."""
-    company = db.get(Company, company_id)
-    if company is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    company = _workspace_company(db, company_id, auth.workspace_id)
     article_count = db.scalar(
         select(func.count()).select_from(CompanyArticleMatch).where(
             CompanyArticleMatch.company_id == company_id
@@ -425,10 +445,10 @@ def list_risk_events(
     limit: int = Query(default=50, ge=1, le=200),
     include_legacy: bool = False,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> list[RiskEventRead]:
     """기업에서 감지된 최근 위험 이벤트와 관련 기사 정보를 반환한다."""
-    if db.get(Company, company_id) is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    _workspace_company(db, company_id, auth.workspace_id)
     query = select(RiskEvent).where(
         RiskEvent.company_id == company_id,
         RiskEvent.status != "dismissed",

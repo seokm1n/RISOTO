@@ -14,7 +14,13 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import SessionLocal
-from app.models import CollectionAttempt, CollectionIncident, CollectionJob, NotificationDelivery
+from app.models import (
+    CollectionAttempt,
+    CollectionIncident,
+    CollectionJob,
+    Company,
+    NotificationDelivery,
+)
 
 
 SECRET_PATTERNS = (
@@ -109,6 +115,7 @@ def record_attempts(
         success_count = int(stats.get("successful_query_count", 0))
         messages = [sanitize_error(item) for item in stats.get("errors", []) if item]
         attempt = CollectionAttempt(
+            workspace_id=job.workspace_id,
             job_id=job.id,
             company_id=job.company_id,
             source=source,
@@ -224,11 +231,13 @@ def _upsert_incident(
     notify: bool,
     settings: Settings,
 ) -> CollectionIncident:
+    workspace_id = failed_attempts[0].workspace_id
     sources = sorted({item.source for item in failed_attempts})
     codes = sorted({item.error_code or "provider_error" for item in failed_attempts})
     fingerprint = _incident_fingerprint(data_quality, sources, codes)
     incident = db.scalar(
         select(CollectionIncident).where(
+            CollectionIncident.workspace_id == workspace_id,
             CollectionIncident.fingerprint == fingerprint,
             CollectionIncident.scheduled_for == scheduled_for,
             CollectionIncident.status.in_(["open", "retrying"]),
@@ -241,6 +250,7 @@ def _upsert_incident(
     if incident is None:
         first_delay = settings.collection_retry_delays[0] if data_quality == "unavailable" else None
         incident = CollectionIncident(
+            workspace_id=workspace_id,
             fingerprint=fingerprint,
             status="retrying" if first_delay else "open",
             data_quality=data_quality,
@@ -277,9 +287,13 @@ def recover_company_incidents(
     """Remove a recovered company from matching incidents and close fully recovered incidents."""
     if not successful_sources:
         return []
+    company = db.get(Company, company_id)
+    if company is None:
+        return []
     incidents = list(
         db.scalars(
             select(CollectionIncident).where(
+                CollectionIncident.workspace_id == company.workspace_id,
                 CollectionIncident.status.in_(["open", "retrying"]),
             )
         )
@@ -382,7 +396,11 @@ def record_pipeline_failure(
     now = datetime.now(timezone.utc)
     message = sanitize_error(error)
     with SessionLocal() as db:
+        company = db.get(Company, company_id)
+        if company is None:
+            return None
         job = CollectionJob(
+            workspace_id=company.workspace_id,
             company_id=company_id,
             status="failed",
             job_type="realtime",

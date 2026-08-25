@@ -4,8 +4,33 @@ import axios from "axios";
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1",
   timeout: 15000,
+  withCredentials: true,
   headers: { "Content-Type": "application/json" },
 });
+
+let csrfToken = null;
+
+export function setCsrfToken(token) {
+  csrfToken = token || null;
+}
+
+api.interceptors.request.use((config) => {
+  const method = (config.method ?? "get").toLowerCase();
+  if (csrfToken && ["post", "put", "patch", "delete"].includes(method)) {
+    config.headers.set("X-CSRF-Token", csrfToken);
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("risoto:unauthorized"));
+    }
+    return Promise.reject(error);
+  },
+);
 
 export function getErrorMessage(error) {
   // 서버 응답 형식에 맞춰 사용자에게 표시할 오류 메시지를 추출한다.

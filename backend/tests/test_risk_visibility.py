@@ -11,6 +11,7 @@ from app.models import Company, CompanyDailySummary, RiskEvent
 from app.routers.collection import list_risk_events
 from app.routers.dashboard import get_dashboard_overview
 from app.services.risk_analysis import update_daily_summary
+from tests.auth_helpers import auth_for_company
 
 
 class RiskVisibilityDatabaseTests(unittest.TestCase):
@@ -26,6 +27,7 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
             self.skipTest(f"PostgreSQL 테스트 연결이 없습니다: {exc}")
         if self.company_id is None:
             self.skipTest("위험 노출 테스트에 기업 한 곳이 필요합니다.")
+        self.auth = auth_for_company(self.db, self.company_id)
 
     def tearDown(self):
         if hasattr(self, "transaction") and self.transaction.is_active:
@@ -34,7 +36,7 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
             self.db.close()
 
     def test_dismissed_is_hidden_while_operational_and_closed_states_remain(self):
-        baseline = get_dashboard_overview(days=90, db=self.db)
+        baseline = get_dashboard_overview(days=90, db=self.db, auth=self.auth)
         baseline_company_count = next(
             item.risk_count
             for item in baseline.companies
@@ -75,12 +77,14 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
             limit=200,
             include_legacy=False,
             db=self.db,
+            auth=self.auth,
         )
         legacy_list = list_risk_events(
             self.company_id,
             limit=200,
             include_legacy=True,
             db=self.db,
+            auth=self.auth,
         )
         normal_ids = {item.id for item in normal_list}
         legacy_ids = {item.id for item in legacy_list}
@@ -92,7 +96,7 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
         self.assertNotIn(events["dismissed"].id, legacy_ids)
         self.assertIn(events["legacy_candidate"].id, legacy_ids)
 
-        overview = get_dashboard_overview(days=90, db=self.db)
+        overview = get_dashboard_overview(days=90, db=self.db, auth=self.auth)
         overview_company_count = next(
             item.risk_count
             for item in overview.companies

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentAuth, require_auth
 from app.database import get_db
 from app.models import (
     CollectionAttempt,
@@ -27,14 +28,29 @@ from app.schemas import (
 router = APIRouter(tags=["operations"])
 
 
+def _workspace_company(db: Session, company_id: int, workspace_id: int) -> Company:
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.workspace_id == workspace_id,
+        )
+    )
+    if company is None:
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    return company
+
+
 @router.get("/collection-incidents", response_model=CollectionIncidentPage)
 def list_collection_incidents(
     status: str | None = Query(default=None, pattern="^(open|retrying|recovered|acknowledged)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> CollectionIncidentPage:
-    query = select(CollectionIncident)
+    query = select(CollectionIncident).where(
+        CollectionIncident.workspace_id == auth.workspace_id
+    )
     if status:
         query = query.where(CollectionIncident.status == status)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -52,8 +68,14 @@ def list_collection_incidents(
 def acknowledge_collection_incident(
     incident_id: int,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> CollectionIncident:
-    incident = db.get(CollectionIncident, incident_id)
+    incident = db.scalar(
+        select(CollectionIncident).where(
+            CollectionIncident.id == incident_id,
+            CollectionIncident.workspace_id == auth.workspace_id,
+        )
+    )
     if incident is None:
         raise HTTPException(status_code=404, detail="수집 장애를 찾을 수 없습니다.")
     if incident.status != "recovered" and incident.next_retry_at is None:
@@ -65,14 +87,20 @@ def acknowledge_collection_incident(
 
 
 @router.get("/collection-health", response_model=CollectionHealthRead)
-def collection_health(db: Session = Depends(get_db)) -> CollectionHealthRead:
+def collection_health(
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> CollectionHealthRead:
     # `pipeline` is a synthetic orchestration-failure source, not a collector.
     # Its historical attempts remain auditable through incidents, but must not
     # permanently poison the per-collector health list after recovery.
     sources = list(
         db.scalars(
             select(CollectionAttempt.source)
-            .where(CollectionAttempt.source != "pipeline")
+            .where(
+                CollectionAttempt.workspace_id == auth.workspace_id,
+                CollectionAttempt.source != "pipeline",
+            )
             .distinct()
             .order_by(CollectionAttempt.source)
         )
@@ -83,6 +111,7 @@ def collection_health(db: Session = Depends(get_db)) -> CollectionHealthRead:
             db.scalars(
                 select(CollectionAttempt)
                 .where(
+                    CollectionAttempt.workspace_id == auth.workspace_id,
                     CollectionAttempt.source == source,
                     CollectionAttempt.attempt_number == 0,
                 )
@@ -121,6 +150,7 @@ def collection_health(db: Session = Depends(get_db)) -> CollectionHealthRead:
     open_incident_rows = list(
         db.scalars(
             select(CollectionIncident).where(
+                CollectionIncident.workspace_id == auth.workspace_id,
                 CollectionIncident.status.in_(["open", "retrying"])
             )
         )
@@ -146,9 +176,9 @@ def list_feature_windows(
     date_to: datetime | None = None,
     limit: int = Query(default=192, ge=1, le=2000),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> list[CompanyFeatureWindow]:
-    if db.get(Company, company_id) is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    _workspace_company(db, company_id, auth.workspace_id)
     query = select(CompanyFeatureWindow).where(CompanyFeatureWindow.company_id == company_id)
     if date_from:
         query = query.where(CompanyFeatureWindow.window_start >= date_from)
@@ -162,9 +192,9 @@ def list_daily_summaries(
     company_id: int,
     days: int = Query(default=30, ge=1, le=365),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> list[CompanyDailySummary]:
-    if db.get(Company, company_id) is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    _workspace_company(db, company_id, auth.workspace_id)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
     return list(
         db.scalars(

@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentAuth, require_auth
 from app.database import get_db
 from app.models import (
+    Company,
     ModelOperationCheck,
     ModelVersion,
     ResponseDraft,
@@ -26,14 +28,12 @@ from app.services.model_operations import (
 )
 from app.services.model_governance import evaluate_model_promotion
 from app.services.response_generation import generate_response_draft
-from app.services.review_identity import INTERNAL_REVIEW_ACTOR
 from app.services.risk_analysis import resolve_production_risk_detector
 
 
 router = APIRouter(tags=["governance"])
 
 
-@router.get("/model-versions", response_model=list[ModelVersionRead])
 def list_model_versions(
     task: str | None = None,
     db: Session = Depends(get_db),
@@ -47,6 +47,7 @@ def list_model_versions(
 @router.get("/risk-detection-status", response_model=RiskDetectionStatusRead)
 def get_risk_detection_status(
     db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
 ) -> RiskDetectionStatusRead:
     """Report final-risk availability without training or promoting a model."""
     runtime = resolve_production_risk_detector(db)
@@ -99,25 +100,21 @@ def get_risk_detection_status(
     )
 
 
-@router.get("/model-training-readiness", response_model=ModelTrainingReadinessRead)
 def model_training_readiness(db: Session = Depends(get_db)) -> dict:
     """Expose candidate-training gates without launching a GPU job."""
     return build_training_readiness(db)
 
 
-@router.get("/model-monitoring", response_model=ModelOperationCheckRead)
 def latest_model_monitoring_check(db: Session = Depends(get_db)) -> ModelOperationCheck:
     """Return today's persisted quality, label-distribution and drift check."""
     return ensure_daily_model_check(db)
 
 
-@router.post("/model-monitoring/check", response_model=ModelOperationCheckRead)
 def rerun_model_monitoring_check(db: Session = Depends(get_db)) -> ModelOperationCheck:
     """Recompute today's report after an operator changes labels or collection state."""
     return ensure_daily_model_check(db, force=True)
 
 
-@router.post("/model-versions/{model_id}/promote", response_model=ModelVersionRead)
 def promote_model(model_id: int, db: Session = Depends(get_db)) -> ModelVersion:
     model = db.get(ModelVersion, model_id)
     if model is None:
@@ -155,8 +152,17 @@ def create_response_draft(
     risk_event_id: int,
     force: bool = Query(default=False),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> ResponseDraft:
-    if db.get(RiskEvent, risk_event_id) is None:
+    event = db.scalar(
+        select(RiskEvent)
+        .join(Company, Company.id == RiskEvent.company_id)
+        .where(
+            RiskEvent.id == risk_event_id,
+            Company.workspace_id == auth.workspace_id,
+        )
+    )
+    if event is None:
         raise HTTPException(status_code=404, detail="위험 이벤트를 찾을 수 없습니다.")
     try:
         return generate_response_draft(risk_event_id, force=force)
@@ -168,11 +174,25 @@ def create_response_draft(
 def list_response_drafts(
     risk_event_id: int,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> list[ResponseDraft]:
+    event_exists = db.scalar(
+        select(RiskEvent.id)
+        .join(Company, Company.id == RiskEvent.company_id)
+        .where(
+            RiskEvent.id == risk_event_id,
+            Company.workspace_id == auth.workspace_id,
+        )
+    )
+    if event_exists is None:
+        raise HTTPException(status_code=404, detail="위험 이벤트를 찾을 수 없습니다.")
     return list(
         db.scalars(
             select(ResponseDraft)
-            .where(ResponseDraft.risk_event_id == risk_event_id)
+            .where(
+                ResponseDraft.risk_event_id == risk_event_id,
+                ResponseDraft.workspace_id == auth.workspace_id,
+            )
             .order_by(ResponseDraft.created_at.desc())
         )
     )
@@ -183,12 +203,25 @@ def _review_draft(
     state: str,
     payload: ResponseDraftReview,
     db: Session,
+    auth: CurrentAuth,
 ) -> ResponseDraft:
-    draft = db.get(ResponseDraft, draft_id)
+    draft = db.scalar(
+        select(ResponseDraft)
+        .join(RiskEvent, RiskEvent.id == ResponseDraft.risk_event_id)
+        .join(Company, Company.id == RiskEvent.company_id)
+        .where(
+            ResponseDraft.id == draft_id,
+            ResponseDraft.workspace_id == auth.workspace_id,
+            Company.workspace_id == auth.workspace_id,
+        )
+    )
     if draft is None:
         raise HTTPException(status_code=404, detail="대응 초안을 찾을 수 없습니다.")
+    if draft.approval_state != "draft":
+        raise HTTPException(status_code=409, detail="이미 검토가 완료된 대응 초안입니다.")
     draft.approval_state = state
-    draft.reviewed_by = INTERNAL_REVIEW_ACTOR
+    draft.reviewed_by_user_id = auth.user_id
+    draft.reviewed_by = auth.user.email
     draft.reviewed_at = datetime.now(timezone.utc)
     draft.review_notes = payload.notes
     event = db.get(RiskEvent, draft.risk_event_id)
@@ -204,8 +237,9 @@ def approve_response_draft(
     draft_id: int,
     payload: ResponseDraftReview,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> ResponseDraft:
-    return _review_draft(draft_id, "approved", payload, db)
+    return _review_draft(draft_id, "approved", payload, db, auth)
 
 
 @router.post("/response-drafts/{draft_id}/reject", response_model=ResponseDraftRead)
@@ -213,5 +247,6 @@ def reject_response_draft(
     draft_id: int,
     payload: ResponseDraftReview,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> ResponseDraft:
-    return _review_draft(draft_id, "rejected", payload, db)
+    return _review_draft(draft_id, "rejected", payload, db, auth)

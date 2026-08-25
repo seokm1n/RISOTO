@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentAuth, require_auth
 from app.database import get_db
 from app.models import (
     ArticleFilterResult,
@@ -51,6 +52,7 @@ def article_review_candidates(
     company_id: int | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> list[ArticleReviewCandidate]:
     """Return blind candidates without exposing current AI labels or scores."""
     latest_ids = (
@@ -64,6 +66,7 @@ def article_review_candidates(
         .join(RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id)
         .join(Company, Company.id == ArticleFilterResult.company_id)
         .where(
+            Company.workspace_id == auth.workspace_id,
             ~exists(
                 select(ArticleLabel.id).where(
                     ArticleLabel.company_id == ArticleFilterResult.company_id,
@@ -100,9 +103,13 @@ def article_review_candidates(
 def save_article_label(
     payload: ArticleLabelCreate,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> ArticleLabel:
     valid_candidate = db.scalar(
-        select(ArticleFilterResult.id).where(
+        select(ArticleFilterResult.id)
+        .join(Company, Company.id == ArticleFilterResult.company_id)
+        .where(
+            Company.workspace_id == auth.workspace_id,
             ArticleFilterResult.company_id == payload.company_id,
             ArticleFilterResult.raw_article_id == payload.raw_article_id,
         ).limit(1)
@@ -136,11 +143,14 @@ def save_article_label(
 def risk_review_candidates(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> list[RiskEventRead]:
     events = list(
         db.scalars(
             select(RiskEvent)
+            .join(Company, Company.id == RiskEvent.company_id)
             .where(
+                Company.workspace_id == auth.workspace_id,
                 RiskEvent.status != "legacy_candidate",
                 ~exists(
                     select(RiskEventLabel.id).where(
@@ -161,8 +171,16 @@ def save_risk_event_label(
     risk_event_id: int,
     payload: RiskEventLabelCreate,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> RiskEventLabel:
-    event = db.get(RiskEvent, risk_event_id)
+    event = db.scalar(
+        select(RiskEvent)
+        .join(Company, Company.id == RiskEvent.company_id)
+        .where(
+            RiskEvent.id == risk_event_id,
+            Company.workspace_id == auth.workspace_id,
+        )
+    )
     if event is None:
         raise HTTPException(status_code=404, detail="위험 이벤트를 찾을 수 없습니다.")
     try:

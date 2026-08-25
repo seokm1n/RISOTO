@@ -14,17 +14,15 @@ import { api, getErrorMessage } from "../api";
 import CollectionPage from "../features/collection/CollectionPage";
 import CompanyAdministrationPage from "../features/companies/CompanyPages";
 import MainPage from "../features/home/MainPage";
-import ModelManagementPage from "../features/models/ModelManagementPage";
 import NotificationDrawer from "../features/notifications/NotificationDrawer";
 import RealtimePage from "../features/realtime/RealtimePage";
 import { EMPTY_NOTIFICATIONS } from "../shared/presentation";
 
 const NAV_ITEMS = [
-  { id: "home", label: "메인", path: "/main", roles: ["user", "admin"] },
-  { id: "companies", label: "기업 관리", path: "/companies", roles: ["user", "admin"] },
-  { id: "collection", label: "수집", path: "/collection", roles: ["user", "admin"] },
-  { id: "detail", label: "기업 상세", path: "/companies/overview", roles: ["user", "admin"] },
-  { id: "models", label: "모델 관리", path: "/models", roles: ["admin"] },
+  { id: "home", label: "메인", path: "/main" },
+  { id: "companies", label: "기업 관리", path: "/companies" },
+  { id: "collection", label: "수집", path: "/collection" },
+  { id: "detail", label: "기업 상세", path: "/companies/overview" },
 ];
 
 const PAGE_TITLES = {
@@ -32,7 +30,6 @@ const PAGE_TITLES = {
   collection: "수집",
   detail: "기업 상세",
   companies: "기업 관리",
-  models: "모델 관리",
 };
 
 const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
@@ -40,13 +37,12 @@ const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
 const pageFromPath = (pathname) => {
   if (pathname === "/main") return "home";
   if (pathname === "/collection") return "collection";
-  if (pathname === "/models") return "models";
   if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "companies";
   if (pathname === "/companies/overview" || /^\/companies\/[^/]+$/.test(pathname)) return "detail";
   return "home";
 };
 
-function CompanyDetailRoute({ canAdminister, onCompanyChange }) {
+function CompanyDetailRoute({ canAdminister, onCompanyChange, competitorCompanyLabel }) {
   const { companyId } = useParams();
   const [searchParams] = useSearchParams();
   const normalizedCompanyId = companyId ? numericParam(companyId) : null;
@@ -58,6 +54,7 @@ function CompanyDetailRoute({ canAdminister, onCompanyChange }) {
     initialCompanyId={normalizedCompanyId}
     initialRiskEventId={riskEventId ? Number(riskEventId) : null}
     canAdminister={canAdminister}
+    competitorCompanyLabel={competitorCompanyLabel}
     onCompanyChange={onCompanyChange}
   />;
 }
@@ -69,9 +66,21 @@ function CompanySettingsRoute(props) {
   return <CompanyAdministrationPage {...props} mode="edit" initialCompanyId={normalizedCompanyId} />;
 }
 
-// 역할에 따라 접근 가능한 URL과 관리 기능을 제한하는 최상위 앱 셸이다.
+function MainCompanyOverviewRedirect() {
+  const [mainCompanyId, setMainCompanyId] = useState(undefined);
+  useEffect(() => {
+    let active = true;
+    api.get("/companies").then((response) => {
+      if (active) setMainCompanyId(response.data.find((company) => company.company_role === "main")?.id ?? null);
+    }).catch(() => active && setMainCompanyId(null));
+    return () => { active = false; };
+  }, []);
+  if (mainCompanyId === undefined) return <p className="empty-state">메인 기업을 불러오는 중입니다.</p>;
+  return <Navigate to={mainCompanyId ? `/companies/${mainCompanyId}` : "/companies"} replace />;
+}
+
+// 인증된 워크스페이스 멤버에게 공통 관리 기능과 URL 기반 화면을 제공한다.
 export default function WorkspaceApp({ session, onLogout }) {
-  const isAdmin = session.role === "admin";
   const location = useLocation();
   const navigate = useNavigate();
   const page = pageFromPath(location.pathname);
@@ -141,33 +150,33 @@ export default function WorkspaceApp({ session, onLogout }) {
     onOpenCompany: openCompanyDetail,
     onEditCompany: (companyId) => openManagementCompany(companyId, "edit"),
     onModeChange: changeCompanyAdminMode,
+    competitorCompanyLabel: session.workspace.competitor_company_label || "경쟁사",
   };
-  const allowedNotificationItems = (notifications.items ?? []).filter((item) => isAdmin || item.type === "risk");
+  const allowedNotificationItems = (notifications.items ?? []).filter((item) => item.type === "risk");
   const notificationTotal = allowedNotificationItems.length;
 
   return <main className="min-h-screen">
     <header className="topbar">
       <button className="brand" onClick={() => goTo("/main")}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
-      <nav className="main-nav" aria-label="주요 화면">{NAV_ITEMS.filter((item) => item.roles.includes(session.role)).map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
+      <nav className="main-nav" aria-label="주요 화면">{NAV_ITEMS.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
       <div className="topbar-actions">
         <button className="notification-bell" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`알림 ${notificationTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" /><path d="M10 21h4" /></svg>{notificationTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationTotal > 99 ? "99+" : notificationTotal}</span>}</button>
-        <button className="account-button" type="button" onClick={logout} title={`${session.email} · 로그아웃`}><span>{session.email}</span><strong>{isAdmin ? "관리자" : "일반 사용자"} · 로그아웃</strong></button>
+        <button className="account-button" type="button" onClick={logout} title={`${session.user.email} · 로그아웃`}><span>{session.user.email}</span><strong>{session.workspace.name} · 로그아웃</strong></button>
       </div>
     </header>
 
     <Routes>
       <Route path="/" element={<Navigate to="/main" replace />} />
-      <Route path="/main" element={<MainPage canManageCompanies onOpenCompany={openCompanyDetail} onManageCompanies={openManagementCompany} />} />
-      <Route path="/collection" element={<CollectionPage isAdmin onOpenCompany={openCompanyDetail} />} />
+      <Route path="/main" element={<MainPage canManageCompanies competitorCompanyLabel={session.workspace.competitor_company_label || "경쟁사"} onOpenCompany={openCompanyDetail} onManageCompanies={openManagementCompany} />} />
+      <Route path="/collection" element={<CollectionPage onOpenCompany={openCompanyDetail} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} mode="edit" initialCompanyId={null} />} />
       <Route path="/companies/new" element={<CompanyAdministrationPage {...companyAdministrationProps} mode="register" initialCompanyId={null} />} />
       <Route path="/companies/:companyId/settings" element={<CompanySettingsRoute {...companyAdministrationProps} />} />
-      <Route path="/companies/overview" element={<CompanyDetailRoute canAdminister onCompanyChange={changeDetailCompany} />} />
-      <Route path="/companies/:companyId" element={<CompanyDetailRoute canAdminister onCompanyChange={changeDetailCompany} />} />
-      <Route path="/models" element={isAdmin ? <ModelManagementPage /> : <Navigate to="/main" replace />} />
+      <Route path="/companies/overview" element={<MainCompanyOverviewRedirect />} />
+      <Route path="/companies/:companyId" element={<CompanyDetailRoute canAdminister competitorCompanyLabel={session.workspace.competitor_company_label || "경쟁사"} onCompanyChange={changeDetailCompany} />} />
       <Route path="*" element={<Navigate to="/main" replace />} />
     </Routes>
 
-    <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={notifications} error={notificationError} role={session.role} onRiskOpen={(item) => item.company_id && openCompanyDetail(item.company_id, item.risk_event_id)} onModelOpen={() => goTo("/models")} />
+    <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} onRiskOpen={(item) => item.company_id && openCompanyDetail(item.company_id, item.risk_event_id)} />
   </main>;
 }

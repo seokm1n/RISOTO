@@ -228,11 +228,11 @@ class QueryBuildingTests(unittest.TestCase):
             ],
         )
 
-    def test_peer_terms_are_not_collection_queries_and_hit_kinds_are_explicit(self):
+    def test_competitor_terms_are_not_collection_queries_and_hit_kinds_are_explicit(self):
         company = SimpleNamespace(name="예시기업")
         keywords = [
             SimpleNamespace(keyword_type="alias", value="예시"),
-            SimpleNamespace(keyword_type="peer", value="경쟁사"),
+            SimpleNamespace(keyword_type="competitor", value="경쟁사"),
             SimpleNamespace(keyword_type="product", value="예시몰"),
             SimpleNamespace(keyword_type="risk", value="정보 유출"),
         ]

@@ -13,7 +13,13 @@ from sqlalchemy import select
 from app.database import SessionLocal
 from app.models import ModelVersion
 from app.routers.governance import get_risk_detection_status
-from app.services.risk_analysis import RISK_DETECTOR_FEATURE_NAMES
+from app.services.risk_analysis import (
+    BASE_FEATURE_NAMES,
+    REQUIRED_IF_HASH_KEY,
+    REQUIRED_IF_VERSION_KEY,
+    RISK_DETECTOR_FEATURE_NAMES,
+    artifact_sha256,
+)
 
 
 class StubLightGbm:
@@ -23,16 +29,22 @@ class StubLightGbm:
         return np.asarray([[0.25, 0.75] for _ in values], dtype=float)
 
 
+class StubIsolationForest:
+    def decision_function(self, values):
+        return np.zeros(len(values), dtype=float)
+
+
 class RiskDetectionStatusDatabaseTests(unittest.TestCase):
     def setUp(self):
         self.artifact_path: Path | None = None
+        self.isolation_artifact_path: Path | None = None
         self.db = SessionLocal()
         self.transaction = self.db.begin()
         try:
             production = list(
                 self.db.scalars(
                     select(ModelVersion).where(
-                        ModelVersion.task == "risk_detector",
+                        ModelVersion.task.in_(["risk_detector", "isolation_forest"]),
                         ModelVersion.status == "production",
                     )
                 )
@@ -52,6 +64,8 @@ class RiskDetectionStatusDatabaseTests(unittest.TestCase):
             self.db.close()
         if self.artifact_path is not None:
             self.artifact_path.unlink(missing_ok=True)
+        if self.isolation_artifact_path is not None:
+            self.isolation_artifact_path.unlink(missing_ok=True)
 
     def test_no_production_lightgbm_is_explicitly_unavailable(self):
         status = get_risk_detection_status(self.db)
@@ -64,6 +78,45 @@ class RiskDetectionStatusDatabaseTests(unittest.TestCase):
         self.assertIn("위험 판정을 수행하지 않습니다", status.message)
 
     def test_valid_production_artifact_exposes_version_and_provisional_state(self):
+        isolation_handle = tempfile.NamedTemporaryFile(
+            prefix="risoto-risk-status-if-",
+            suffix=".joblib",
+            delete=False,
+        )
+        isolation_handle.close()
+        self.isolation_artifact_path = Path(isolation_handle.name)
+        joblib.dump(
+            {
+                "model": StubIsolationForest(),
+                "feature_names": BASE_FEATURE_NAMES,
+                "company_scalers": {
+                    "global": {
+                        "center": [0.0] * len(BASE_FEATURE_NAMES),
+                        "scale": [1.0] * len(BASE_FEATURE_NAMES),
+                    }
+                },
+            },
+            self.isolation_artifact_path,
+        )
+        isolation_hash = artifact_sha256(self.isolation_artifact_path)
+        self.assertIsNotNone(isolation_hash)
+        isolation_version = f"external-if-{uuid4().hex}"
+        self.db.add(
+            ModelVersion(
+                task="isolation_forest",
+                version=isolation_version,
+                status="production",
+                artifact_path=str(self.isolation_artifact_path),
+                training_data_hash="b" * 64,
+                label_schema={},
+                metrics={},
+                thresholds={},
+                training_counts={},
+                dependencies={},
+                promoted_at=datetime.now(timezone.utc),
+            )
+        )
+
         handle = tempfile.NamedTemporaryFile(
             prefix="risoto-risk-status-",
             suffix=".joblib",
@@ -75,6 +128,8 @@ class RiskDetectionStatusDatabaseTests(unittest.TestCase):
             {
                 "model": StubLightGbm(),
                 "feature_names": RISK_DETECTOR_FEATURE_NAMES,
+                REQUIRED_IF_VERSION_KEY: isolation_version,
+                REQUIRED_IF_HASH_KEY: isolation_hash,
             },
             self.artifact_path,
         )
@@ -93,6 +148,10 @@ class RiskDetectionStatusDatabaseTests(unittest.TestCase):
                 "model_state": "provisional",
             },
             training_counts={},
+            dependencies={
+                REQUIRED_IF_VERSION_KEY: isolation_version,
+                REQUIRED_IF_HASH_KEY: isolation_hash,
+            },
             promoted_at=datetime.now(timezone.utc),
         )
         self.db.add(model)

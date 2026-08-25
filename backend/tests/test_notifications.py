@@ -14,6 +14,7 @@ from app.database import engine
 from app.models import Company, CompanyFeatureWindow, ModelVersion, RiskEvent
 from app.routers.notifications import list_notifications
 from app.services.model_governance import evaluate_model_promotion
+from tests.auth_helpers import auth_for_company
 
 
 class PromotionEligibilityUnitTests(unittest.TestCase):
@@ -57,6 +58,7 @@ class NotificationDatabaseTests(unittest.TestCase):
             self.skipTest(f"PostgreSQL 테스트 연결이 없습니다: {exc}")
         if self.company_id is None:
             self.skipTest("알림 테스트에 기업이 필요합니다.")
+        self.auth = auth_for_company(self.db, self.company_id)
 
     def tearDown(self):
         if hasattr(self, "db"):
@@ -68,7 +70,7 @@ class NotificationDatabaseTests(unittest.TestCase):
         if self.artifact_path is not None:
             self.artifact_path.unlink(missing_ok=True)
 
-    def test_only_open_risks_and_eligible_candidates_are_returned_read_only(self):
+    def test_only_current_workspace_open_risks_are_returned_read_only(self):
         start = datetime(2093, 1, 1, tzinfo=timezone.utc)
         open_event = RiskEvent(
             company_id=self.company_id,
@@ -178,23 +180,15 @@ class NotificationDatabaseTests(unittest.TestCase):
         self.db.add_all([eligible, blocked])
         self.db.flush()
 
-        response = list_notifications(self.db)
+        response = list_notifications(self.db, self.auth)
         ids = {item.id for item in response.items}
 
         self.assertIn(f"risk:{open_event.id}", ids)
         self.assertNotIn(f"risk:{closed_event.id}", ids)
         self.assertNotIn(f"risk:{acknowledged_event.id}", ids)
         self.assertIn(f"risk:{monitoring_event.id}", ids)
-        self.assertIn(f"model:{eligible.id}", ids)
+        self.assertNotIn(f"model:{eligible.id}", ids)
         self.assertNotIn(f"model:{blocked.id}", ids)
-        model_notice = next(
-            item for item in response.items if item.id == f"model:{eligible.id}"
-        )
-        self.assertEqual(
-            model_notice.message,
-            f"{eligible.version} 후보 모델의 승격 조건이 충족되었습니다.",
-        )
-        self.assertNotIn(eligible.task, model_notice.message)
         self.assertEqual(response.total, len(response.items))
         self.assertEqual(
             response.risk_count,

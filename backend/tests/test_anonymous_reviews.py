@@ -1,4 +1,4 @@
-"""Public review payloads work without exposing or accepting person names."""
+"""Review payloads use the authenticated account as their audit identity."""
 
 from datetime import datetime, timezone
 import unittest
@@ -25,6 +25,7 @@ from app.schemas import (
     RiskEventLabelRead,
 )
 from app.services.review_identity import INTERNAL_REVIEW_ACTOR
+from tests.auth_helpers import auth_for_company
 
 
 class AnonymousReviewSchemaTests(unittest.TestCase):
@@ -56,7 +57,7 @@ class AnonymousReviewSchemaTests(unittest.TestCase):
         self.assertNotIn("reviewer", draft.model_dump())
         self.assertNotIn("annotator", ArticleLabelRead.model_fields)
         self.assertNotIn("annotator", RiskEventLabelRead.model_fields)
-        self.assertNotIn("reviewed_by", ResponseDraftRead.model_fields)
+        self.assertIn("reviewed_by", ResponseDraftRead.model_fields)
 
 
 class AnonymousReviewDatabaseTests(unittest.TestCase):
@@ -72,6 +73,7 @@ class AnonymousReviewDatabaseTests(unittest.TestCase):
             self.skipTest(f"PostgreSQL 테스트 연결이 없습니다: {exc}")
         if self.company_id is None:
             self.skipTest("검수 API 테스트에 기업이 필요합니다.")
+        self.auth = auth_for_company(self.db, self.company_id)
 
     def tearDown(self):
         if hasattr(self, "db"):
@@ -110,6 +112,7 @@ class AnonymousReviewDatabaseTests(unittest.TestCase):
                 sentiment_label="neutral",
             ),
             self.db,
+            self.auth,
         )
         self.assertEqual(article_label.annotator, INTERNAL_REVIEW_ACTOR)
 
@@ -131,11 +134,17 @@ class AnonymousReviewDatabaseTests(unittest.TestCase):
             event.id,
             RiskEventLabelCreate(is_risk=False, event_start=started_at),
             self.db,
+            self.auth,
         )
         self.assertEqual(risk_label.annotator, INTERNAL_REVIEW_ACTOR)
 
         response_draft = ResponseDraft(
             risk_event_id=event.id,
+            workspace_id=self.auth.workspace_id,
+            source_company_id=self.company_id,
+            target_main_company_id=self.company_id,
+            generation_kind="main_response",
+            schema_version=2,
             model_name="test",
             content={},
             evidence_urls=[],
@@ -147,8 +156,10 @@ class AnonymousReviewDatabaseTests(unittest.TestCase):
             response_draft.id,
             ResponseDraftReview(),
             self.db,
+            self.auth,
         )
-        self.assertEqual(approved.reviewed_by, INTERNAL_REVIEW_ACTOR)
+        self.assertEqual(approved.reviewed_by, self.auth.user.email)
+        self.assertEqual(approved.reviewed_by_user_id, self.auth.user_id)
         self.assertEqual(approved.approval_state, "approved")
 
 
