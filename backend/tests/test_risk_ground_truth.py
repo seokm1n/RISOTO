@@ -29,12 +29,14 @@ class RiskGroundTruthDatabaseTests(unittest.TestCase):
         self.db = SessionLocal()
         self.transaction = self.db.begin()
         try:
-            company_id = self.db.scalar(select(Company.id).order_by(Company.id).limit(1))
+            company = self.db.scalar(select(Company).order_by(Company.id).limit(1))
         except Exception as exc:
             self.db.close()
             self.skipTest(f"PostgreSQL 테스트 연결이 없습니다: {exc}")
-        if company_id is None:
+        if company is None:
             self.skipTest("위험 검수 테스트에 기업 한 곳이 필요합니다.")
+        company_id = company.id
+        self.user_id = company.user_id
         marker = uuid.uuid4().hex
         self.article = NewsArticle(
             source="test",
@@ -169,6 +171,7 @@ class RiskGroundTruthDatabaseTests(unittest.TestCase):
     def test_adjudicated_normal_label_dismisses_event_and_draft(self):
         draft = ResponseDraft(
             risk_event_id=self.event.id,
+            user_id=self.user_id,
             model_name="test",
             content={},
             evidence_urls=[self.article.url],

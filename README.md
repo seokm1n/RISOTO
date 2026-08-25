@@ -239,6 +239,12 @@ POST /api/v1/companies/{id}/activate
 
 ## 현재 모델 운영 방식
 
+공유받은 로컬 KLUE/RoBERTa 모델은 `backend/local_models`에 두며 Docker 백엔드가
+`PRETRAINED_RELEVANCE_MODEL_PATH`와 `PRETRAINED_SENTIMENT_MODEL_PATH`로 직접 읽습니다.
+관련성 모델의 `normal`은 관련 기사, `filter`는 제외 기사로 해석하고, 감성 모델은
+아티팩트 `config.json`의 `negative / neutral / positive` 라벨 순서를 그대로 사용합니다.
+로컬 아티팩트가 없거나 로드에 실패하면 기존 NLI·규칙 기반 분석으로 폴백합니다.
+
 - 기사 관련성·광고 보조 판정과 감성 분석: 기본 KLUE/RoBERTa NLI와 명시적 규칙 사용
 - 위험 유형 근거 점수: 위험 키워드와 기본 KLUE NLI 사용
 - 최종 위험 판정: 공통 LightGBM 필수

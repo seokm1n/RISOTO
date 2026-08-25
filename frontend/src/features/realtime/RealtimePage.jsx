@@ -57,12 +57,12 @@ function ActionGroups({ actions }) {
   </section>);
 }
 
-function ResponseDraftContent({ draft, competitorCompanyLabel = "경쟁사" }) {
+function ResponseDraftContent({ draft }) {
   const content = draft.content ?? {};
   const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
   const isCompetitorImpact = draft.generation_kind === "competitor_impact";
   return <div className="response-draft">
-    <div className="response-draft-head"><div><span className="eyebrow">RESPONSE DRAFT · REVIEW REQUIRED</span><strong>{content.risk_summary}</strong></div><span className={`draft-kind ${isCompetitorImpact ? "competitor" : "main"}`}>{isCompetitorImpact ? `${competitorCompanyLabel} → 메인 기업 영향` : "메인 기업 직접 대응"}</span></div>
+    <div className="response-draft-head"><div><span className="eyebrow">RESPONSE DRAFT · REVIEW REQUIRED</span><strong>{content.risk_summary}</strong></div><span className={`draft-kind ${isCompetitorImpact ? "competitor" : "main"}`}>{isCompetitorImpact ? "경쟁사 → 메인 기업 영향" : "메인 기업 직접 대응"}</span></div>
     {scenarios.length ? <div className="response-scenario-list">{scenarios.map((scenario, index) => <article className="response-scenario" key={`${scenario.title ?? "scenario"}-${index}`}>
       <header><span>경우 {String(index + 1).padStart(2, "0")}</span><h4>{scenario.title || `${index + 1}번째 대응안`}</h4></header>
       {scenario.assumption && <p><strong>전제</strong>{scenario.assumption}</p>}
@@ -77,7 +77,7 @@ function ResponseDraftContent({ draft, competitorCompanyLabel = "경쟁사" }) {
 }
 
 // 위험 이벤트의 근거·유형과 관리 승인이 필요한 대응 초안을 한곳에 표시한다.
-function RiskDetail({ risk, canReview = false, competitorCompanyLabel = "경쟁사" }) {
+function RiskDetail({ risk, canReview = false }) {
   const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
   const loadDrafts = useCallback(async () => {
@@ -102,7 +102,7 @@ function RiskDetail({ risk, canReview = false, competitorCompanyLabel = "경쟁�
     <div className="evidence-list"><strong>근거 기사</strong>{risk.evidence_articles.length ? risk.evidence_articles.map((article) => <a key={article.article_id} href={article.url} target="_blank" rel="noreferrer">{article.title}</a>) : <small>연결된 근거 기사가 없습니다.</small>}</div>
     {!latest && <button className="secondary-button" type="button" onClick={generate} disabled={loading || !risk.evidence_articles.length}>{loading ? "생성 중..." : "근거 기반 대응 초안 생성"}</button>}
     {error && <div className="notice error">{error}</div>}
-    {content && <><ResponseDraftContent draft={latest} competitorCompanyLabel={competitorCompanyLabel} />{canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}
+    {content && <><ResponseDraftContent draft={latest} />{canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}
   </div>;
 }
 
@@ -138,7 +138,7 @@ function OverlayLineChart({ overview, riskAvailable = true }) {
 }
 
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
-export default function RealtimePage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, competitorCompanyLabel = "경쟁사", onCompanyChange }) {
+export default function RealtimePage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, onCompanyChange }) {
   const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
   const [data, setData] = useState(null); const [error, setError] = useState(null);
   const [articlePage, setArticlePage] = useState(1);
@@ -283,7 +283,7 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
       <div className="live-grid"><section className="panel span-two"><PanelTitle kicker={showingFilterResults ? "FILTER RESULTS" : "COLLECTED ARTICLES"} title={articlePanelTitle} /><label className="source-filter">표시할 데이터<select value={displayMode} onChange={(event) => { setDisplayMode(event.target.value); setArticlePage(1); }}><option value="">정제 통과 기사 전체</option><optgroup label="필터 판정"><option value={FILTERED_DATA_MODE}>필터 제외 데이터 · {formatNumber(data.filtering.rejected_count)}건</option><option value={REVIEW_DATA_MODE}>검토 필요 데이터 · {formatNumber(data.filtering.review_required_count)}건</option></optgroup><optgroup label="정제 통과 기사 출처">{articleSources.map((source) => <option value={source} key={source}>{SOURCE_LABELS[source] ?? source}</option>)}{SUPPORTED_SOURCES.filter((source) => !articleSources.includes(source)).map((source) => <option value={source} key={source} disabled>{SOURCE_LABELS[source]} · 수집 데이터 없음</option>)}</optgroup></select></label><div className="article-list">{data.articles.items.length ? (showingFilterResults ? data.articles.items.map((result) => <FilterResultRow result={result} key={result.id} />) : data.articles.items.map((article) => <a className="article-row" key={article.id} href={article.url} target="_blank" rel="noreferrer"><span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span><div><strong>{article.title}</strong><small>{SOURCE_LABELS[article.source] ?? article.source} · {formatDate(article.published_at ?? article.created_at)}</small></div></a>)) : <p className="panel-empty">{articleEmptyText}</p>}</div><Pagination page={data.articles.page} pageSize={data.articles.page_size} total={data.articles.total} onChange={setArticlePage} /></section>
         <section className="panel"><PanelTitle kicker="RISK EVENTS" title="기업 위험 이벤트" /><div className="risk-list selectable">{visibleRisks.length ? visibleRisks.map((risk) => <button className={selectedRisk?.id === risk.id ? "selected" : ""} type="button" onClick={() => setSelectedRiskId(risk.id)} key={risk.id}><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><strong>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</strong><small>위험도 {formatRiskProbability(risk.risk_probability)} · {formatDate(risk.detected_at)}</small></button>) : <p className="panel-empty">새 위험 이벤트가 없습니다.</p>}</div><Pagination page={riskPage} pageSize={riskPageSize} total={data.risks.length} onChange={setRiskPage} /></section>
       </div>
-      {selectedRisk && <section className="panel risk-detail-panel" ref={riskDetailRef} tabIndex={-1}><PanelTitle kicker="EVIDENCE & RESPONSE" title="위험 근거와 대응 초안" /><RiskDetail risk={selectedRisk} canReview={canAdminister} competitorCompanyLabel={competitorCompanyLabel} /></section>}
+      {selectedRisk && <section className="panel risk-detail-panel" ref={riskDetailRef} tabIndex={-1}><PanelTitle kicker="EVIDENCE & RESPONSE" title="위험 근거와 대응 초안" /><RiskDetail risk={selectedRisk} canReview={canAdminister} /></section>}
       <div className="operations-grid"><section className="panel"><PanelTitle kicker="COLLECTION HEALTH" title="수집 시스템 상태" /><div className={`health-state ${data.health.status}`}><strong>{data.health.status === "healthy" ? "정상" : data.health.status === "degraded" ? "일부 장애" : data.health.status === "unavailable" ? "수집 불가" : "확인 전"}</strong><span>열린 장애 {formatNumber(data.health.open_incident_count)}건</span></div><div className="source-health-list">{data.health.sources.map((source) => <div key={source.source}><span>{SOURCE_LABELS[source.source] ?? source.source}</span><strong className={source.status}>{HEALTH_STATUS_LABELS[source.status] ?? source.status}</strong><small>연속 실패 {source.consecutive_failures}회</small></div>)}</div></section><section className="panel"><PanelTitle kicker="COLLECTION INCIDENTS" title="수집 장애" /><IncidentList incidents={data.incidents} companies={companies} onAcknowledge={canAdminister ? acknowledgeIncident : undefined} /></section></div>
       <section className="panel realtime-trend-panel"><PanelTitle kicker="TOTAL TREND / 7 DAYS" title={data.monitoring.model_state === "production" ? "전체 수집량 · 위험량" : "전체 수집량 · 위험 판정 대기"} /><OverlayLineChart overview={data.overview} riskAvailable={data.monitoring.model_state === "production"} /></section>
     </>}

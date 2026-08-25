@@ -11,12 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
-from app.auth import require_auth
+from app.auth import CurrentAuth, create_auth_session, require_auth
 from app.config import get_settings
 from app.database import engine
-from app.models import AuthSession, User, WorkspaceMember
-from app.routers.auth import login, logout, me, password_hasher, signup
-from app.schemas import AuthLoginRequest, AuthSignupRequest
+from app.models import AuthSession, User
+from app.routers.auth import change_password, login, logout, me, password_hasher, signup
+from app.schemas import AuthLoginRequest, AuthPasswordChangeRequest, AuthSignupRequest
 
 
 def _response_cookies(response: Response) -> dict[str, str]:
@@ -46,7 +46,7 @@ def _request(method: str, cookies: dict[str, str], csrf: str | None = None) -> R
     )
 
 
-class AuthWorkspaceDatabaseTests(unittest.TestCase):
+class AuthDatabaseTests(unittest.TestCase):
     def setUp(self):
         try:
             self.connection = engine.connect()
@@ -69,10 +69,8 @@ class AuthWorkspaceDatabaseTests(unittest.TestCase):
         payload = AuthSignupRequest(
             email=f"  AUTH-{suffix}@EXAMPLE.COM  ",
             password="12345678",
-            workspace_name="  테스트   인증 공간  ",
         )
         self.assertEqual(payload.email, normalized_email)
-        self.assertEqual(payload.workspace_name, "테스트 인증 공간")
 
         signup_response = Response()
         signed_up = signup(payload, signup_response, self.db)
@@ -81,6 +79,7 @@ class AuthWorkspaceDatabaseTests(unittest.TestCase):
 
         self.assertEqual(signed_up.user.email, normalized_email)
         self.assertFalse(signed_up.has_main_company)
+        self.assertNotIn("workspace", signed_up.model_dump())
         self.assertIn(settings.session_cookie_name, cookies)
         self.assertIn(settings.csrf_cookie_name, cookies)
         session_cookie_header = next(
@@ -94,11 +93,10 @@ class AuthWorkspaceDatabaseTests(unittest.TestCase):
         self.assertIsNotNone(user)
         self.assertTrue(user.password_hash.startswith("$argon2id$"))
         self.assertTrue(password_hasher.verify(user.password_hash, "12345678"))
-        self.assertIsNotNone(
-            self.db.scalar(
-                select(WorkspaceMember).where(WorkspaceMember.user_id == user.id)
-            )
+        signup_session = self.db.scalar(
+            select(AuthSession).where(AuthSession.user_id == user.id)
         )
+        self.assertIsNotNone(signup_session)
 
         auth = require_auth(_request("GET", cookies), self.db)
         self.assertEqual(auth.user_id, user.id)
@@ -152,6 +150,34 @@ class AuthWorkspaceDatabaseTests(unittest.TestCase):
             AuthSignupRequest(email="not-an-email", password="12345678")
         with self.assertRaises(ValidationError):
             AuthSignupRequest(email="short@example.com", password="1234567")
+        with self.assertRaises(ValidationError):
+            AuthPasswordChangeRequest(
+                new_password="new-password",
+                new_password_confirmation="different-password",
+            )
+
+    def test_change_password_without_current_password(self):
+        suffix = uuid4().hex
+        user = User(
+            email=f"password-{suffix}@example.com",
+            password_hash=password_hasher.hash("old-password"),
+        )
+        self.db.add(user)
+        self.db.flush()
+        auth_session, _, csrf_token = create_auth_session(self.db, user.id)
+        self.db.commit()
+
+        response = change_password(
+            AuthPasswordChangeRequest(
+                new_password="new-password",
+                new_password_confirmation="new-password",
+            ),
+            self.db,
+            CurrentAuth(user=user, session=auth_session, csrf_token=csrf_token),
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(password_hasher.verify(user.password_hash, "new-password"))
 
 
 if __name__ == "__main__":

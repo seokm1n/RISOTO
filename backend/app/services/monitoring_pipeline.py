@@ -390,6 +390,7 @@ def run_collection(
         )
         # 이후 기사 연결에 사용할 작업 ID를 확보하도록 외부 API 호출 전에 실행 레코드를 만든다.
         job = CollectionJob(
+            user_id=company.user_id,
             company_id=company_id,
             status="running",
             job_type=job_type,
@@ -833,14 +834,25 @@ def run_due_collection_retries() -> int:
                 )
             )
         )
+        retry_items: list[tuple[CollectionIncident, list[int], list[int]]] = []
+        for incident in incidents:
+            owned_company_ids: list[int] = []
+            skipped_company_ids: list[int] = []
+            for company_id in dict.fromkeys(incident.affected_company_ids or []):
+                company = db.get(Company, company_id)
+                if company is None or company.user_id != incident.user_id:
+                    skipped_company_ids.append(company_id)
+                    continue
+                owned_company_ids.append(company_id)
+            retry_items.append((incident, owned_company_ids, skipped_company_ids))
     retried = 0
-    for incident in incidents:
+    for incident, company_ids, skipped_company_ids in retry_items:
         succeeded: list[int] = []
         retry_sources = _incident_retry_sources(
             settings,
             list(incident.sources or []),
         )
-        for company_id in list(incident.affected_company_ids or []):
+        for company_id in company_ids:
             try:
                 job = run_collection(
                     company_id,
@@ -863,7 +875,12 @@ def run_due_collection_retries() -> int:
                     company_id,
                 )
             retried += 1
-        complete_retry(incident.id, succeeded, settings)
+        # 삭제된 기업이나 다른 사용자 소유 ID는 수집하지 않고 장애 목록에서도 제거한다.
+        complete_retry(
+            incident.id,
+            [*succeeded, *skipped_company_ids],
+            settings,
+        )
     dispatch_pending_notifications(settings)
     return retried
 

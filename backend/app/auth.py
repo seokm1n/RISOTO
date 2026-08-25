@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import AuthSession, User, Workspace, WorkspaceMember
+from app.models import AuthSession, User
 
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -19,10 +19,9 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 @dataclass(frozen=True, slots=True)
 class CurrentAuth:
-    """현재 사용자·워크스페이스·세션을 함께 전달하는 인증 컨텍스트."""
+    """현재 사용자와 세션을 함께 전달하는 인증 컨텍스트."""
 
     user: User
-    workspace: Workspace
     session: AuthSession
     csrf_token: str
 
@@ -30,19 +29,13 @@ class CurrentAuth:
     def user_id(self) -> int:
         return self.user.id
 
-    @property
-    def workspace_id(self) -> int:
-        return self.workspace.id
-
 
 def hash_session_token(token: str) -> str:
     """원문 세션 토큰이 DB에 남지 않도록 SHA-256으로 단방향 변환한다."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def create_auth_session(
-    db: Session, user_id: int, workspace_id: int
-) -> tuple[AuthSession, str, str]:
+def create_auth_session(db: Session, user_id: int) -> tuple[AuthSession, str, str]:
     """새 세션을 저장 대기 상태로 만들고 브라우저용 원문 토큰을 한 번 반환한다."""
     settings = get_settings()
     raw_token = secrets.token_urlsafe(32)
@@ -50,7 +43,6 @@ def create_auth_session(
     now = datetime.now(timezone.utc)
     auth_session = AuthSession(
         user_id=user_id,
-        workspace_id=workspace_id,
         token_hash=hash_session_token(raw_token),
         csrf_token_hash=hash_session_token(raw_csrf_token),
         expires_at=now + timedelta(seconds=settings.session_ttl_seconds),
@@ -64,27 +56,21 @@ def require_auth(
     request: Request,
     db: Session = Depends(get_db),
 ) -> CurrentAuth:
-    """세션 쿠키, 멤버십, 계정 상태와 변경 요청의 CSRF 토큰을 검증한다."""
+    """세션 쿠키, 계정 상태와 변경 요청의 CSRF 토큰을 검증한다."""
     settings = get_settings()
     raw_token = request.cookies.get(settings.session_cookie_name)
     if not raw_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="로그인이 필요합니다.")
 
     row = db.execute(
-        select(AuthSession, User, Workspace)
+        select(AuthSession, User)
         .join(User, User.id == AuthSession.user_id)
-        .join(Workspace, Workspace.id == AuthSession.workspace_id)
-        .join(
-            WorkspaceMember,
-            (WorkspaceMember.user_id == AuthSession.user_id)
-            & (WorkspaceMember.workspace_id == AuthSession.workspace_id),
-        )
         .where(AuthSession.token_hash == hash_session_token(raw_token))
     ).one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 세션입니다.")
 
-    auth_session, user, workspace = row
+    auth_session, user = row
     now = datetime.now(timezone.utc)
     expires_at = auth_session.expires_at
     if expires_at.tzinfo is None:
@@ -110,7 +96,6 @@ def require_auth(
     db.commit()
     return CurrentAuth(
         user=user,
-        workspace=workspace,
         session=auth_session,
         csrf_token=raw_csrf_token,
     )

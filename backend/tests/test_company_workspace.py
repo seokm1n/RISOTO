@@ -1,4 +1,4 @@
-"""Company roles and financial-input contracts inside a workspace."""
+"""Company roles, user ownership, and financial-input contracts."""
 
 from decimal import Decimal
 import unittest
@@ -10,14 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import engine
-from app.models import Company, Industry, User, Workspace, WorkspaceMember
+from app.models import Company, Industry, User
 from app.routers.companies import (
     create_main_company,
     create_or_update_company,
     delete_company,
 )
 from app.schemas import CompanyCreate
-from tests.auth_helpers import auth_for_workspace
+from tests.auth_helpers import auth_for_user
 
 
 class CompanyRevenueSchemaTests(unittest.TestCase):
@@ -56,12 +56,9 @@ class CompanyRoleDatabaseTests(unittest.TestCase):
 
         suffix = uuid4().hex
         user = User(email=f"company-{suffix}@example.com", password_hash="unused")
-        workspace = Workspace(name=f"기업 테스트 {suffix}")
-        self.db.add_all([user, workspace])
+        self.db.add(user)
         self.db.flush()
-        self.db.add(WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="member"))
-        self.db.flush()
-        self.auth = auth_for_workspace(self.db, workspace.id)
+        self.auth = auth_for_user(self.db, user.id)
 
     def tearDown(self):
         if hasattr(self, "db"):

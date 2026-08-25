@@ -32,20 +32,20 @@ export default function SignupPage({ onAuthenticated }) {
     <section className="login-story" aria-labelledby="signup-story-title">
       <div className="login-brand"><img src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span>RISOTO</span><small>RISk Out Through Observation</small></div>
       <div className="login-story-copy">
-        <span className="login-kicker">START YOUR WORKSPACE</span>
+        <span className="login-kicker">START RISK MONITORING</span>
         <h1 id="signup-story-title">기업을 등록하고,<br /><em>위험 관찰을 시작하세요.</em></h1>
-        <p>가입 직후 메인 기업을 설정하면 전용 워크스페이스에서 기업별 수집과 대응전략을 관리할 수 있습니다.</p>
+        <p>가입 직후 메인 기업을 설정하면 내 계정에서 기업별 수집과 대응전략을 관리할 수 있습니다.</p>
       </div>
       <div className="login-pipeline" aria-label="시작 단계">
         <article><span>01</span><div><strong>계정 생성</strong><small>안전한 전용 세션</small></div></article>
         <article><span>02</span><div><strong>메인 기업</strong><small>첫 모니터링 대상 등록</small></div></article>
         <article><span>03</span><div><strong>위험 관찰</strong><small>실시간 신호 확인</small></div></article>
       </div>
-      <div className="login-live-note"><i aria-hidden="true" /><span>워크스페이스별 데이터 분리</span></div>
+      <div className="login-live-note"><i aria-hidden="true" /><span>사용자별 데이터 분리</span></div>
     </section>
     <section className="login-access" aria-labelledby="signup-title">
       <div className="login-card">
-        <div className="login-card-head"><span className="login-kicker">CREATE ACCOUNT</span><span className="login-role">무료 시작</span></div>
+        <div className="login-card-head"><span className="login-kicker">CREATE ACCOUNT</span></div>
         <h2 id="signup-title">회원가입</h2>
         <p>사용할 이메일과 8자 이상의 비밀번호를 입력하세요.</p>
         <form className="login-form" onSubmit={submit}>

@@ -42,7 +42,7 @@ function LoginPage({ onAuthenticated }) {
 
     <section className="login-access" aria-labelledby="login-title">
       <div className="login-card">
-        <div className="login-card-head"><span className="login-kicker">MEMBER ACCESS</span><span className="login-role">워크스페이스</span></div>
+        <div className="login-card-head"><span className="login-kicker">MEMBER ACCESS</span><span className="login-role">사용자 계정</span></div>
         <h2 id="login-title">로그인</h2>
         <p>등록한 기업의 위험 현황과 대응전략을 확인하세요.</p>
         <form className="login-form" onSubmit={submit}>

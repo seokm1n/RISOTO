@@ -43,12 +43,12 @@ from app.services.monitoring_pipeline import run_collection
 router = APIRouter(tags=["collection"])
 
 
-def _workspace_company(db: Session, company_id: int, workspace_id: int) -> Company:
-    """Return a company only when it belongs to the current workspace."""
+def _user_company(db: Session, company_id: int, user_id: int) -> Company:
+    """Return a company only when it belongs to the current user."""
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
-            Company.workspace_id == workspace_id,
+            Company.user_id == user_id,
         )
     )
     if company is None:
@@ -103,7 +103,7 @@ def collect_company_news(
     auth: CurrentAuth = Depends(require_auth),
 ) -> CollectionJob:
     """지정 기업에 대해 사용자가 요청한 기간·소스로 수동 뉴스 수집을 실행한다."""
-    company = _workspace_company(db, company_id, auth.workspace_id)
+    company = _user_company(db, company_id, auth.user_id)
     return run_collection(
         company_id,
         "manual",
@@ -122,10 +122,10 @@ def list_collection_jobs(
     auth: CurrentAuth = Depends(require_auth),
 ) -> CollectionJobPage:
     """기업의 뉴스 수집 작업 이력을 최신순으로 페이지네이션해 반환한다."""
-    _workspace_company(db, company_id, auth.workspace_id)
+    _user_company(db, company_id, auth.user_id)
     query = select(CollectionJob).where(
         CollectionJob.company_id == company_id,
-        CollectionJob.workspace_id == auth.workspace_id,
+        CollectionJob.user_id == auth.user_id,
     )
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     items = list(db.scalars(
@@ -144,7 +144,7 @@ def get_filter_summary(
     auth: CurrentAuth = Depends(require_auth),
 ) -> ArticleFilterSummary:
     """기업별 최신 기사 필터 판정을 사유와 처리 방식별로 집계한다."""
-    _workspace_company(db, company_id, auth.workspace_id)
+    _user_company(db, company_id, auth.user_id)
     latest = _latest_filter_results(company_id).subquery()
 
     def count_where(*conditions) -> int:
@@ -182,7 +182,7 @@ def list_filter_results(
     auth: CurrentAuth = Depends(require_auth),
 ) -> ArticleFilterResultPage:
     """기업의 최신 기사 필터 결과를 선택 조건과 페이지 단위로 조회한다."""
-    _workspace_company(db, company_id, auth.workspace_id)
+    _user_company(db, company_id, auth.user_id)
     base = (
         _latest_filter_results(company_id)
         .join(RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id)
@@ -241,7 +241,7 @@ def set_all_monitoring_states(
         raise HTTPException(status_code=400, detail="지원하지 않는 모니터링 작업입니다.")
 
     companies = list(
-        db.scalars(select(Company).where(Company.workspace_id == auth.workspace_id))
+        db.scalars(select(Company).where(Company.user_id == auth.user_id))
     )
     next_collection_at = datetime.now(timezone.utc) + timedelta(
         seconds=settings.realtime_interval_seconds
@@ -277,7 +277,7 @@ def set_monitoring_state(
     auth: CurrentAuth = Depends(require_auth),
 ) -> MonitoringSummary:
     """개별 기업의 모니터링 상태를 중지 또는 재개한 뒤 최신 요약을 반환한다."""
-    company = _workspace_company(db, company_id, auth.workspace_id)
+    company = _user_company(db, company_id, auth.user_id)
     next_collection_at = datetime.now(timezone.utc) + timedelta(
         seconds=settings.realtime_interval_seconds
     )
@@ -303,7 +303,7 @@ def list_company_articles(
     auth: CurrentAuth = Depends(require_auth),
 ) -> NewsArticlePage:
     """기업에 연결된 기사를 출처 필터와 페이지 정보에 맞춰 반환한다."""
-    _workspace_company(db, company_id, auth.workspace_id)
+    _user_company(db, company_id, auth.user_id)
     company_articles = (
         select(
             NewsArticle,
@@ -375,7 +375,7 @@ def get_monitoring_summary(
     auth: CurrentAuth = Depends(require_auth),
 ) -> MonitoringSummary:
     """기업의 기사 분석, 이상 징후, 기준선 학습 및 다음 수집 상태를 집계한다."""
-    company = _workspace_company(db, company_id, auth.workspace_id)
+    company = _user_company(db, company_id, auth.user_id)
     article_count = db.scalar(
         select(func.count()).select_from(CompanyArticleMatch).where(
             CompanyArticleMatch.company_id == company_id
@@ -448,7 +448,7 @@ def list_risk_events(
     auth: CurrentAuth = Depends(require_auth),
 ) -> list[RiskEventRead]:
     """기업에서 감지된 최근 위험 이벤트와 관련 기사 정보를 반환한다."""
-    _workspace_company(db, company_id, auth.workspace_id)
+    _user_company(db, company_id, auth.user_id)
     query = select(RiskEvent).where(
         RiskEvent.company_id == company_id,
         RiskEvent.status != "dismissed",

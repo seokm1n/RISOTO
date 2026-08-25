@@ -16,7 +16,7 @@ from app.models import (
 )
 from app.routers.operations import collection_health
 from app.services.collection_health import evaluate_attempts
-from tests.auth_helpers import auth_for_workspace
+from tests.auth_helpers import auth_for_user
 
 
 class CollectionIncidentDatabaseTests(unittest.TestCase):
@@ -24,13 +24,13 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
         self.db = SessionLocal()
         self.transaction = self.db.begin()
         try:
-            self.workspace_id = self.db.scalar(
-                select(Company.workspace_id).order_by(Company.id).limit(1)
+            self.user_id = self.db.scalar(
+                select(Company.user_id).order_by(Company.id).limit(1)
             )
             self.company_ids = list(
                 self.db.scalars(
                     select(Company.id)
-                    .where(Company.workspace_id == self.workspace_id)
+                    .where(Company.user_id == self.user_id)
                     .order_by(Company.id)
                     .limit(2)
                 )
@@ -40,7 +40,7 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
             self.skipTest(f"PostgreSQL 테스트 연결이 없습니다: {exc}")
         if len(self.company_ids) < 2:
             self.skipTest("장애 병합 테스트에 기업 두 곳이 필요합니다.")
-        self.auth = auth_for_workspace(self.db, self.workspace_id)
+        self.auth = auth_for_user(self.db, self.user_id)
         self.settings = Settings(
             collection_alert_webhook_url="https://webhook.invalid/collection",
             collection_retry_delays_seconds="60,300,900",
@@ -60,7 +60,7 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
         status: str,
     ) -> CollectionAttempt:
         job = CollectionJob(
-            workspace_id=self.workspace_id,
+            user_id=self.user_id,
             company_id=company_id,
             status="failed" if status == "failed" else "completed",
             job_type="realtime",
@@ -73,7 +73,7 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
         self.db.add(job)
         self.db.flush()
         attempt = CollectionAttempt(
-            workspace_id=self.workspace_id,
+            user_id=self.user_id,
             job_id=job.id,
             company_id=company_id,
             source=source,
@@ -151,7 +151,7 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
         existing_open = list(
             self.db.scalars(
                 select(CollectionIncident).where(
-                    CollectionIncident.workspace_id == self.workspace_id,
+                    CollectionIncident.user_id == self.user_id,
                     CollectionIncident.status.in_(["open", "retrying"])
                 )
             )
@@ -166,7 +166,7 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
             self.db.scalars(
                 select(CollectionAttempt.source)
                 .where(
-                    CollectionAttempt.workspace_id == self.workspace_id,
+                    CollectionAttempt.user_id == self.user_id,
                     CollectionAttempt.source != "pipeline",
                 )
                 .distinct()
@@ -182,7 +182,7 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
             "failed",
         )
         pipeline_incident = CollectionIncident(
-            workspace_id=self.workspace_id,
+            user_id=self.user_id,
             fingerprint="f" * 64,
             status="recovered",
             data_quality="unavailable",

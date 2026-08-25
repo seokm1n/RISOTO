@@ -1,4 +1,4 @@
-"""Workspace-scoped APIs must never expose another tenant's records."""
+"""User-owned APIs must never expose another user's records."""
 
 from datetime import datetime, timezone
 import unittest
@@ -16,18 +16,16 @@ from app.models import (
     ResponseDraft,
     RiskEvent,
     User,
-    Workspace,
-    WorkspaceMember,
 )
 from app.routers.collection import list_collection_jobs, list_risk_events
 from app.routers.companies import get_company, list_companies
 from app.routers.governance import list_response_drafts
 from app.routers.notifications import list_notifications
 from app.routers.operations import list_collection_incidents
-from tests.auth_helpers import auth_for_company, auth_for_workspace
+from tests.auth_helpers import auth_for_company, auth_for_user
 
 
-class WorkspaceIsolationDatabaseTests(unittest.TestCase):
+class UserIsolationDatabaseTests(unittest.TestCase):
     def setUp(self):
         try:
             self.connection = engine.connect()
@@ -39,7 +37,7 @@ class WorkspaceIsolationDatabaseTests(unittest.TestCase):
         except Exception as exc:
             self.skipTest(f"PostgreSQL 테스트 연결이 없습니다: {exc}")
         if self.first_company is None:
-            self.skipTest("워크스페이스 격리 테스트에 기업이 필요합니다.")
+            self.skipTest("사용자 격리 테스트에 기업이 필요합니다.")
         self.first_auth = auth_for_company(self.db, self.first_company.id)
 
     def tearDown(self):
@@ -53,15 +51,11 @@ class WorkspaceIsolationDatabaseTests(unittest.TestCase):
     def test_companies_risks_jobs_incidents_notifications_and_drafts_are_isolated(self):
         suffix = uuid4().hex
         user = User(email=f"isolation-{suffix}@example.com", password_hash="unused")
-        workspace = Workspace(name=f"격리 공간 {suffix}")
-        self.db.add_all([user, workspace])
+        self.db.add(user)
         self.db.flush()
-        self.db.add(
-            WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="member")
-        )
-        # The same normalized name and ticker are valid in another workspace.
+        # The same normalized name and ticker are valid for another user.
         other_company = Company(
-            workspace_id=workspace.id,
+            user_id=user.id,
             name=self.first_company.name,
             normalized_name=self.first_company.normalized_name,
             ticker=self.first_company.ticker,
@@ -74,7 +68,7 @@ class WorkspaceIsolationDatabaseTests(unittest.TestCase):
         )
         self.db.add(other_company)
         self.db.flush()
-        other_auth = auth_for_workspace(self.db, workspace.id)
+        other_auth = auth_for_user(self.db, user.id)
 
         now = datetime(2097, 1, 1, tzinfo=timezone.utc)
         event = RiskEvent(
@@ -83,14 +77,14 @@ class WorkspaceIsolationDatabaseTests(unittest.TestCase):
             risk_probability=0.9,
             severity="critical",
             status="open",
-            summary="다른 워크스페이스 전용 위험",
+            summary="다른 사용자 전용 위험",
             model_state="provisional",
             approval_state="draft",
             opened_at=now,
             last_seen_at=now,
         )
         job = CollectionJob(
-            workspace_id=workspace.id,
+            user_id=user.id,
             company_id=other_company.id,
             status="completed",
             job_type="manual",
@@ -101,7 +95,7 @@ class WorkspaceIsolationDatabaseTests(unittest.TestCase):
             completed_at=now,
         )
         incident = CollectionIncident(
-            workspace_id=workspace.id,
+            user_id=user.id,
             fingerprint="e" * 64,
             status="open",
             data_quality="unavailable",
@@ -117,7 +111,7 @@ class WorkspaceIsolationDatabaseTests(unittest.TestCase):
         self.db.flush()
         draft = ResponseDraft(
             risk_event_id=event.id,
-            workspace_id=workspace.id,
+            user_id=user.id,
             source_company_id=other_company.id,
             target_main_company_id=other_company.id,
             generation_kind="main_response",

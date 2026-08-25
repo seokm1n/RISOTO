@@ -78,7 +78,7 @@ def _to_response(
     )
     return CompanyRead(
         id=company.id,
-        workspace_id=company.workspace_id,
+        user_id=company.user_id,
         name=company.name,
         ticker=company.ticker,
         company_role=company.company_role,
@@ -133,13 +133,13 @@ def list_companies(
     companies = db.execute(
         select(Company, Industry.name)
         .outerjoin(Industry, Industry.id == Company.industry_id)
-        .where(Company.workspace_id == auth.workspace_id)
+        .where(Company.user_id == auth.user_id)
         .order_by(Company.company_role, Company.created_at.desc())
     ).all()
     keyword_rows = db.scalars(
         select(CompanyKeyword)
         .join(Company, Company.id == CompanyKeyword.company_id)
-        .where(Company.workspace_id == auth.workspace_id)
+        .where(Company.user_id == auth.user_id)
         .order_by(CompanyKeyword.keyword_type, CompanyKeyword.value)
     ).all()
     grouped: dict[int, list[CompanyKeyword]] = {}
@@ -161,7 +161,7 @@ def get_company(
     row = db.execute(
         select(Company, Industry.name)
         .outerjoin(Industry, Industry.id == Company.industry_id)
-        .where(Company.id == company_id, Company.workspace_id == auth.workspace_id)
+        .where(Company.id == company_id, Company.user_id == auth.user_id)
     ).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
@@ -176,7 +176,7 @@ def create_or_update_company(
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> CompanyRead:
-    """현재 워크스페이스에 경쟁사를 등록한다."""
+    """현재 사용자의 경쟁사를 등록한다."""
     return _create_company(payload, "competitor", background_tasks, db, auth)
 
 
@@ -187,7 +187,7 @@ def create_main_company(
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> CompanyRead:
-    """메인 기업이 없는 워크스페이스에 최초 메인 기업을 등록한다."""
+    """메인 기업이 없는 사용자 계정에 최초 메인 기업을 등록한다."""
     return _create_company(payload, "main", background_tasks, db, auth)
 
 
@@ -201,11 +201,11 @@ def _create_company(
     """역할을 서버에서 고정해 기업을 생성하고 모니터링을 예약한다."""
     if company_role == "main" and db.scalar(
         select(Company.id).where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             Company.company_role == "main",
         ).limit(1)
     ) is not None:
-        raise HTTPException(status_code=409, detail="메인 기업은 워크스페이스당 하나만 등록할 수 있습니다.")
+        raise HTTPException(status_code=409, detail="메인 기업은 사용자당 하나만 등록할 수 있습니다.")
 
     industry = db.get(Industry, payload.industry_id)
     if industry is None:
@@ -214,7 +214,7 @@ def _create_company(
     normalized_name = normalize_company_name(payload.name)
     company = db.scalar(
         select(Company).where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             Company.normalized_name == normalized_name,
             Company.industry_id == industry.id,
         )
@@ -226,7 +226,7 @@ def _create_company(
     # 같은 산업의 정규화 기업명은 하나만 유지하고 재등록은 설정 보강으로 처리한다.
     if company is None:
         company = Company(
-            workspace_id=auth.workspace_id,
+            user_id=auth.user_id,
             name=payload.name,
             normalized_name=normalized_name,
             ticker=payload.ticker or None,
@@ -315,7 +315,7 @@ def activate_company(
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
         )
     )
     if company is None:
@@ -368,7 +368,7 @@ def update_company(
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
         )
     )
     if company is None:
@@ -381,7 +381,7 @@ def update_company(
     duplicate_company_id = db.scalar(
         select(Company.id).where(
             Company.id != company_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             Company.normalized_name == normalized_name,
             Company.industry_id == industry.id,
         )
@@ -394,7 +394,7 @@ def update_company(
     if payload.ticker and db.scalar(
         select(Company.id).where(
             Company.id != company_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             func.upper(Company.ticker) == payload.ticker,
         )
     ) is not None:
@@ -480,7 +480,7 @@ def delete_company(
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
         )
     )
     if company is None:

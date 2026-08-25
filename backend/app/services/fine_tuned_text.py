@@ -9,6 +9,7 @@ from threading import Lock
 from sqlalchemy import select
 
 from app.database import SessionLocal
+from app.config import get_settings
 from app.models import ModelVersion
 from app.risk_taxonomy import RISK_TYPES
 
@@ -17,6 +18,88 @@ _lock = Lock()
 _filter_cache: tuple[int, object, object, dict, object] | None = None
 _sentiment_cache: tuple[int, object, object, object] | None = None
 _risk_type_cache: tuple[int, object, object, object] | None = None
+_relevance_sequence_cache: tuple[str, object, object, object] | None = None
+_sentiment_sequence_cache: tuple[str, object, object, object] | None = None
+
+
+def _configured_path(value: str) -> Path | None:
+    """Return a usable explicitly configured local Hugging Face artifact path."""
+    path = Path(value).expanduser() if value.strip() else None
+    return path if path is not None and path.is_dir() else None
+
+
+def _label_probabilities(model: object, probabilities: list[float]) -> dict[str, float]:
+    """Map classifier outputs by config labels instead of assuming class order."""
+    raw_labels = getattr(model.config, "id2label", {})
+    labels = {
+        int(index): str(label).casefold()
+        for index, label in raw_labels.items()
+    }
+    return {
+        labels.get(index, f"label_{index}"): float(probability)
+        for index, probability in enumerate(probabilities)
+    }
+
+
+def _predict_local_sequence(
+    path: Path,
+    texts: list[str],
+    cache: tuple[str, object, object, object] | None,
+) -> tuple[tuple[str, object, object, object], list[dict[str, float]]]:
+    """Load a local sequence classifier lazily and return label-keyed probabilities."""
+    import torch
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    cache_key = str(path.resolve())
+    if cache is None or cache[0] != cache_key:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = AutoModelForSequenceClassification.from_pretrained(path, local_files_only=True)
+        model.to(device).eval()
+        tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True)
+        cache = (cache_key, model, tokenizer, device)
+    _, model, tokenizer, device = cache
+    rows: list[dict[str, float]] = []
+    for start in range(0, len(texts), 16):
+        batch = tokenizer(
+            texts[start:start + 16],
+            truncation=True,
+            max_length=384,
+            padding=True,
+            return_tensors="pt",
+        )
+        with torch.no_grad():
+            logits = model(
+                input_ids=batch["input_ids"].to(device),
+                attention_mask=batch["attention_mask"].to(device),
+            ).logits
+        rows.extend(
+            _label_probabilities(model, values)
+            for values in torch.softmax(logits, dim=-1).cpu().tolist()
+        )
+    return cache, rows
+
+
+def predict_relevance(text: str) -> dict | None:
+    """Return relevance probabilities from the shared local normal/filter model."""
+    global _relevance_sequence_cache
+    path = _configured_path(get_settings().pretrained_relevance_model_path)
+    if path is None or not text.strip():
+        return None
+    try:
+        with _lock:
+            _relevance_sequence_cache, rows = _predict_local_sequence(
+                path, [text], _relevance_sequence_cache
+            )
+        labels = rows[0]
+        if "normal" not in labels or "filter" not in labels:
+            return None
+        return {
+            "version": f"local:{path.name}",
+            "relevant": labels["normal"],
+            "irrelevant": labels["filter"],
+        }
+    except Exception:
+        return None
 
 
 def _active(task: str) -> ModelVersion | None:
@@ -93,6 +176,19 @@ def predict_filter(text: str) -> dict | None:
 def predict_sentiment(texts: list[str]) -> tuple[str, list[dict]] | None:
     """Return three-class soft probabilities from the promoted sentiment artifact."""
     global _sentiment_cache
+    global _sentiment_sequence_cache
+    configured_path = _configured_path(get_settings().pretrained_sentiment_model_path)
+    if configured_path is not None:
+        try:
+            with _lock:
+                _sentiment_sequence_cache, rows = _predict_local_sequence(
+                    configured_path, texts, _sentiment_sequence_cache
+                )
+            required = {"positive", "neutral", "negative"}
+            if all(required.issubset(row) for row in rows):
+                return f"local:{configured_path.name}", rows
+        except Exception:
+            pass
     version = _active("sentiment")
     if version is None or not Path(version.artifact_path).is_dir():
         return None
@@ -126,13 +222,7 @@ def predict_sentiment(texts: list[str]) -> tuple[str, list[dict]] | None:
                     attention_mask=batch["attention_mask"].to(device),
                 ).logits
             for probabilities in torch.softmax(logits, dim=-1).cpu().tolist():
-                output.append(
-                    {
-                        "positive": probabilities[0],
-                        "neutral": probabilities[1],
-                        "negative": probabilities[2],
-                    }
-                )
+                output.append(_label_probabilities(model, probabilities))
         return version.version, output
     except Exception:
         return None

@@ -18,7 +18,7 @@ import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.services.klue_nli import KlueNliClassifier, get_klue_nli_classifier
-from app.services.fine_tuned_text import predict_filter
+from app.services.fine_tuned_text import predict_filter, predict_relevance
 
 
 # 비교 전에 외부 기사 본문을 정리하고 토큰화하는 전처리 규칙이다.
@@ -383,8 +383,29 @@ def classify_article(
     ai_advertising: float | None = None
     nli_labels: dict[str, float] | None = None
     nli_error: str | None = None
-    fine_tuned = predict_filter(text) if text else None
-    if fine_tuned is not None:
+    local_relevance = (
+        predict_relevance(text)
+        if text and config.ai_enabled and nli_classifier is None
+        else None
+    )
+    fine_tuned = predict_filter(text) if text and local_relevance is None else None
+    if local_relevance is not None:
+        model_relevance = float(local_relevance["relevant"])
+        if relevance_score > 0:
+            relevance_score = min(
+                1.0, 0.35 * relevance_score + 0.65 * model_relevance
+            )
+        else:
+            # 회사·제품 언급이 전혀 없는 글은 도메인 모델만으로 자동 승인하지 않는다.
+            relevance_score = min(0.30, 0.55 * model_relevance)
+        ai_used = True
+        ai_relevance = model_relevance
+        nli_labels = {
+            "substantive": model_relevance,
+            "incidental": 0.0,
+            "unrelated": float(local_relevance["irrelevant"]),
+        }
+    elif fine_tuned is not None:
         rel = fine_tuned["relevance"]
         relevance_score = float(rel["relevant"] + 0.5 * rel["incidental"])
         advertising_score = float(fine_tuned["advertisement"]["yes"])
@@ -398,7 +419,7 @@ def classify_article(
             "advertisement": advertising_score,
         }
     # 규칙 점수를 NLI 문맥 판정으로 보정하되 기업 언급이 전혀 없으면 자동 승인하지 않는다.
-    if fine_tuned is None and nli is not None and text:
+    if local_relevance is None and fine_tuned is None and nli is not None and text:
         company_name = str(getattr(company, "name", "해당 기업"))
         relevance_hypotheses = [
             f"이 글의 중심 주제는 {company_name}의 사업, 경영, 제품 또는 기업 위험이다.",

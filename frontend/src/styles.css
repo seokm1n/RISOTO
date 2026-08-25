@@ -142,6 +142,35 @@ button { cursor: pointer; }
 .account-button strong { color: #a84f32; font-size: .65rem; }
 .account-button:hover strong, .account-button:focus-visible strong { text-decoration: underline; text-underline-offset: 3px; }
 .account-button:focus-visible { outline: 2px solid rgba(168,79,50,.25); outline-offset: 4px; }
+.account-button.active strong { color: #873b26; text-decoration: underline; text-underline-offset: 3px; }
+.logout-button { min-height: 34px; border: 1px solid rgba(48,43,41,.18); background: #f8f5ec; padding: 7px 10px; color: #6f625d; font-size: .62rem; font-weight: 800; }
+.logout-button:hover, .logout-button:focus-visible { border-color: #a84f32; color: #a84f32; outline: 2px solid rgba(168,79,50,.18); outline-offset: 2px; }
+
+/* 마이페이지 계정 확인 및 비밀번호 변경 */
+.my-page { max-width: 1120px; }
+.my-page-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.my-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid rgba(48,43,41,.12); }
+.my-card-head h2 { margin: 9px 0 0; font: 500 1.55rem/1.15 var(--font-soft); letter-spacing: -.04em; }
+.account-readonly-list { display: grid; gap: 0; margin: 0; }
+.account-readonly-list > div { display: grid; gap: 8px; padding: 24px 0; border-bottom: 1px solid rgba(48,43,41,.1); }
+.account-readonly-list > div:last-child { padding-bottom: 0; border-bottom: 0; }
+.account-readonly-list dt { color: #817a75; font-size: .66rem; font-weight: 800; }
+.account-readonly-list dd { overflow-wrap: anywhere; margin: 0; color: #3f3531; font-size: 1rem; font-weight: 800; }
+.account-readonly-list small { color: #8b847f; font-size: .65rem; line-height: 1.5; }
+.password-card-description { margin: 22px 0; color: #766f6a; font-size: .72rem; line-height: 1.6; }
+.password-change-form { display: grid; }
+.password-change-form > label { margin: 0 0 9px; color: #403633; font-size: .72rem; font-weight: 800; }
+.password-change-form > label:not(:first-child) { margin-top: 19px; }
+.my-password-field { display: grid; min-height: 50px; grid-template-columns: minmax(0,1fr) auto; border: 1px solid #c9c6bb; background: #fffdf8; }
+.my-password-field:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px var(--focus-ring); }
+.my-password-field.invalid { border-color: #b84c35; }
+.my-password-field input { min-width: 0; border: 0; outline: 0; background: transparent; padding: 0 14px; color: #302b29; }
+.my-password-field button { border: 0; background: transparent; padding: 0 14px; color: #6f5b54; font-size: .65rem; font-weight: 800; }
+.password-help, .password-mismatch { margin-top: 8px; font-size: .64rem; }
+.password-help { color: #8b847f; }
+.password-mismatch { color: #a23d2b; font-weight: 800; }
+.password-change-form .notice { margin: 18px 0 0; }
+.password-change-form .submit-button { margin-top: 22px; }
 
 /* 역할별 메인과 공통 주요 동작 */
 .home-workspace { max-width: 1320px; }
@@ -497,6 +526,7 @@ button { cursor: pointer; }
   .edit-form-grid { grid-template-columns: 1fr; }.edit-field-wide { grid-column: auto; }
   .admin-page-tabs { width: calc(100% - 6vw); }
   .collection-summary-grid, .model-layout { grid-template-columns: 1fr; }
+  .my-page-grid { grid-template-columns: 1fr; }
   .collection-company-row { grid-template-columns: minmax(190px, .8fr) minmax(380px, 1.2fr); }
   .collection-row-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .company-card { grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); }

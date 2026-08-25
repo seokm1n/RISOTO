@@ -34,9 +34,11 @@ from app.services.risk_analysis import resolve_production_risk_detector
 router = APIRouter(tags=["governance"])
 
 
+@router.get("/model-versions", response_model=list[ModelVersionRead])
 def list_model_versions(
     task: str | None = None,
     db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
 ) -> list[ModelVersion]:
     query = select(ModelVersion)
     if task:
@@ -100,22 +102,39 @@ def get_risk_detection_status(
     )
 
 
-def model_training_readiness(db: Session = Depends(get_db)) -> dict:
+@router.get("/model-training-readiness", response_model=ModelTrainingReadinessRead)
+def model_training_readiness(
+    db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
+) -> dict:
     """Expose candidate-training gates without launching a GPU job."""
     return build_training_readiness(db)
 
 
-def latest_model_monitoring_check(db: Session = Depends(get_db)) -> ModelOperationCheck:
+@router.get("/model-monitoring", response_model=ModelOperationCheckRead)
+def latest_model_monitoring_check(
+    db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
+) -> ModelOperationCheck:
     """Return today's persisted quality, label-distribution and drift check."""
     return ensure_daily_model_check(db)
 
 
-def rerun_model_monitoring_check(db: Session = Depends(get_db)) -> ModelOperationCheck:
+@router.post("/model-monitoring/check", response_model=ModelOperationCheckRead)
+def rerun_model_monitoring_check(
+    db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
+) -> ModelOperationCheck:
     """Recompute today's report after an operator changes labels or collection state."""
     return ensure_daily_model_check(db, force=True)
 
 
-def promote_model(model_id: int, db: Session = Depends(get_db)) -> ModelVersion:
+@router.post("/model-versions/{model_id}/promote", response_model=ModelVersionRead)
+def promote_model(
+    model_id: int,
+    db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
+) -> ModelVersion:
     model = db.get(ModelVersion, model_id)
     if model is None:
         raise HTTPException(status_code=404, detail="모델 버전을 찾을 수 없습니다.")
@@ -159,7 +178,7 @@ def create_response_draft(
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
             RiskEvent.id == risk_event_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
         )
     )
     if event is None:
@@ -181,7 +200,7 @@ def list_response_drafts(
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
             RiskEvent.id == risk_event_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
         )
     )
     if event_exists is None:
@@ -191,7 +210,7 @@ def list_response_drafts(
             select(ResponseDraft)
             .where(
                 ResponseDraft.risk_event_id == risk_event_id,
-                ResponseDraft.workspace_id == auth.workspace_id,
+                ResponseDraft.user_id == auth.user_id,
             )
             .order_by(ResponseDraft.created_at.desc())
         )
@@ -211,8 +230,8 @@ def _review_draft(
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
             ResponseDraft.id == draft_id,
-            ResponseDraft.workspace_id == auth.workspace_id,
-            Company.workspace_id == auth.workspace_id,
+            ResponseDraft.user_id == auth.user_id,
+            Company.user_id == auth.user_id,
         )
     )
     if draft is None:

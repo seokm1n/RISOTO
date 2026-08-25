@@ -66,7 +66,7 @@ def article_review_candidates(
         .join(RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id)
         .join(Company, Company.id == ArticleFilterResult.company_id)
         .where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             ~exists(
                 select(ArticleLabel.id).where(
                     ArticleLabel.company_id == ArticleFilterResult.company_id,
@@ -109,7 +109,7 @@ def save_article_label(
         select(ArticleFilterResult.id)
         .join(Company, Company.id == ArticleFilterResult.company_id)
         .where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             ArticleFilterResult.company_id == payload.company_id,
             ArticleFilterResult.raw_article_id == payload.raw_article_id,
         ).limit(1)
@@ -150,7 +150,7 @@ def risk_review_candidates(
             select(RiskEvent)
             .join(Company, Company.id == RiskEvent.company_id)
             .where(
-                Company.workspace_id == auth.workspace_id,
+                Company.user_id == auth.user_id,
                 RiskEvent.status != "legacy_candidate",
                 ~exists(
                     select(RiskEventLabel.id).where(
@@ -178,7 +178,7 @@ def save_risk_event_label(
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
             RiskEvent.id == risk_event_id,
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
         )
     )
     if event is None:

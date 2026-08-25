@@ -18,12 +18,12 @@ def list_notifications(
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> NotificationListRead:
-    """Return risk notifications owned by the current workspace."""
+    """Return risk notifications owned by the current user."""
     risk_rows = db.execute(
         select(RiskEvent, Company)
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             RiskEvent.status.in_(("open", "monitoring")),
         )
     ).all()

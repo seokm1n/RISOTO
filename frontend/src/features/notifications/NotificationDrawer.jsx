@@ -23,7 +23,7 @@ function NotificationDrawer({ open, onClose, notifications, error, onRiskOpen })
   return <div className="notification-layer">
     <button className="notification-backdrop" type="button" aria-label="알림 패널 닫기" onClick={onClose} />
     <aside className="notification-drawer" id="notification-drawer" role="dialog" aria-modal="true" aria-labelledby="notification-drawer-title">
-      <div className="notification-drawer-head"><div><span className="eyebrow">NOTIFICATION CENTER</span><h2 id="notification-drawer-title">위험 알림</h2><p>확인이 필요한 워크스페이스 위험 신호입니다.</p></div><button className="notification-close" type="button" onClick={onClose} aria-label="알림 닫기">×</button></div>
+      <div className="notification-drawer-head"><div><span className="eyebrow">NOTIFICATION CENTER</span><h2 id="notification-drawer-title">위험 알림</h2><p>확인이 필요한 기업 위험 신호입니다.</p></div><button className="notification-close" type="button" onClick={onClose} aria-label="알림 닫기">×</button></div>
       <div className="notification-drawer-tabs" aria-label="알림 유형"><span className="active">위험 <strong>{riskCount}</strong></span></div>
       <div className="notification-drawer-tools"><span>읽지 않음 {allowedItems.filter((item) => !readIds.has(item.id)).length}</span><button type="button" onClick={() => setReadIds(new Set(allowedItems.map((item) => item.id)))}>모두 읽음</button></div>
       {error && <div className="notification-load-error" role="status">알림을 갱신하지 못했습니다. 마지막 결과를 표시합니다.</div>}

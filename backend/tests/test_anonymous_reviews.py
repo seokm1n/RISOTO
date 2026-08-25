@@ -89,7 +89,9 @@ class AnonymousReviewDatabaseTests(unittest.TestCase):
                 ArticleFilterResult.company_id,
                 ArticleFilterResult.raw_article_id,
             )
+            .join(Company, Company.id == ArticleFilterResult.company_id)
             .where(
+                Company.user_id == self.auth.user_id,
                 ~exists(
                     select(ArticleLabel.id).where(
                         ArticleLabel.company_id == ArticleFilterResult.company_id,
@@ -140,7 +142,7 @@ class AnonymousReviewDatabaseTests(unittest.TestCase):
 
         response_draft = ResponseDraft(
             risk_event_id=event.id,
-            workspace_id=self.auth.workspace_id,
+            user_id=self.auth.user_id,
             source_company_id=self.company_id,
             target_main_company_id=self.company_id,
             generation_kind="main_response",

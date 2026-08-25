@@ -39,13 +39,30 @@ def _fingerprint(title: str, published_at: datetime | None) -> str:
     return hashlib.sha256(f"{normalized}|{when.date().isoformat()}".encode("utf-8")).hexdigest()
 
 
+def _existing_assignment(
+    db: Session,
+    article_id: int,
+) -> StoryClusterArticle | None:
+    """Find both flushed and pending assignments in the current transaction."""
+    # Session.get() does not reliably return a newly added, still-pending object.
+    # Collection can encounter one article through several search queries before
+    # the surrounding transaction flushes, so inspect Session.new first.
+    for pending in db.new:
+        if (
+            isinstance(pending, StoryClusterArticle)
+            and pending.article_id == article_id
+        ):
+            return pending
+    return db.get(StoryClusterArticle, article_id)
+
+
 def assign_story_cluster(
     db: Session,
     article: NewsArticle,
     settings: Settings | None = None,
 ) -> int:
     """Assign an article to the closest recent story and always retain the article row."""
-    existing = db.get(StoryClusterArticle, article.id)
+    existing = _existing_assignment(db, article.id)
     if existing is not None:
         return existing.story_cluster_id
 

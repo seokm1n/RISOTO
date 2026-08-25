@@ -11,7 +11,7 @@ from uuid import uuid4
 from sqlalchemy import delete, func, select
 
 from app.database import SessionLocal, engine
-from app.models import NewsArticle, RawNewsArticle
+from app.models import CollectionJob, NewsArticle, RawNewsArticle
 from app.services.article_filtering import FilterDecision
 from app.services.monitoring_pipeline import (
     _curated_for_raw_or_url,
@@ -22,6 +22,7 @@ from app.services.monitoring_pipeline import (
     build_queries,
     completed_window_start,
     query_kind_for,
+    run_collection,
     run_due_collection_retries,
 )
 
@@ -262,6 +263,61 @@ class QueryBuildingTests(unittest.TestCase):
         )
 
 
+class CollectionJobOwnerTests(unittest.TestCase):
+    """수집 작업이 회사와 같은 사용자 소유로 저장되는지 검증한다."""
+
+    def test_run_collection_copies_company_owner_to_job(self):
+        """파이프라인이 만든 작업은 대상 회사의 user_id를 이어받는다."""
+        class StopAfterJobFlush(Exception):
+            pass
+
+        class FakeSession:
+            def __init__(self):
+                self.added = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def get(self, _model, _company_id):
+                return SimpleNamespace(id=19, user_id=73, name="예시기업")
+
+            def scalars(self, _query):
+                return []
+
+            def add(self, item):
+                self.added.append(item)
+
+            def flush(self):
+                raise StopAfterJobFlush
+
+        db = FakeSession()
+        settings = SimpleNamespace(collection_window_minutes=15)
+        requested_from = datetime(2026, 8, 25, tzinfo=timezone.utc)
+        requested_to = datetime(2026, 8, 25, 1, tzinfo=timezone.utc)
+
+        with patch(
+            "app.services.monitoring_pipeline.SessionLocal",
+            return_value=db,
+        ), patch(
+            "app.services.monitoring_pipeline.get_settings",
+            return_value=settings,
+        ), self.assertRaises(StopAfterJobFlush):
+            run_collection(
+                19,
+                "manual",
+                requested_from,
+                requested_to=requested_to,
+                sources=["naver_api_hub"],
+            )
+
+        job = next(item for item in db.added if isinstance(item, CollectionJob))
+        self.assertEqual(job.user_id, 73)
+        self.assertEqual(job.company_id, 19)
+
+
 class CollectionRetryTests(unittest.TestCase):
     """수집 장애 재시도가 실제 제공자를 다시 호출하는지 검증한다."""
 
@@ -279,6 +335,7 @@ class CollectionRetryTests(unittest.TestCase):
         scheduled_for = datetime(2026, 8, 20, 0, 0, tzinfo=timezone.utc)
         incident = SimpleNamespace(
             id=27,
+            user_id=73,
             sources=["pipeline"],
             scheduled_for=scheduled_for,
             affected_company_ids=[14],
@@ -295,6 +352,9 @@ class CollectionRetryTests(unittest.TestCase):
 
             def scalars(self, _query):
                 return [incident]
+
+            def get(self, _model, company_id):
+                return SimpleNamespace(id=company_id, user_id=73)
 
         with patch(
             "app.services.monitoring_pipeline.SessionLocal",
@@ -318,6 +378,55 @@ class CollectionRetryTests(unittest.TestCase):
         self.assertEqual(retried, 1)
         self.assertEqual(run_collection.call_args.kwargs["sources"], ["kakao_daum"])
         complete_retry.assert_called_once_with(27, [14], settings)
+
+    def test_retry_skips_cross_user_and_dangling_company_ids(self):
+        scheduled_for = datetime(2026, 8, 20, 0, 0, tzinfo=timezone.utc)
+        incident = SimpleNamespace(
+            id=28,
+            user_id=73,
+            sources=["pipeline"],
+            scheduled_for=scheduled_for,
+            affected_company_ids=[15, 999],
+            retry_count=1,
+        )
+        settings = SimpleNamespace(realtime_overlap_minutes=5)
+
+        class FakeSession:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def scalars(self, _query):
+                return [incident]
+
+            def get(self, _model, company_id):
+                if company_id == 15:
+                    return SimpleNamespace(id=15, user_id=88)
+                return None
+
+        with patch(
+            "app.services.monitoring_pipeline.SessionLocal",
+            return_value=FakeSession(),
+        ), patch(
+            "app.services.monitoring_pipeline.get_settings",
+            return_value=settings,
+        ), patch(
+            "app.services.monitoring_pipeline._realtime_sources",
+            return_value=["kakao_daum"],
+        ), patch(
+            "app.services.monitoring_pipeline.run_collection",
+        ) as run_collection, patch(
+            "app.services.monitoring_pipeline.complete_retry",
+        ) as complete_retry, patch(
+            "app.services.monitoring_pipeline.dispatch_pending_notifications",
+        ):
+            retried = run_due_collection_retries()
+
+        self.assertEqual(retried, 0)
+        run_collection.assert_not_called()
+        complete_retry.assert_called_once_with(28, [15, 999], settings)
 
 
 if __name__ == "__main__":

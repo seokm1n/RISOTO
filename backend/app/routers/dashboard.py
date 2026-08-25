@@ -45,13 +45,13 @@ def get_dashboard_overview(
 
     total_companies = db.scalar(
         select(func.count()).select_from(Company).where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             Company.monitoring_status != "archived",
         )
     ) or 0
     active_companies = db.scalar(
         select(func.count()).select_from(Company).where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             Company.monitoring_status == "active",
         )
     ) or 0
@@ -69,13 +69,13 @@ def get_dashboard_overview(
         .select_from(CompanyArticleMatch)
         .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
         .join(Company, Company.id == CompanyArticleMatch.company_id)
-        .where(Company.workspace_id == auth.workspace_id, article_time >= cutoff)
+        .where(Company.user_id == auth.user_id, article_time >= cutoff)
     ).mappings().one()
     risk_count = db.scalar(
         select(func.count()).select_from(RiskEvent).join(
             Company, Company.id == RiskEvent.company_id
         ).where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             RiskEvent.detected_at >= cutoff,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
@@ -97,7 +97,7 @@ def get_dashboard_overview(
         .select_from(CompanyArticleMatch)
         .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
         .join(Company, Company.id == CompanyArticleMatch.company_id)
-        .where(Company.workspace_id == auth.workspace_id, article_time >= cutoff)
+        .where(Company.user_id == auth.user_id, article_time >= cutoff)
         .group_by(day)
         .order_by(day)
     ).mappings().all()
@@ -109,7 +109,7 @@ def get_dashboard_overview(
             )
             .join(Company, Company.id == RiskEvent.company_id)
             .where(
-                Company.workspace_id == auth.workspace_id,
+                Company.user_id == auth.user_id,
                 RiskEvent.detected_at >= cutoff,
                 RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
             )
@@ -139,7 +139,7 @@ def get_dashboard_overview(
         .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
         .join(Company, Company.id == CompanyArticleMatch.company_id)
         .where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             article_time >= cutoff,
             NewsArticle.sentiment_label.is_not(None),
         )
@@ -195,7 +195,7 @@ def get_dashboard_overview(
         )
         .select_from(Company)
         .where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             Company.monitoring_status != "archived",
         )
         .order_by(company_article_count.desc(), Company.name)
@@ -206,7 +206,7 @@ def get_dashboard_overview(
         select(RiskEvent)
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             RiskEvent.detected_at >= cutoff,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
@@ -217,7 +217,7 @@ def get_dashboard_overview(
     recent_incidents = list(
         db.scalars(
             select(CollectionIncident)
-            .where(CollectionIncident.workspace_id == auth.workspace_id)
+            .where(CollectionIncident.user_id == auth.user_id)
             .order_by(CollectionIncident.detected_at.desc())
             .limit(10)
         )
@@ -225,7 +225,6 @@ def get_dashboard_overview(
 
     return DashboardOverview(
         days=days,
-        competitor_company_label=auth.workspace.competitor_company_label,
         total_companies=total_companies,
         active_companies=active_companies,
         article_count=totals["article_count"],

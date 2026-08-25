@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _MAX_REVENUE_100M_KRW = Decimal("92233720368.54")
@@ -40,11 +40,10 @@ class HealthResponse(BaseModel):
 
 
 class AuthSignupRequest(BaseModel):
-    """새 사용자와 기본 워크스페이스를 함께 만드는 회원가입 요청."""
+    """새 사용자 계정을 만드는 회원가입 요청."""
 
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=128)
-    workspace_name: str = Field(default="내 워크스페이스", min_length=1, max_length=120)
 
     @field_validator("email")
     @classmethod
@@ -53,15 +52,6 @@ class AuthSignupRequest(BaseModel):
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
             raise ValueError("올바른 이메일 주소를 입력해 주세요.")
         return normalized
-
-    @field_validator("workspace_name")
-    @classmethod
-    def normalize_workspace_name(cls, value: str) -> str:
-        normalized = " ".join(value.split())
-        if not normalized:
-            raise ValueError("워크스페이스 이름은 비어 있을 수 없습니다.")
-        return normalized
-
 
 class AuthLoginRequest(BaseModel):
     """이메일과 비밀번호 로그인 요청."""
@@ -75,32 +65,26 @@ class AuthLoginRequest(BaseModel):
         return value.strip().casefold()
 
 
+class AuthPasswordChangeRequest(BaseModel):
+    """현재 로그인 사용자의 새 비밀번호와 확인값을 검증한다."""
+
+    new_password: str = Field(min_length=8, max_length=128)
+    new_password_confirmation: str = Field(min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_password_confirmation(self):
+        if self.new_password != self.new_password_confirmation:
+            raise ValueError("새 비밀번호와 비밀번호 확인이 일치하지 않습니다.")
+        return self
+
+
 class AuthUserRead(BaseModel):
     id: int
     email: str
 
 
-class WorkspaceRead(BaseModel):
-    id: int
-    name: str
-    competitor_company_label: str
-
-
-class WorkspaceUpdate(BaseModel):
-    competitor_company_label: str = Field(min_length=1, max_length=30)
-
-    @field_validator("competitor_company_label")
-    @classmethod
-    def normalize_competitor_company_label(cls, value: str) -> str:
-        normalized = " ".join(value.split())
-        if not normalized:
-            raise ValueError("경쟁사 분류명은 비어 있을 수 없습니다.")
-        return normalized
-
-
 class AuthMeRead(BaseModel):
     user: AuthUserRead
-    workspace: WorkspaceRead
     has_main_company: bool
     csrf_token: str
 
@@ -213,7 +197,7 @@ class CompanyRead(BaseModel):
     """키워드와 모니터링 상태를 포함한 기업 상세 응답."""
 
     id: int
-    workspace_id: int
+    user_id: int
     name: str
     ticker: str | None
     company_role: Literal["main", "competitor"]
@@ -705,7 +689,7 @@ class ResponseDraftRead(BaseModel):
 
     id: int
     risk_event_id: int
-    workspace_id: int | None = None
+    user_id: int
     source_company_id: int | None = None
     target_main_company_id: int | None = None
     generation_kind: Literal["main_response", "competitor_impact"] | None = None
@@ -771,7 +755,6 @@ class DashboardOverview(BaseModel):
     """선택 기간의 전체 대시보드 데이터 묶음."""
 
     days: int
-    competitor_company_label: str
     total_companies: int
     active_companies: int
     article_count: int

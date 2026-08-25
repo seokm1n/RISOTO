@@ -12,13 +12,13 @@ from sqlalchemy.orm import Session
 from app.auth import CurrentAuth, create_auth_session, require_auth
 from app.config import get_settings
 from app.database import get_db
-from app.models import Company, User, Workspace, WorkspaceMember
+from app.models import Company, User
 from app.schemas import (
     AuthLoginRequest,
     AuthMeRead,
+    AuthPasswordChangeRequest,
     AuthSignupRequest,
     AuthUserRead,
-    WorkspaceRead,
 )
 
 
@@ -51,17 +51,12 @@ def _set_session_cookies(response: Response, raw_token: str, raw_csrf_token: str
 def _auth_read(db: Session, auth: CurrentAuth) -> AuthMeRead:
     has_main_company = db.scalar(
         select(Company.id).where(
-            Company.workspace_id == auth.workspace_id,
+            Company.user_id == auth.user_id,
             Company.company_role == "main",
         ).limit(1)
     ) is not None
     return AuthMeRead(
         user=AuthUserRead(id=auth.user.id, email=auth.user.email),
-        workspace=WorkspaceRead(
-            id=auth.workspace.id,
-            name=auth.workspace.name,
-            competitor_company_label=auth.workspace.competitor_company_label,
-        ),
         has_main_company=has_main_company,
         csrf_token=auth.csrf_token,
     )
@@ -77,16 +72,13 @@ def signup(
         raise HTTPException(status_code=409, detail="이미 가입된 이메일입니다.")
 
     user = User(email=payload.email, password_hash=password_hasher.hash(payload.password))
-    workspace = Workspace(name=payload.workspace_name, competitor_company_label="경쟁사")
-    db.add_all([user, workspace])
+    db.add(user)
     try:
         db.flush()
-        db.add(WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="member"))
-        auth_session, raw_token, raw_csrf_token = create_auth_session(db, user.id, workspace.id)
+        auth_session, raw_token, raw_csrf_token = create_auth_session(db, user.id)
         user.last_login_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(user)
-        db.refresh(workspace)
         db.refresh(auth_session)
     except IntegrityError as exc:
         db.rollback()
@@ -97,7 +89,6 @@ def signup(
         db,
         CurrentAuth(
             user=user,
-            workspace=workspace,
             session=auth_session,
             csrf_token=raw_csrf_token,
         ),
@@ -120,21 +111,10 @@ def login(
     if not valid or user is None:
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
 
-    membership = db.execute(
-        select(WorkspaceMember, Workspace)
-        .join(Workspace, Workspace.id == WorkspaceMember.workspace_id)
-        .where(WorkspaceMember.user_id == user.id)
-        .order_by(WorkspaceMember.joined_at, WorkspaceMember.workspace_id)
-        .limit(1)
-    ).one_or_none()
-    if membership is None:
-        raise HTTPException(status_code=403, detail="사용 가능한 워크스페이스가 없습니다.")
-    _, workspace = membership
-
     if password_hasher.check_needs_rehash(user.password_hash):
         user.password_hash = password_hasher.hash(payload.password)
     user.last_login_at = datetime.now(timezone.utc)
-    auth_session, raw_token, raw_csrf_token = create_auth_session(db, user.id, workspace.id)
+    auth_session, raw_token, raw_csrf_token = create_auth_session(db, user.id)
     db.commit()
     db.refresh(auth_session)
     _set_session_cookies(response, raw_token, raw_csrf_token)
@@ -142,7 +122,6 @@ def login(
         db,
         CurrentAuth(
             user=user,
-            workspace=workspace,
             session=auth_session,
             csrf_token=raw_csrf_token,
         ),
@@ -155,6 +134,18 @@ def me(
     auth: CurrentAuth = Depends(require_auth),
 ) -> AuthMeRead:
     return _auth_read(db, auth)
+
+
+@router.put("/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: AuthPasswordChangeRequest,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> Response:
+    """별도 본인 인증 없이 로그인 세션에서 새 비밀번호를 저장한다."""
+    auth.user.password_hash = password_hasher.hash(payload.new_password)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

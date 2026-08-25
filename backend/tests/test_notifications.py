@@ -70,7 +70,7 @@ class NotificationDatabaseTests(unittest.TestCase):
         if self.artifact_path is not None:
             self.artifact_path.unlink(missing_ok=True)
 
-    def test_only_current_workspace_open_risks_are_returned_read_only(self):
+    def test_only_current_user_open_risks_are_returned_read_only(self):
         start = datetime(2093, 1, 1, tzinfo=timezone.utc)
         open_event = RiskEvent(
             company_id=self.company_id,

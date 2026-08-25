@@ -21,8 +21,9 @@ class FakeNli:
 class KlueRobertaSentimentTests(unittest.TestCase):
     """긍정·부정·중립 경계와 점수 방향을 검증한다."""
 
+    @patch("app.services.sentiment.predict_sentiment", return_value=None)
     @patch("app.services.sentiment.get_klue_nli_classifier", return_value=FakeNli())
-    def test_positive_negative_and_neutral_mapping(self, _get_classifier):
+    def test_positive_negative_and_neutral_mapping(self, _get_classifier, _predict_sentiment):
         """NLI 확률이 긍정·부정·중립 레이블과 점수로 올바르게 매핑되는지 검증한다."""
         analyzer = KlueRobertaSentimentAnalyzer("test-model", False)
         results = analyzer.analyze(["호재", "악재", "공지"])

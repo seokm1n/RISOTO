@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # NLI 기반 감성 분석 모델 설정
     sentiment_model_name: str = "Huffon/klue-roberta-base-nli"
     sentiment_allow_model_download: bool = True
+    pretrained_sentiment_model_path: str = ""
 
     # 실시간 수집 일정과 이상 탐지 기준선 최소 조건
     realtime_interval_seconds: int = 900
@@ -53,6 +54,7 @@ class Settings(BaseSettings):
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
     article_filter_allow_model_download: bool = True
+    pretrained_relevance_model_path: str = ""
     article_filter_duplicate_threshold: float = 0.92
     article_filter_advertising_reject_threshold: float = 0.85
     article_filter_advertising_review_threshold: float = 0.55

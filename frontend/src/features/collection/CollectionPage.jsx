@@ -10,7 +10,7 @@ import {
   formatNumber,
 } from "../../shared/presentation";
 
-// 전체 수집기 상태와 기업별 실시간 수집 현황을 조회하고 워크스페이스 멤버에게 제어 기능을 제공한다.
+// 전체 수집기 상태와 사용자별 기업의 실시간 수집 현황 및 제어 기능을 제공한다.
 export default function CollectionPage({ onOpenCompany }) {
   const [companies, setCompanies] = useState([]);
   const [summaries, setSummaries] = useState({});

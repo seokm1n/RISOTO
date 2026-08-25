@@ -115,7 +115,7 @@ def record_attempts(
         success_count = int(stats.get("successful_query_count", 0))
         messages = [sanitize_error(item) for item in stats.get("errors", []) if item]
         attempt = CollectionAttempt(
-            workspace_id=job.workspace_id,
+            user_id=job.user_id,
             job_id=job.id,
             company_id=job.company_id,
             source=source,
@@ -231,13 +231,13 @@ def _upsert_incident(
     notify: bool,
     settings: Settings,
 ) -> CollectionIncident:
-    workspace_id = failed_attempts[0].workspace_id
+    user_id = failed_attempts[0].user_id
     sources = sorted({item.source for item in failed_attempts})
     codes = sorted({item.error_code or "provider_error" for item in failed_attempts})
     fingerprint = _incident_fingerprint(data_quality, sources, codes)
     incident = db.scalar(
         select(CollectionIncident).where(
-            CollectionIncident.workspace_id == workspace_id,
+            CollectionIncident.user_id == user_id,
             CollectionIncident.fingerprint == fingerprint,
             CollectionIncident.scheduled_for == scheduled_for,
             CollectionIncident.status.in_(["open", "retrying"]),
@@ -250,7 +250,7 @@ def _upsert_incident(
     if incident is None:
         first_delay = settings.collection_retry_delays[0] if data_quality == "unavailable" else None
         incident = CollectionIncident(
-            workspace_id=workspace_id,
+            user_id=user_id,
             fingerprint=fingerprint,
             status="retrying" if first_delay else "open",
             data_quality=data_quality,
@@ -293,7 +293,7 @@ def recover_company_incidents(
     incidents = list(
         db.scalars(
             select(CollectionIncident).where(
-                CollectionIncident.workspace_id == company.workspace_id,
+                CollectionIncident.user_id == company.user_id,
                 CollectionIncident.status.in_(["open", "retrying"]),
             )
         )
@@ -400,7 +400,7 @@ def record_pipeline_failure(
         if company is None:
             return None
         job = CollectionJob(
-            workspace_id=company.workspace_id,
+            user_id=company.user_id,
             company_id=company_id,
             status="failed",
             job_type="realtime",
@@ -438,10 +438,10 @@ def record_pipeline_failure(
 
 def complete_retry(
     incident_id: int,
-    succeeded_company_ids: list[int],
+    resolved_company_ids: list[int],
     settings: Settings | None = None,
 ) -> None:
-    """Advance an aggregated outage once after all affected companies were retried."""
+    """Advance an outage after successful retries and invalid references are resolved."""
     settings = settings or get_settings()
     with SessionLocal() as db:
         incident = db.get(CollectionIncident, incident_id)
@@ -450,7 +450,7 @@ def complete_retry(
         remaining = [
             company_id
             for company_id in (incident.affected_company_ids or [])
-            if company_id not in set(succeeded_company_ids)
+            if company_id not in set(resolved_company_ids)
         ]
         incident.affected_company_ids = remaining
         now = datetime.now(timezone.utc)

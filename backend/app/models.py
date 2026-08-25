@@ -50,49 +50,6 @@ class User(TimestampMixin, Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class Workspace(TimestampMixin, Base):
-    """한 조직의 기업·위험 데이터를 격리하는 최상위 작업 공간이다."""
-
-    __tablename__ = "workspaces"
-    __table_args__ = (
-        CheckConstraint(
-            "char_length(btrim(competitor_company_label)) BETWEEN 1 AND 30",
-            name="ck_workspaces_competitor_company_label",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    competitor_company_label: Mapped[str] = mapped_column(
-        String(30), nullable=False, default="경쟁사", server_default="경쟁사"
-    )
-
-
-class WorkspaceMember(Base):
-    """사용자와 워크스페이스의 소속 관계를 저장한다."""
-
-    __tablename__ = "workspace_members"
-    __table_args__ = (
-        CheckConstraint("role = 'member'", name="ck_workspace_members_role"),
-        Index("ix_workspace_members_user_id", "user_id"),
-    )
-
-    workspace_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("workspaces.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    user_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")
-    joined_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-
 class AuthSession(Base):
     """브라우저에 전달한 불투명 세션 토큰의 해시와 CSRF 토큰을 저장한다."""
 
@@ -105,9 +62,6 @@ class AuthSession(Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    workspace_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     csrf_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -163,27 +117,27 @@ class Company(TimestampMixin, Base):
             name="ck_companies_positive_annual_revenue",
         ),
         UniqueConstraint(
-            "workspace_id",
+            "user_id",
             "normalized_name",
             "industry_id",
-            name="uq_companies_workspace_normalized_industry",
+            name="uq_companies_user_normalized_industry",
         ),
         UniqueConstraint(
-            "workspace_id", "ticker", name="uq_companies_workspace_ticker"
+            "user_id", "ticker", name="uq_companies_user_ticker"
         ),
         Index(
-            "uq_companies_one_main_per_workspace",
-            "workspace_id",
+            "uq_companies_one_main_per_user",
+            "user_id",
             unique=True,
             postgresql_where=text("company_role = 'main'"),
         ),
-        Index("ix_companies_workspace_id", "workspace_id"),
+        Index("ix_companies_user_id", "user_id"),
         Index("ix_companies_industry_id", "industry_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    workspace_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(220), nullable=False)
@@ -249,13 +203,13 @@ class CollectionJob(Base):
             "job_type IN ('manual', 'backfill', 'keyword_backfill', 'realtime')",
             name="ck_collection_jobs_type",
         ),
-        Index("ix_collection_jobs_workspace_id", "workspace_id"),
+        Index("ix_collection_jobs_user_id", "user_id"),
         Index("ix_collection_jobs_company_id", "company_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    workspace_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     company_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -554,13 +508,13 @@ class CollectionAttempt(Base):
     __table_args__ = (
         CheckConstraint("status IN ('succeeded', 'failed')", name="ck_collection_attempts_status"),
         UniqueConstraint("job_id", "source", name="uq_collection_attempts_job_source"),
-        Index("ix_collection_attempts_workspace_id", "workspace_id"),
+        Index("ix_collection_attempts_user_id", "user_id"),
         Index("ix_collection_attempts_company_source_started", "company_id", "source", "started_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    workspace_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     job_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("collection_jobs.id", ondelete="CASCADE"), nullable=False
@@ -591,14 +545,14 @@ class CollectionIncident(TimestampMixin, Base):
             name="ck_collection_incidents_status",
         ),
         CheckConstraint("data_quality IN ('partial', 'unavailable')", name="ck_collection_incidents_quality"),
-        Index("ix_collection_incidents_workspace_id", "workspace_id"),
+        Index("ix_collection_incidents_user_id", "user_id"),
         Index("ix_collection_incidents_status_detected", "status", "detected_at"),
         Index("ix_collection_incidents_fingerprint_window", "fingerprint", "scheduled_for"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    workspace_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
@@ -979,15 +933,15 @@ class ResponseDraft(TimestampMixin, Base):
         ),
         CheckConstraint("schema_version >= 1", name="ck_response_drafts_schema_version"),
         Index("ix_response_drafts_event_created", "risk_event_id", "created_at"),
-        Index("ix_response_drafts_workspace_id", "workspace_id"),
+        Index("ix_response_drafts_user_id", "user_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     risk_event_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("risk_events.id", ondelete="CASCADE"), nullable=False
     )
-    workspace_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     source_company_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True

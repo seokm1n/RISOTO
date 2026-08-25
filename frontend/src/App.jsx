@@ -42,7 +42,7 @@ export default function App() {
   }, [applyAuth]);
 
   const completeAuthentication = useCallback(async (payload) => {
-    if (payload?.user && payload?.workspace) return applyAuth(payload);
+    if (payload?.user) return applyAuth(payload);
     return refreshAuth();
   }, [applyAuth, refreshAuth]);
 

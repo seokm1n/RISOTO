@@ -28,11 +28,11 @@ from app.schemas import (
 router = APIRouter(tags=["operations"])
 
 
-def _workspace_company(db: Session, company_id: int, workspace_id: int) -> Company:
+def _user_company(db: Session, company_id: int, user_id: int) -> Company:
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
-            Company.workspace_id == workspace_id,
+            Company.user_id == user_id,
         )
     )
     if company is None:
@@ -49,7 +49,7 @@ def list_collection_incidents(
     auth: CurrentAuth = Depends(require_auth),
 ) -> CollectionIncidentPage:
     query = select(CollectionIncident).where(
-        CollectionIncident.workspace_id == auth.workspace_id
+        CollectionIncident.user_id == auth.user_id
     )
     if status:
         query = query.where(CollectionIncident.status == status)
@@ -73,7 +73,7 @@ def acknowledge_collection_incident(
     incident = db.scalar(
         select(CollectionIncident).where(
             CollectionIncident.id == incident_id,
-            CollectionIncident.workspace_id == auth.workspace_id,
+            CollectionIncident.user_id == auth.user_id,
         )
     )
     if incident is None:
@@ -98,7 +98,7 @@ def collection_health(
         db.scalars(
             select(CollectionAttempt.source)
             .where(
-                CollectionAttempt.workspace_id == auth.workspace_id,
+                CollectionAttempt.user_id == auth.user_id,
                 CollectionAttempt.source != "pipeline",
             )
             .distinct()
@@ -111,7 +111,7 @@ def collection_health(
             db.scalars(
                 select(CollectionAttempt)
                 .where(
-                    CollectionAttempt.workspace_id == auth.workspace_id,
+                    CollectionAttempt.user_id == auth.user_id,
                     CollectionAttempt.source == source,
                     CollectionAttempt.attempt_number == 0,
                 )
@@ -150,7 +150,7 @@ def collection_health(
     open_incident_rows = list(
         db.scalars(
             select(CollectionIncident).where(
-                CollectionIncident.workspace_id == auth.workspace_id,
+                CollectionIncident.user_id == auth.user_id,
                 CollectionIncident.status.in_(["open", "retrying"])
             )
         )
@@ -178,7 +178,7 @@ def list_feature_windows(
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> list[CompanyFeatureWindow]:
-    _workspace_company(db, company_id, auth.workspace_id)
+    _user_company(db, company_id, auth.user_id)
     query = select(CompanyFeatureWindow).where(CompanyFeatureWindow.company_id == company_id)
     if date_from:
         query = query.where(CompanyFeatureWindow.window_start >= date_from)
@@ -194,7 +194,7 @@ def list_daily_summaries(
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> list[CompanyDailySummary]:
-    _workspace_company(db, company_id, auth.workspace_id)
+    _user_company(db, company_id, auth.user_id)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
     return list(
         db.scalars(

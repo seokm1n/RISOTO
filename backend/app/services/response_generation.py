@@ -562,20 +562,20 @@ def _generation_context(db, source_company: Company) -> tuple[Company, str]:
     if role != "competitor":
         return source_company, MAIN_RESPONSE
 
-    workspace_id = getattr(source_company, "workspace_id", None)
-    if workspace_id is None:
-        raise ValueError("경쟁사의 워크스페이스를 찾을 수 없습니다.")
+    user_id = getattr(source_company, "user_id", None)
+    if user_id is None:
+        raise ValueError("경쟁사의 소유 사용자를 찾을 수 없습니다.")
     target_main_company = db.scalar(
         select(Company)
         .where(
-            Company.workspace_id == workspace_id,
+            Company.user_id == user_id,
             Company.company_role == "main",
         )
         .order_by(Company.id)
         .limit(1)
     )
     if target_main_company is None:
-        raise ValueError("워크스페이스의 메인 기업을 찾을 수 없습니다.")
+        raise ValueError("사용자의 메인 기업을 찾을 수 없습니다.")
     return target_main_company, COMPETITOR_IMPACT
 
 
@@ -594,9 +594,9 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
         if source_company is None:
             raise ValueError("기업을 찾을 수 없습니다.")
         target_main_company, generation_kind = _generation_context(db, source_company)
-        workspace_id = getattr(source_company, "workspace_id", None)
-        if workspace_id is None:
-            raise ValueError("기업의 워크스페이스를 찾을 수 없습니다.")
+        user_id = getattr(source_company, "user_id", None)
+        if user_id is None:
+            raise ValueError("기업의 소유 사용자를 찾을 수 없습니다.")
 
         if not force:
             existing = db.scalar(
@@ -604,7 +604,7 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
                 .where(
                     ResponseDraft.risk_event_id == risk_event_id,
                     ResponseDraft.schema_version == SCHEMA_VERSION,
-                    ResponseDraft.workspace_id == workspace_id,
+                    ResponseDraft.user_id == user_id,
                     ResponseDraft.source_company_id == source_company.id,
                     ResponseDraft.target_main_company_id == target_main_company.id,
                     ResponseDraft.generation_kind == generation_kind,
@@ -767,7 +767,7 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
 
         draft = ResponseDraft(
             risk_event_id=risk_event_id,
-            workspace_id=workspace_id,
+            user_id=user_id,
             source_company_id=source_company.id,
             target_main_company_id=target_main_company.id,
             generation_kind=generation_kind,
