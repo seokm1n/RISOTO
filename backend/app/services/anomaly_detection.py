@@ -1,3 +1,5 @@
+"""기업별 정상 기사 패턴을 학습하고 비정상적인 부정 위험 신호를 탐지한다."""
+
 from datetime import datetime, timezone
 import hashlib
 import math
@@ -15,6 +17,7 @@ from app.models import (
 )
 
 
+# LightGBM 학습 배열과 저장된 모델의 열 순서를 고정하는 특성 목록이다.
 FEATURE_NAMES = [
     "hour",
     "weekday",
@@ -25,11 +28,13 @@ FEATURE_NAMES = [
 
 
 def _source_bucket(source: str) -> int:
+    """기사 출처를 재현 가능한 32개 범주 중 하나로 해시한다."""
     digest = hashlib.blake2s(source.encode("utf-8"), digest_size=2).digest()
     return int.from_bytes(digest, "big") % 32
 
 
 def article_features(article: NewsArticle) -> list[float]:
+    """이상 탐지 모델에 입력할 시간·길이·출처 특성을 기사에서 추출한다."""
     timestamp = article.published_at or article.created_at
     return [
         float(timestamp.hour),
@@ -41,10 +46,12 @@ def article_features(article: NewsArticle) -> list[float]:
 
 
 def negative_risk(article: NewsArticle) -> float:
+    """감성 점수의 부정적인 부분만 0 이상의 위험도로 변환한다."""
     return max(0.0, -(article.sentiment_score or 0.0))
 
 
 def fit_or_score_company(company_id: int) -> dict[str, int | bool]:
+    """기업 기준선을 학습하거나 미평가 기사를 채점해 신규 위험 이벤트를 저장한다."""
     import numpy as np
 
     settings = get_settings()
@@ -68,6 +75,7 @@ def fit_or_score_company(company_id: int) -> dict[str, int | bool]:
             for article, _match in rows
         }
         if len(rows) < settings.baseline_min_articles or len(dates) < settings.baseline_min_days:
+            # 기사 수뿐 아니라 날짜 다양성도 요구해 하루의 급증을 정상 기준으로 학습하지 않는다.
             company.analysis_status = "warming"
             if company.monitoring_status not in {"paused", "archived"}:
                 company.monitoring_status = "warming"
@@ -80,6 +88,7 @@ def fit_or_score_company(company_id: int) -> dict[str, int | bool]:
 
         baseline = db.get(CompanyBaseline, company_id)
         if baseline is None:
+            # 기업별 최초 기준선은 기사 메타 특성으로 예상 부정 위험도를 회귀 학습한다.
             import lightgbm as lgb
 
             features = np.asarray([article_features(article) for article, _ in rows], dtype=float)
@@ -131,6 +140,7 @@ def fit_or_score_company(company_id: int) -> dict[str, int | bool]:
         scored = 0
         anomalies = 0
         now = datetime.now(timezone.utc)
+        # 실제 부정 위험이 모델 기대치보다 얼마나 큰지 잔차 표준편차 단위로 채점한다.
         for article, match in pending:
             expected = float(booster.predict(np.asarray([article_features(article)]))[0])
             residual = negative_risk(article) - expected - baseline.residual_mean
@@ -148,6 +158,7 @@ def fit_or_score_company(company_id: int) -> dict[str, int | bool]:
                 company.monitoring_started_at is None
                 or (article.published_at or article.created_at) >= company.monitoring_started_at
             )
+            # 과거 기준선 기사에서는 알림을 만들지 않고 실시간 유입 기사만 이벤트화한다.
             if is_realtime_article and db.scalar(
                 select(RiskEvent.id).where(
                     RiskEvent.company_id == company_id,

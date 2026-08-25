@@ -5,9 +5,11 @@ pydantic-settings==2.14.2
 SQLAlchemy==2.0.51
 psycopg[binary]==3.3.4
 alembic==1.18.5
-pgvector==0.5.0
 httpx==0.28.1
 lightgbm==4.7.0
 numpy==2.2.6
+scikit-learn==1.7.2
+joblib==1.5.2
 sentencepiece==0.2.1
 transformers==4.57.6
+openai==2.26.0

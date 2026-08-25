@@ -1,39 +1,283 @@
+"""외부 기사 수집부터 필터링·감성 분석·이상 탐지까지 전체 흐름을 조정한다."""
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 
-import httpx
 from sqlalchemy import or_, select, text
 
 from app.config import Settings, get_settings
 from app.database import SessionLocal
-from app.models import CollectionJob, Company, CompanyArticleMatch, CompanyKeyword, NewsArticle
-from app.services.anomaly_detection import fit_or_score_company
-from app.services.news_collectors import NaverNewsCollector, TavilyNewsCollector
+from app.models import (
+    ArticleQueryHit,
+    ArticleFilterResult,
+    CollectionIncident,
+    CollectionJob,
+    Company,
+    CompanyArticleMatch,
+    CompanyKeyword,
+    NewsArticle,
+    RawNewsArticle,
+)
+from app.services.article_filtering import (
+    FilterConfig,
+    classify_article,
+    content_hash,
+    get_semantic_scorer,
+    normalize_url,
+)
+from app.services.collection_health import (
+    complete_retry,
+    dispatch_pending_notifications,
+    evaluate_attempts,
+    floor_window,
+    record_pipeline_failure,
+    record_attempts,
+)
+from app.services.news_collectors import (
+    KakaoDaumSearchCollector,
+    NaverNewsCollector,
+    TavilyNewsCollector,
+    YouTubeCommentCollector,
+)
 from app.services.sentiment import analyze_company_articles
+from app.services.risk_analysis import backfill_historical_windows, build_feature_window
+from app.services.story_clustering import assign_story_cluster
+from app.services.model_operations import SEOUL, ensure_daily_model_check
 
 
 logger = logging.getLogger(__name__)
+_last_model_operation_check_date = None
+
+SOURCE_ALIASES = {
+    "naver": "naver_api_hub",
+    "kakao": "kakao_daum",
+    "youtube": "youtube_comment",
+    "tavily": "tavily",
+}
+
+
+def _canonical_sources(sources: list[str]) -> list[str]:
+    return list(dict.fromkeys(SOURCE_ALIASES.get(source, source) for source in sources))
+
+
+def _article_filter_config(settings: Settings) -> FilterConfig:
+    """애플리케이션 설정을 기사 필터 전용 구성 객체로 변환한다."""
+    return FilterConfig(
+        version=settings.article_filter_version,
+        duplicate_threshold=settings.article_filter_duplicate_threshold,
+        advertising_reject_threshold=(
+            settings.article_filter_advertising_reject_threshold
+        ),
+        advertising_review_threshold=(
+            settings.article_filter_advertising_review_threshold
+        ),
+        relevance_accept_threshold=(
+            settings.article_filter_relevance_accept_threshold
+        ),
+        relevance_reject_threshold=(
+            settings.article_filter_relevance_reject_threshold
+        ),
+        ai_enabled=settings.article_filter_ai_enabled,
+        classifier_model_name=settings.article_filter_classifier_model,
+        semantic_model_name=settings.article_filter_semantic_model,
+        allow_model_download=settings.article_filter_allow_model_download,
+    )
+
+
+def _raw_candidates(db, raw: RawNewsArticle, limit: int = 250) -> list[RawNewsArticle]:
+    """현재 원문 기사와 중복일 가능성이 있는 과거 원문 후보를 조회한다."""
+    exact = or_(
+        RawNewsArticle.normalized_url == raw.normalized_url,
+        RawNewsArticle.content_hash == raw.content_hash,
+    )
+    conditions = exact
+    if raw.published_at is not None:
+        conditions = or_(
+            exact,
+            RawNewsArticle.published_at.between(
+                raw.published_at - timedelta(days=7),
+                raw.published_at + timedelta(days=7),
+            ),
+        )
+    return list(
+        db.scalars(
+            select(RawNewsArticle)
+            .where(RawNewsArticle.id != raw.id, conditions)
+            .order_by(RawNewsArticle.collected_at.desc())
+            .limit(limit)
+        )
+    )
+
+
+def _lock_normalized_url(db, normalized_url: str) -> None:
+    """Serialize one canonical URL across concurrent collectors in PostgreSQL."""
+    bind = db.get_bind()
+    if bind.dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:url, 0))"),
+            {"url": normalized_url},
+        )
+
+
+def _raw_for_content(
+    db,
+    source: str,
+    normalized_url: str,
+    item_content_hash: str,
+) -> RawNewsArticle | None:
+    """같은 제공자·URL·내용인 원문만 재사용해 변하는 목록 페이지의 이력을 보존한다."""
+    return db.scalar(
+        select(RawNewsArticle)
+        .where(
+            RawNewsArticle.source == source,
+            RawNewsArticle.normalized_url == normalized_url,
+            RawNewsArticle.content_hash == item_content_hash,
+        )
+        .order_by(RawNewsArticle.id)
+        .limit(1)
+    )
+
+
+def _lock_curated_raw(db, raw_article_id: int) -> None:
+    """Serialize creation of the one curated row allowed for a raw article."""
+    bind = db.get_bind()
+    if bind.dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"news-article-raw:{raw_article_id}"},
+        )
+
+
+def _curated_for_raw(db, raw_article_id: int | None) -> NewsArticle | None:
+    """원문 기사에 연결된 정제 기사를 직접 또는 필터 결과를 통해 찾는다."""
+    if raw_article_id is None:
+        return None
+    article = db.scalar(
+        select(NewsArticle).where(NewsArticle.raw_article_id == raw_article_id)
+    )
+    if article is not None:
+        return article
+    return db.scalar(
+        select(NewsArticle)
+        .join(
+            ArticleFilterResult,
+            ArticleFilterResult.curated_article_id == NewsArticle.id,
+        )
+        .where(ArticleFilterResult.raw_article_id == raw_article_id)
+        .order_by(ArticleFilterResult.filtered_at.desc())
+        .limit(1)
+    )
+
+
+def _curated_for_raw_or_url(
+    db,
+    raw_article_id: int,
+    normalized_url: str,
+) -> NewsArticle | None:
+    """URL 정규화 규칙이 바뀌어도 동일 원문의 기존 정제 기사를 우선 재사용한다."""
+    article = _curated_for_raw(db, raw_article_id)
+    if article is not None:
+        return article
+    return db.scalar(
+        select(NewsArticle).where(NewsArticle.url == normalized_url)
+    )
+
+
+def _reuse_existing_curated_article(
+    decision,
+    raw: RawNewsArticle,
+    article: NewsArticle,
+) -> None:
+    """기존 정제 기사를 재사용할 때 다른 원문인 경우에만 중복 연결로 기록한다."""
+    if decision.reason != "accepted":
+        return
+    canonical_raw_id = article.raw_article_id
+    if canonical_raw_id is None or canonical_raw_id == raw.id:
+        decision.details["existing_curated_reused"] = True
+        return
+    decision.reason = "duplicate"
+    decision.duplicate_of_raw_id = canonical_raw_id
+    decision.details["duplicate_evidence"] = "existing_curated_url"
+
+
+def _get_or_create_curated_article(
+    db,
+    raw: RawNewsArticle,
+    item,
+    normalized_url: str,
+) -> tuple[NewsArticle, bool]:
+    """Create exactly one curated article across retries and concurrent companies."""
+    # URL uniqueness protects different raw rows for the same canonical URL;
+    # raw-ID uniqueness protects the same row when URL normalization evolves.
+    _lock_normalized_url(db, normalized_url)
+    _lock_curated_raw(db, raw.id)
+    article = _curated_for_raw_or_url(db, raw.id, normalized_url)
+    if article is not None:
+        return article, False
+    article = NewsArticle(
+        raw_article_id=raw.id,
+        source=item.source,
+        title=item.title,
+        summary=item.summary,
+        url=normalized_url,
+        original_url=item.original_url or item.url,
+        published_at=item.published_at,
+        raw_payload=item.raw_payload,
+    )
+    db.add(article)
+    db.flush()
+    return article, True
 
 
 def _realtime_sources(settings: Settings) -> list[str]:
+    """자격 증명이 준비된 실시간 수집 소스 목록을 구성한다."""
+    sources: list[str] = []
     if settings.naver_api_hub_client_id and settings.naver_api_hub_client_secret:
-        return ["naver"]
+        sources.append("naver_api_hub")
+    if settings.kakao_rest_api_key:
+        sources.append("kakao_daum")
+    if not sources and settings.tavily_api_key:
+        sources.append("tavily")
+    if settings.youtube_api_key:
+        sources.append("youtube_comment")
+    return sources
+
+
+def _incident_retry_sources(settings: Settings, sources: list[str]) -> list[str]:
+    """장애 기록용 가상 소스를 재시도 가능한 실제 수집 소스로 치환한다."""
+    canonical = _canonical_sources(sources)
+    if "pipeline" not in canonical:
+        return canonical
+    configured = _realtime_sources(settings) or ["naver_api_hub"]
+    return list(
+        dict.fromkeys(
+            [source for source in canonical if source != "pipeline"] + configured
+        )
+    )
+
+
+def _backfill_sources(settings: Settings) -> list[str]:
+    """실시간 소스에 과거 검색용 제공자를 더해 백필 소스 목록을 구성한다."""
+    sources = _realtime_sources(settings)
     if settings.tavily_api_key:
-        return ["tavily"]
-    return []
+        sources.append("tavily")
+    return list(dict.fromkeys(sources))
 
 
 def build_queries(
     company: Company,
     keywords: list[CompanyKeyword],
-    limit: int,
+    limit: int | None = None,
     include_company_query: bool = True,
 ) -> list[str]:
+    """기업명·별칭·제품·위험 검색어를 중복 없이 만들고 수동 요청만 선택적으로 제한한다."""
     candidates = [company.name] if include_company_query else []
     for keyword in keywords:
-        if keyword.keyword_type in {"alias", "peer", "product", "risk"}:
+        if keyword.keyword_type in {"alias", "product", "risk"}:
             candidates.append(f'"{company.name}" {keyword.value}')
+            # 기업명이 제목·요약에 없는 제품·브랜드·사건 기사도 후보로 수집한다.
+            candidates.append(keyword.value)
     seen: set[str] = set()
     result: list[str] = []
     for item in candidates:
@@ -42,13 +286,38 @@ def build_queries(
         if key not in seen:
             seen.add(key)
             result.append(normalized)
-    return result[:limit]
+    return result[:limit] if limit is not None else result
+
+
+def completed_window_start(value: datetime, minutes: int = 15) -> datetime:
+    """Return the start of the most recently completed aligned interval."""
+    return floor_window(value, minutes) - timedelta(minutes=minutes)
+
+
+def query_kind_for(
+    query: str,
+    company: Company,
+    keywords: list[CompanyKeyword],
+) -> str:
+    """Record whether a hit came from the company, alias, product/brand or risk term."""
+    normalized = " ".join(query.split()).casefold()
+    if normalized == " ".join(company.name.split()).casefold():
+        return "company"
+    for keyword in keywords:
+        if keyword.keyword_type not in {"alias", "product", "risk"}:
+            continue
+        value = " ".join(keyword.value.split())
+        candidates = {value.casefold(), f'"{company.name}" {value}'.casefold()}
+        if normalized in candidates:
+            return keyword.keyword_type
+    return "company"
 
 
 def _collectors(settings: Settings, sources: list[str]) -> tuple[list, list[dict]]:
+    """요청한 소스별 수집기를 만들고 설정이 부족한 소스는 오류로 기록한다."""
     collectors = []
     errors: list[dict] = []
-    if "naver" in sources:
+    if "naver_api_hub" in sources:
         if settings.naver_api_hub_client_id and settings.naver_api_hub_client_secret:
             collectors.append(
                 NaverNewsCollector(
@@ -57,12 +326,22 @@ def _collectors(settings: Settings, sources: list[str]) -> tuple[list, list[dict
                 )
             )
         else:
-            errors.append({"source": "naver", "message": "NAVER API HUB 키가 설정되지 않았습니다."})
+            errors.append({"source": "naver_api_hub", "message": "NAVER API HUB 키가 설정되지 않았습니다."})
+    if "kakao_daum" in sources:
+        if settings.kakao_rest_api_key:
+            collectors.append(KakaoDaumSearchCollector(settings.kakao_rest_api_key))
+        else:
+            errors.append({"source": "kakao_daum", "message": "KAKAO_REST_API_KEY가 설정되지 않았습니다."})
     if "tavily" in sources:
         if settings.tavily_api_key:
             collectors.append(TavilyNewsCollector(settings.tavily_api_key))
         else:
             errors.append({"source": "tavily", "message": "TAVILY_API_KEY가 설정되지 않았습니다."})
+    if "youtube_comment" in sources:
+        if settings.youtube_api_key:
+            collectors.append(YouTubeCommentCollector(settings.youtube_api_key))
+        else:
+            errors.append({"source": "youtube_comment", "message": "YOUTUBE_API_KEY가 설정되지 않았습니다."})
     return collectors, errors
 
 
@@ -73,16 +352,32 @@ def run_collection(
     requested_to: datetime | None = None,
     keyword_ids: list[int] | None = None,
     sources: list[str] | None = None,
-    max_queries: int = 5,
+    max_queries: int | None = None,
+    scheduled_for: datetime | None = None,
+    attempt_number: int = 0,
+    manage_incidents: bool = True,
+    dispatch_notifications_after: bool = True,
 ) -> CollectionJob:
+    """검색, 원문 저장, 필터링, 기업 연결, 감성·이상 분석까지 수집 파이프라인을 실행한다."""
     settings = get_settings()
     requested_to = requested_to or datetime.now(timezone.utc)
-    sources = sources or ["naver", "tavily"]
+    sources = _canonical_sources(sources or ["naver_api_hub", "tavily"])
+    if scheduled_for is None and job_type == "realtime":
+        scheduled_for = completed_window_start(
+            requested_to,
+            settings.collection_window_minutes,
+        )
+    else:
+        scheduled_for = floor_window(
+            scheduled_for or requested_to,
+            settings.collection_window_minutes,
+        )
     with SessionLocal() as db:
         company = db.get(Company, company_id)
         if company is None:
             raise ValueError("기업을 찾을 수 없습니다.")
 
+        # 키워드 백필은 새 키워드만, 일반 수집은 기업의 전체 키워드를 사용한다.
         keyword_query = select(CompanyKeyword).where(CompanyKeyword.company_id == company_id)
         if keyword_ids is not None:
             keyword_query = keyword_query.where(CompanyKeyword.id.in_(keyword_ids))
@@ -93,6 +388,7 @@ def run_collection(
             max_queries,
             include_company_query=keyword_ids is None,
         )
+        # 이후 기사 연결에 사용할 작업 ID를 확보하도록 외부 API 호출 전에 실행 레코드를 만든다.
         job = CollectionJob(
             company_id=company_id,
             status="running",
@@ -105,6 +401,22 @@ def run_collection(
         db.flush()
 
         collectors, errors = _collectors(settings, sources)
+        attempt_started_at = datetime.now(timezone.utc)
+        source_stats: dict[str, dict] = {
+            source: {
+                "query_count": 0,
+                "successful_query_count": 0,
+                "fetched_count": 0,
+                "errors": [],
+                "started_at": attempt_started_at,
+            }
+            for source in sources
+        }
+        # 자격 증명 누락 등 수집기 생성 단계 오류도 제공자 실패로 남긴다.
+        for item in errors:
+            source_stats.setdefault(item.get("source", "unknown"), {}).setdefault("errors", []).append(
+                item.get("message") or "collector configuration error"
+            )
         existing_match_ids = set(
             db.scalars(
                 select(CompanyArticleMatch.article_id).where(
@@ -117,14 +429,21 @@ def run_collection(
         matched_count = 0
         attempted_count = 0
         successful_queries = 0
+        filter_config = _article_filter_config(settings)
+        semantic_scorer = get_semantic_scorer(filter_config)
 
+        # 제공자와 검색어의 모든 조합을 실행하되 한 요청의 실패가 나머지를 막지 않게 한다.
         for collector in collectors:
             for query in queries:
                 attempted_count += 1
+                source_stats[collector.source]["query_count"] += 1
                 try:
                     collected = collector.search(query, requested_from.date())
                     successful_queries += 1
-                except (httpx.HTTPError, ValueError) as exc:
+                    source_stats[collector.source]["successful_query_count"] += 1
+                except Exception as exc:
+                    # 개별 제공자 SDK의 예외 형식이 달라도 다른 수집원 실행은 계속한다.
+                    source_stats[collector.source]["errors"].append(str(exc))
                     errors.append(
                         {
                             "source": collector.source,
@@ -134,24 +453,145 @@ def run_collection(
                     )
                     continue
                 fetched_count += len(collected)
+                source_stats[collector.source]["fetched_count"] += len(collected)
                 for item in collected:
                     if item.published_at and item.published_at < requested_from:
                         continue
-                    article = db.scalar(select(NewsArticle).where(NewsArticle.url == item.url))
-                    if article is None:
-                        article = NewsArticle(
+                    # 제공자 원문은 판정 결과와 무관하게 정규화된 형태로 먼저 보존한다.
+                    normalized_url = normalize_url(item.url)
+                    item_content_hash = content_hash(item.title, item.summary)
+                    _lock_normalized_url(db, normalized_url)
+                    raw = _raw_for_content(
+                        db,
+                        item.source,
+                        normalized_url,
+                        item_content_hash,
+                    )
+                    if raw is None:
+                        raw = RawNewsArticle(
                             source=item.source,
                             title=item.title,
                             summary=item.summary,
                             url=item.url,
                             original_url=item.original_url,
+                            normalized_url=normalized_url,
+                            content_hash=item_content_hash,
                             published_at=item.published_at,
-                            raw_payload=item.raw_payload,
+                            raw_payload=item.raw_payload or {},
                         )
-                        db.add(article)
+                        db.add(raw)
                         db.flush()
-                        new_count += 1
-                    if article.id not in existing_match_ids:
+                    else:
+                        # 같은 내용의 재수집은 별도 원문으로 늘리지 않고 표현만 더 충실하게 보강한다.
+                        if len(item.summary or "") > len(raw.summary or ""):
+                            raw.summary = item.summary
+                        if len(item.title or "") > len(raw.title or ""):
+                            raw.title = item.title
+                        raw.published_at = raw.published_at or item.published_at
+
+                    query_hit = db.scalar(
+                        select(ArticleQueryHit).where(
+                            ArticleQueryHit.raw_article_id == raw.id,
+                            ArticleQueryHit.company_id == company_id,
+                            ArticleQueryHit.source == collector.source,
+                            ArticleQueryHit.query == query,
+                        )
+                    )
+                    if query_hit is None:
+                        db.add(
+                            ArticleQueryHit(
+                                raw_article_id=raw.id,
+                                company_id=company_id,
+                                job_id=job.id,
+                                source=collector.source,
+                                query=query,
+                                query_kind=query_kind_for(query, company, keywords),
+                                matched_keyword=item.matched_keyword,
+                            )
+                        )
+                    else:
+                        query_hit.hit_count += 1
+                        query_hit.job_id = job.id
+                        query_hit.last_seen_at = datetime.now(timezone.utc)
+
+                    # 같은 필터 버전으로 이미 판정한 원문은 재추론하지 않고 결과를 재사용한다.
+                    filter_result = db.scalar(
+                        select(ArticleFilterResult).where(
+                            ArticleFilterResult.raw_article_id == raw.id,
+                            ArticleFilterResult.company_id == company_id,
+                            ArticleFilterResult.filter_version == filter_config.version,
+                        )
+                    )
+                    article = None
+                    if filter_result is None:
+                        decision = classify_article(
+                            company,
+                            keywords,
+                            item,
+                            raw,
+                            candidate_articles=_raw_candidates(db, raw),
+                            semantic_scorer=semantic_scorer,
+                            config=filter_config,
+                        )
+                        article = _curated_for_raw(db, decision.duplicate_of_raw_id)
+
+                        # 중복 기사라도 이 기업에는 처음 연결되는 관련 기사라면 기존 정제 기사에 병합한다.
+                        if (
+                            decision.reason == "duplicate"
+                            and article is not None
+                            and decision.relevance_score
+                            >= filter_config.relevance_accept_threshold
+                            and decision.advertising_score
+                            < filter_config.advertising_review_threshold
+                        ):
+                            decision.decision = "accepted"
+                            decision.details["duplicate_merged"] = True
+
+                        if decision.decision == "accepted" and article is None:
+                            article, article_created = _get_or_create_curated_article(
+                                db,
+                                raw,
+                                item,
+                                normalized_url,
+                            )
+                            if article_created:
+                                new_count += 1
+                            else:
+                                # 동일 원문 재사용은 자기 중복이 아니며, 다른 원문만 정제 URL 중복으로 연결한다.
+                                _reuse_existing_curated_article(decision, raw, article)
+
+                        filter_result = ArticleFilterResult(
+                            raw_article_id=raw.id,
+                            company_id=company_id,
+                            decision=decision.decision,
+                            reason=decision.reason,
+                            duplicate_of_raw_id=decision.duplicate_of_raw_id,
+                            curated_article_id=article.id if article else None,
+                            relevance_score=decision.relevance_score,
+                            advertising_score=decision.advertising_score,
+                            confidence=decision.confidence,
+                            classifier_kind=decision.classifier_kind,
+                            filter_version=decision.filter_version,
+                            details={
+                                **decision.details,
+                                "duplicate_score": decision.duplicate_score,
+                                "matched_keyword": item.matched_keyword,
+                            },
+                        )
+                        db.add(filter_result)
+                        db.flush()
+                    elif filter_result.decision == "accepted":
+                        article = (
+                            db.get(NewsArticle, filter_result.curated_article_id)
+                            if filter_result.curated_article_id
+                            else _curated_for_raw(db, raw.id)
+                        )
+
+                    if article is not None:
+                        assign_story_cluster(db, article, settings)
+
+                    # 정제 기사 하나는 기업마다 한 번만 연결해 집계와 분석의 중복을 막는다.
+                    if article is not None and article.id not in existing_match_ids:
                         db.add(
                             CompanyArticleMatch(
                                 company_id=company_id,
@@ -163,30 +603,61 @@ def run_collection(
                         existing_match_ids.add(article.id)
                         matched_count += 1
 
+        # 제공자별 시도를 먼저 고정해 유효한 빈 결과와 수집 장애를 구분한다.
+        completed_at = datetime.now(timezone.utc)
+        for stats in source_stats.values():
+            stats["completed_at"] = completed_at
+        attempts = record_attempts(
+            db,
+            job,
+            source_stats,
+            scheduled_for,
+            attempt_number,
+        )
+        data_quality, _incident_id = evaluate_attempts(
+            db,
+            attempts,
+            scheduled_for,
+            settings,
+            manage_incidents=manage_incidents and job_type == "realtime",
+        )
+
+        # 부분 성공을 구분해 운영 화면에서 제공자 오류와 수집 성과를 함께 확인하게 한다.
         job.query_count = attempted_count
         job.fetched_count = fetched_count
         job.new_count = new_count
         job.matched_count = matched_count
         job.errors = errors
-        job.completed_at = datetime.now(timezone.utc)
-        if errors and successful_queries:
+        job.completed_at = completed_at
+        if data_quality == "partial":
             job.status = "partial"
-        elif errors:
+        elif data_quality == "unavailable":
             job.status = "failed"
         else:
             job.status = "completed"
-        if successful_queries:
+        if data_quality != "unavailable":
             company.last_collected_at = requested_to
-        if job_type == "realtime":
-            company.next_collection_at = datetime.now(timezone.utc) + timedelta(
-                seconds=settings.realtime_interval_seconds
+        if job_type == "realtime" and attempt_number == 0:
+            # `scheduled_for` is the start of the interval that just ended.
+            company.next_collection_at = scheduled_for + timedelta(
+                minutes=2 * settings.collection_window_minutes
             )
         db.commit()
         db.refresh(job)
 
+    # 수집 트랜잭션을 끝낸 뒤 후속 감성 분석과 15분 특징 생성을 별도 세션에서 수행한다.
     if matched_count:
         analyze_company_articles(company_id)
-    fit_or_score_company(company_id)
+    if job_type == "realtime":
+        build_feature_window(
+            company_id,
+            scheduled_for,
+            data_quality,
+            [item.source for item in attempts if item.status == "succeeded"],
+            [item.source for item in attempts if item.status == "failed"],
+        )
+    if dispatch_notifications_after:
+        dispatch_pending_notifications(settings)
     return job
 
 
@@ -195,6 +666,7 @@ def initialize_company_monitoring(
     is_new: bool,
     added_keyword_ids: list[int],
 ) -> None:
+    """신규 기업 또는 추가 키워드의 백필을 수행하고 실시간 모니터링을 시작한다."""
     try:
         settings = get_settings()
         with SessionLocal() as db:
@@ -217,7 +689,7 @@ def initialize_company_monitoring(
                 "backfill",
                 started_at - timedelta(days=7),
                 requested_to=started_at,
-                sources=["naver", "tavily"],
+                sources=_backfill_sources(settings),
             )
         elif added_keyword_ids:
             run_collection(
@@ -225,7 +697,7 @@ def initialize_company_monitoring(
                 "keyword_backfill",
                 datetime.now(timezone.utc) - timedelta(days=7),
                 keyword_ids=added_keyword_ids,
-                sources=["naver", "tavily"],
+                sources=_backfill_sources(settings),
             )
 
         realtime_sources = _realtime_sources(settings) or ["naver"]
@@ -246,7 +718,39 @@ def initialize_company_monitoring(
                 db.commit()
 
 
+def refresh_company_monitoring(
+    company_id: int,
+    company_name_changed: bool,
+    added_keyword_ids: list[int],
+) -> None:
+    """수정된 기업명 또는 새 키워드에 해당하는 최근 7일 자료를 보강 수집한다."""
+    try:
+        settings = get_settings()
+        requested_to = datetime.now(timezone.utc)
+        if company_name_changed:
+            run_collection(
+                company_id,
+                "backfill",
+                requested_to - timedelta(days=7),
+                requested_to=requested_to,
+                sources=_backfill_sources(settings),
+            )
+            backfill_historical_windows(company_id)
+        elif added_keyword_ids:
+            run_collection(
+                company_id,
+                "keyword_backfill",
+                requested_to - timedelta(days=7),
+                requested_to=requested_to,
+                keyword_ids=added_keyword_ids,
+                sources=_backfill_sources(settings),
+            )
+    except Exception:
+        logger.exception("Failed to refresh monitoring for company %s", company_id)
+
+
 def run_realtime_tick() -> None:
+    """수집 예정 시간이 지난 활성 기업들을 찾아 실시간 수집을 한 차례 실행한다."""
     settings = get_settings()
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
@@ -258,10 +762,11 @@ def run_realtime_tick() -> None:
                 )
             )
         )
-    realtime_sources = _realtime_sources(settings)
-    if not realtime_sources:
-        return
+    # 수집원이 하나도 구성되지 않은 상태도 조용히 건너뛰지 않고 운영 장애로 기록한다.
+    realtime_sources = _realtime_sources(settings) or ["naver_api_hub"]
+    scheduled_for = completed_window_start(now, settings.collection_window_minutes)
     for company_id in company_ids:
+        cursor = now - timedelta(minutes=settings.realtime_overlap_minutes)
         try:
             with SessionLocal() as db:
                 company = db.get(Company, company_id)
@@ -274,13 +779,97 @@ def run_realtime_tick() -> None:
                 company_id,
                 "realtime",
                 cursor - timedelta(minutes=settings.realtime_overlap_minutes),
+                requested_to=now,
                 sources=realtime_sources,
+                scheduled_for=scheduled_for,
+                dispatch_notifications_after=False,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Realtime monitoring failed for company %s", company_id)
+            try:
+                record_pipeline_failure(
+                    company_id,
+                    scheduled_for,
+                    f"{type(exc).__name__}: {exc}",
+                    requested_from=cursor - timedelta(minutes=settings.realtime_overlap_minutes),
+                    requested_to=now,
+                    settings=settings,
+                    dispatch=False,
+                )
+            except Exception:
+                logger.exception("Failed to persist realtime pipeline incident for company %s", company_id)
+
+    run_due_collection_retries()
+    dispatch_pending_notifications(settings)
+    _run_due_daily_model_check(now)
+
+
+def _run_due_daily_model_check(now: datetime) -> None:
+    """Persist one model-operation report per Seoul day without affecting collection."""
+    global _last_model_operation_check_date
+    check_date = now.astimezone(SEOUL).date()
+    if _last_model_operation_check_date == check_date:
+        return
+    try:
+        with SessionLocal() as db:
+            ensure_daily_model_check(db, now=now)
+        _last_model_operation_check_date = check_date
+    except Exception:
+        logger.exception("Daily model-operation check failed")
+
+
+def run_due_collection_retries() -> int:
+    """Retry aggregated all-source incidents at 1, 5 and 15 minute intervals."""
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        incidents = list(
+            db.scalars(
+                select(CollectionIncident).where(
+                    CollectionIncident.status == "retrying",
+                    CollectionIncident.data_quality == "unavailable",
+                    CollectionIncident.next_retry_at.is_not(None),
+                    CollectionIncident.next_retry_at <= now,
+                )
+            )
+        )
+    retried = 0
+    for incident in incidents:
+        succeeded: list[int] = []
+        retry_sources = _incident_retry_sources(
+            settings,
+            list(incident.sources or []),
+        )
+        for company_id in list(incident.affected_company_ids or []):
+            try:
+                job = run_collection(
+                    company_id,
+                    "realtime",
+                    incident.scheduled_for
+                    - timedelta(minutes=settings.realtime_overlap_minutes),
+                    requested_to=now,
+                    sources=retry_sources,
+                    scheduled_for=incident.scheduled_for,
+                    attempt_number=incident.retry_count + 1,
+                    manage_incidents=False,
+                    dispatch_notifications_after=False,
+                )
+                if job.status == "completed":
+                    succeeded.append(company_id)
+            except Exception:
+                logger.exception(
+                    "Collection retry failed for incident %s company %s",
+                    incident.id,
+                    company_id,
+                )
+            retried += 1
+        complete_retry(incident.id, succeeded, settings)
+    dispatch_pending_notifications(settings)
+    return retried
 
 
 async def realtime_monitoring_loop(stop_event: asyncio.Event) -> None:
+    """종료 신호가 올 때까지 주기적으로 실시간 수집 틱을 백그라운드에서 실행한다."""
     settings = get_settings()
     schedule_check_seconds = min(5, max(1, settings.realtime_interval_seconds))
     while not stop_event.is_set():

@@ -1,3 +1,5 @@
+"""기업·기사·감성·위험 데이터를 기간별 대시보드 통계로 집계한다."""
+
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
@@ -5,7 +7,17 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Company, CompanyArticleMatch, NewsArticle, RiskEvent
+from app.models import (
+    CollectionIncident,
+    Company,
+    CompanyArticleMatch,
+    CompanyFeatureWindow,
+    NewsArticle,
+    RiskEvent,
+    StoryClusterArticle,
+)
+from app.presenters import risk_event_read
+from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.schemas import (
     DashboardCompanyRead,
     DashboardDailyRead,
@@ -23,8 +35,9 @@ def get_dashboard_overview(
     days: int = Query(default=7, ge=1, le=90),
     db: Session = Depends(get_db),
 ) -> DashboardOverview:
-    """Return compact, dashboard-ready monitoring statistics."""
+    """선택 기간의 기업·기사·감성·위험 현황을 대시보드용 통계로 집계한다."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    # 발행일이 없는 기사도 누락되지 않도록 저장 시각을 통계 기준 시각으로 대체한다.
     article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
 
     total_companies = db.scalar(
@@ -49,9 +62,13 @@ def get_dashboard_overview(
         .where(article_time >= cutoff)
     ).mappings().one()
     risk_count = db.scalar(
-        select(func.count()).select_from(RiskEvent).where(RiskEvent.detected_at >= cutoff)
+        select(func.count()).select_from(RiskEvent).where(
+            RiskEvent.detected_at >= cutoff,
+            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+        )
     ) or 0
 
+    # 기사 추세와 위험 추세를 별도로 집계한 뒤 동일한 날짜 키로 결합한다.
     day = func.date_trunc("day", article_time).label("day")
     daily_rows = db.execute(
         select(
@@ -76,7 +93,10 @@ def get_dashboard_overview(
                 func.date_trunc("day", RiskEvent.detected_at).label("day"),
                 func.count(RiskEvent.id).label("risk_count"),
             )
-            .where(RiskEvent.detected_at >= cutoff)
+            .where(
+                RiskEvent.detected_at >= cutoff,
+                RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+            )
             .group_by("day")
         ).all()
     )
@@ -91,6 +111,7 @@ def get_dashboard_overview(
         for row in daily_rows
     ]
 
+    # 과거 한글 레이블과 현재 영문 레이블을 같은 대시보드 범주로 통합한다.
     sentiment_label = case(
         (NewsArticle.sentiment_label.in_(["positive", "긍정"]), "positive"),
         (NewsArticle.sentiment_label.in_(["negative", "부정"]), "negative"),
@@ -105,6 +126,7 @@ def get_dashboard_overview(
     ).all()
     sentiments = [DashboardSentimentRead(label=label, count=count) for label, count in sentiment_rows]
 
+    # 상관 서브쿼리로 기업별 세 지표를 한 번의 기업 목록 조회에 포함한다.
     company_article_count = (
         select(func.count(CompanyArticleMatch.article_id))
         .select_from(CompanyArticleMatch)
@@ -127,7 +149,11 @@ def get_dashboard_overview(
     )
     company_risk_count = (
         select(func.count(RiskEvent.id))
-        .where(RiskEvent.company_id == Company.id, RiskEvent.detected_at >= cutoff)
+        .where(
+            RiskEvent.company_id == Company.id,
+            RiskEvent.detected_at >= cutoff,
+            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+        )
         .correlate(Company)
         .scalar_subquery()
     )
@@ -146,27 +172,23 @@ def get_dashboard_overview(
     ).mappings().all()
     companies = [DashboardCompanyRead(**row) for row in company_rows]
 
-    risk_rows = db.execute(
-        select(RiskEvent, NewsArticle)
-        .join(NewsArticle, NewsArticle.id == RiskEvent.article_id)
-        .where(RiskEvent.detected_at >= cutoff)
+    risk_rows = list(db.scalars(
+        select(RiskEvent)
+        .where(
+            RiskEvent.detected_at >= cutoff,
+            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+        )
         .order_by(RiskEvent.detected_at.desc())
         .limit(10)
-    ).all()
-    recent_risks = [
-        RiskEventRead(
-            id=event.id,
-            company_id=event.company_id,
-            article_id=event.article_id,
-            article_title=article.title,
-            article_url=article.url,
-            anomaly_score=event.anomaly_score,
-            severity=event.severity,
-            status=event.status,
-            detected_at=event.detected_at,
+    ))
+    recent_risks = [risk_event_read(db, event) for event in risk_rows]
+    recent_incidents = list(
+        db.scalars(
+            select(CollectionIncident)
+            .order_by(CollectionIncident.detected_at.desc())
+            .limit(10)
         )
-        for event, article in risk_rows
-    ]
+    )
 
     return DashboardOverview(
         days=days,
@@ -180,4 +202,5 @@ def get_dashboard_overview(
         sentiments=sentiments,
         companies=companies,
         recent_risks=recent_risks,
+        recent_incidents=recent_incidents,
     )

@@ -17,6 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """기업별 다음 뉴스 수집 예정 시각을 저장하는 열을 추가한다."""
     op.add_column(
         "companies",
         sa.Column("next_collection_at", sa.DateTime(timezone=True), nullable=True),
@@ -27,4 +28,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """기업별 수집 예정 시각 열을 제거한다."""
     op.drop_column("companies", "next_collection_at")

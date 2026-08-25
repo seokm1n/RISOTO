@@ -17,6 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """뉴스 수집 작업과 기업-기사 연결을 위한 데이터베이스 구조를 추가한다."""
     op.create_table(
         "collection_jobs",
         sa.Column("id", sa.BigInteger(), sa.Identity(), nullable=False),
@@ -73,6 +74,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """뉴스 수집 작업과 기업-기사 연결 구조를 제거한다."""
     op.drop_index("ix_company_article_matches_job_id", table_name="company_article_matches")
     op.drop_index("ix_company_article_matches_article_id", table_name="company_article_matches")
     op.drop_table("company_article_matches")

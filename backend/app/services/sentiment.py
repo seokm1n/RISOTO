@@ -1,3 +1,5 @@
+"""NLI 가설 비교를 이용해 기업 뉴스의 긍정·부정·중립 감성을 분석한다."""
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import Lock
@@ -7,124 +9,130 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Company, CompanyArticleMatch, NewsArticle
-
-
-EMOTION_POLARITY = {
-    "공포": -0.85,
-    "놀람": -0.25,
-    "분노": -0.95,
-    "슬픔": -0.75,
-    "중립": 0.0,
-    "행복": 1.0,
-    "혐오": -1.0,
-    "negative": -1.0,
-    "negative sentiment": -1.0,
-    "neg": -1.0,
-    "neutral": 0.0,
-    "positive": 1.0,
-    "positive sentiment": 1.0,
-    "pos": 1.0,
-    "0": -1.0,
-    "1": 1.0,
-}
-
-DISPLAY_LABELS = {
-    "0": "부정",
-    "1": "긍정",
-    "neg": "부정",
-    "negative": "부정",
-    "pos": "긍정",
-    "positive": "긍정",
-}
+from app.services.klue_nli import get_klue_nli_classifier
+from app.services.fine_tuned_text import predict_sentiment
 
 
 @dataclass(slots=True)
 class SentimentResult:
+    """기사 감성 레이블과 방향성 점수 및 판정 신뢰도를 표현한다."""
+
     label: str
     score: float
     confidence: float
+    positive_probability: float
+    neutral_probability: float
+    negative_probability: float
+    model_version: str
 
 
-class KoElectraSentimentAnalyzer:
-    def __init__(self, model_name: str) -> None:
+class KlueRobertaSentimentAnalyzer:
+    """한국어 NLI 가설을 비교해 기업 뉴스를 세 가지 감성으로 분류한다."""
+
+    # 긍정·부정 확률 차이가 이 범위 안이면 과도한 극성 판정을 피하고 중립으로 본다.
+    NEUTRAL_MARGIN = 0.20
+    # 첫 문장은 부정, 둘째 문장은 긍정 가설이며 반환 확률도 이 순서를 따른다.
+    HYPOTHESES = (
+        "기업에 부정적인 소식이다.",
+        "기업에 긍정적인 소식이다.",
+    )
+
+    def __init__(self, model_name: str, allow_download: bool = True) -> None:
+        """감성 분석에 사용할 KLUE 모델 설정을 보관한다."""
         self.model_name = model_name
-        self._pipeline = None
-        self._load_lock = Lock()
-        self._inference_lock = Lock()
-
-    def _get_pipeline(self):
-        if self._pipeline is not None:
-            return self._pipeline
-        with self._load_lock:
-            if self._pipeline is None:
-                from transformers import pipeline
-
-                self._pipeline = pipeline(
-                    "text-classification",
-                    model=self.model_name,
-                    tokenizer=self.model_name,
-                    device=-1,
-                    trust_remote_code=True,
-                )
-        return self._pipeline
+        self.allow_download = allow_download
 
     def analyze(self, texts: list[str]) -> list[SentimentResult]:
+        """텍스트마다 긍정·부정 NLI 확률을 비교해 3단계 감성과 신뢰도를 반환한다."""
         if not texts:
             return []
-        classifier = self._get_pipeline()
-        with self._inference_lock:
-            raw_results = classifier(
-                texts,
-                truncation=True,
-                max_length=256,
-                top_k=None,
-                batch_size=min(8, len(texts)),
-            )
+        promoted = predict_sentiment(texts)
+        if promoted is not None:
+            version, probability_rows = promoted
+            results: list[SentimentResult] = []
+            for probabilities in probability_rows:
+                label_key = max(probabilities, key=probabilities.get)
+                label = {"positive": "긍정", "neutral": "중립", "negative": "부정"}[label_key]
+                score = probabilities["positive"] - probabilities["negative"]
+                results.append(
+                    SentimentResult(
+                        label=label,
+                        score=float(score),
+                        confidence=float(probabilities[label_key]),
+                        positive_probability=float(probabilities["positive"]),
+                        neutral_probability=float(probabilities["neutral"]),
+                        negative_probability=float(probabilities["negative"]),
+                        model_version=version,
+                    )
+                )
+            return results
+        classifier = get_klue_nli_classifier(self.model_name, self.allow_download)
+        raw_results = classifier.score_hypotheses(
+            texts,
+            [list(self.HYPOTHESES) for _ in texts],
+            batch_size=min(8, max(1, len(texts))),
+        )
 
         results: list[SentimentResult] = []
-        for candidates in raw_results:
-            if isinstance(candidates, dict):
-                candidates = [candidates]
-            best = max(candidates, key=lambda item: float(item["score"]))
-            weighted_score = 0.0
-            recognized = False
-            for item in candidates:
-                label = str(item["label"])
-                polarity = EMOTION_POLARITY.get(label.casefold())
-                if polarity is None:
-                    polarity = EMOTION_POLARITY.get(label)
-                if polarity is not None:
-                    recognized = True
-                    weighted_score += polarity * float(item["score"])
-            if not recognized:
-                raise ValueError(
-                    f"감성 모델의 라벨 매핑을 확인해야 합니다: {best['label']}"
-                )
+        for probabilities in raw_results:
+            negative, positive = probabilities
+            score = positive - negative
+            neutral_strength = max(0.0, 1.0 - abs(score) / self.NEUTRAL_MARGIN)
+            probability_total = positive + negative + neutral_strength
+            positive_probability = positive / probability_total
+            negative_probability = negative / probability_total
+            neutral_probability = neutral_strength / probability_total
+            if score <= -self.NEUTRAL_MARGIN:
+                label, confidence = "부정", negative_probability
+            elif score >= self.NEUTRAL_MARGIN:
+                label, confidence = "긍정", positive_probability
+            else:
+                label, confidence = "중립", neutral_probability
             results.append(
                 SentimentResult(
-                    label=DISPLAY_LABELS.get(str(best["label"]).casefold(), str(best["label"])),
-                    score=max(-1.0, min(1.0, weighted_score)),
-                    confidence=float(best["score"]),
+                    label=label,
+                    score=max(-1.0, min(1.0, score)),
+                    confidence=float(confidence),
+                    positive_probability=float(positive_probability),
+                    neutral_probability=float(neutral_probability),
+                    negative_probability=float(negative_probability),
+                    model_version=self.model_name,
                 )
             )
         return results
 
 
-_analyzer: KoElectraSentimentAnalyzer | None = None
+_analyzer: KlueRobertaSentimentAnalyzer | None = None
 _analyzer_lock = Lock()
 
 
-def get_analyzer() -> KoElectraSentimentAnalyzer:
+def get_analyzer() -> KlueRobertaSentimentAnalyzer:
+    """현재 설정과 일치하는 감성 분석기 싱글턴을 스레드 안전하게 반환한다."""
     global _analyzer
     settings = get_settings()
-    if _analyzer is None or _analyzer.model_name != settings.sentiment_model_name:
+    analyzer_key = (
+        settings.sentiment_model_name,
+        settings.sentiment_allow_model_download,
+    )
+    current_key = (
+        (_analyzer.model_name, _analyzer.allow_download)
+        if _analyzer is not None
+        else None
+    )
+    if current_key != analyzer_key:
         with _analyzer_lock:
-            if _analyzer is None or _analyzer.model_name != settings.sentiment_model_name:
-                _analyzer = KoElectraSentimentAnalyzer(settings.sentiment_model_name)
+            current_key = (
+                (_analyzer.model_name, _analyzer.allow_download)
+                if _analyzer is not None
+                else None
+            )
+            if current_key != analyzer_key:
+                _analyzer = KlueRobertaSentimentAnalyzer(*analyzer_key)
     return _analyzer
 
 
 def analyze_company_articles(company_id: int, batch_limit: int = 100) -> int:
+    """기업의 미분석 기사들을 배치로 감성 분석하고 결과와 처리 상태를 저장한다."""
     settings = get_settings()
     with SessionLocal() as db:
         company = db.get(Company, company_id)
@@ -164,7 +172,10 @@ def analyze_company_articles(company_id: int, batch_limit: int = 100) -> int:
             article.sentiment_label = result.label
             article.sentiment_score = result.score
             article.sentiment_confidence = result.confidence
-            article.sentiment_model = settings.sentiment_model_name
+            article.positive_probability = result.positive_probability
+            article.neutral_probability = result.neutral_probability
+            article.negative_probability = result.negative_probability
+            article.sentiment_model = result.model_version
             article.analyzed_at = now
         company = db.get(Company, company_id)
         if company is not None:
