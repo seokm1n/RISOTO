@@ -17,6 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """감성 분석, 기준선 학습 및 위험 이벤트 모니터링 구조를 추가한다."""
     op.add_column("companies", sa.Column("normalized_name", sa.String(length=220), nullable=True))
     op.add_column(
         "companies",
@@ -115,6 +116,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """모니터링 파이프라인에서 추가한 데이터베이스 구조를 제거한다."""
     op.drop_index("ix_risk_events_detected_at", table_name="risk_events")
     op.drop_index("ix_risk_events_company_id", table_name="risk_events")
     op.drop_table("risk_events")

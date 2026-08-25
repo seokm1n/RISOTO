@@ -17,6 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """RISOTO의 초기 산업·기업·기사·위험 데이터베이스 구조를 생성한다."""
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     op.create_table(
@@ -108,6 +109,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """초기 마이그레이션에서 생성한 데이터베이스 구조를 제거한다."""
     op.drop_index("ix_company_peers_peer_company_id", table_name="company_peers")
     op.drop_table("company_peers")
     op.drop_index("ix_companies_industry_id", table_name="companies")

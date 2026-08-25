@@ -32,6 +32,7 @@ DEFAULT_INDUSTRIES = (
 
 
 def upgrade() -> None:
+    """기업 정규화 이름과 모니터링 키워드 저장 구조를 추가한다."""
     op.create_table(
         "company_keywords",
         sa.Column("id", sa.BigInteger(), sa.Identity(), nullable=False),
@@ -71,6 +72,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """기업 키워드 관련 구조와 정규화 이름 변경을 되돌린다."""
     names = [name for name, _ in DEFAULT_INDUSTRIES]
     op.execute(
         sa.text("DELETE FROM industries WHERE name = ANY(:names)").bindparams(names=names)
