@@ -1,9 +1,30 @@
 """API 요청 검증과 응답 직렬화에 사용하는 Pydantic 스키마 모음."""
 
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+_MAX_REVENUE_100M_KRW = Decimal("92233720368.54")
+
+
+def _validate_revenue_100m(value: object) -> Decimal:
+    """억원 문자열을 소수 둘째 자리까지의 양수 Decimal로 검증한다."""
+    raw = str(value).strip()
+    if not re.fullmatch(r"\d+(?:\.\d{1,2})?", raw):
+        raise ValueError("연매출은 억원 단위로 소수 둘째 자리까지 입력해 주세요.")
+    try:
+        revenue = Decimal(raw)
+    except InvalidOperation as exc:
+        raise ValueError("올바른 연매출을 입력해 주세요.") from exc
+    if revenue <= 0:
+        raise ValueError("연매출은 0보다 커야 합니다.")
+    if revenue > _MAX_REVENUE_100M_KRW:
+        raise ValueError("연매출이 저장 가능한 범위를 초과했습니다.")
+    return revenue
 
 
 class HealthResponse(BaseModel):
@@ -16,6 +37,72 @@ class HealthResponse(BaseModel):
     database_user: str
     postgres_version: str
     pgvector_version: str
+
+
+class AuthSignupRequest(BaseModel):
+    """새 사용자와 기본 워크스페이스를 함께 만드는 회원가입 요청."""
+
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=128)
+    workspace_name: str = Field(default="내 워크스페이스", min_length=1, max_length=120)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        normalized = value.strip().casefold()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+            raise ValueError("올바른 이메일 주소를 입력해 주세요.")
+        return normalized
+
+    @field_validator("workspace_name")
+    @classmethod
+    def normalize_workspace_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("워크스페이스 이름은 비어 있을 수 없습니다.")
+        return normalized
+
+
+class AuthLoginRequest(BaseModel):
+    """이메일과 비밀번호 로그인 요청."""
+
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().casefold()
+
+
+class AuthUserRead(BaseModel):
+    id: int
+    email: str
+
+
+class WorkspaceRead(BaseModel):
+    id: int
+    name: str
+    competitor_company_label: str
+
+
+class WorkspaceUpdate(BaseModel):
+    competitor_company_label: str = Field(min_length=1, max_length=30)
+
+    @field_validator("competitor_company_label")
+    @classmethod
+    def normalize_competitor_company_label(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("경쟁사 분류명은 비어 있을 수 없습니다.")
+        return normalized
+
+
+class AuthMeRead(BaseModel):
+    user: AuthUserRead
+    workspace: WorkspaceRead
+    has_main_company: bool
+    csrf_token: str
 
 
 class IndustryRead(BaseModel):
@@ -31,7 +118,7 @@ class IndustryRead(BaseModel):
 class CompanyKeywordCreate(BaseModel):
     """기업 등록 시 입력받는 유형별 검색 키워드."""
 
-    keyword_type: Literal["alias", "peer", "product", "risk"]
+    keyword_type: Literal["alias", "product", "risk"]
     value: str = Field(min_length=1, max_length=200)
 
     @field_validator("value")
@@ -60,6 +147,8 @@ class CompanyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     industry_id: int
     ticker: str | None = Field(default=None, max_length=30)
+    annual_revenue_100m_krw: Decimal
+    company_size_class: Literal["small_medium", "mid_sized", "large"]
     backfill_days: int = Field(default=7, ge=0, le=3650)
     keywords: list[CompanyKeywordCreate] = Field(default_factory=list, max_length=100)
 
@@ -72,6 +161,19 @@ class CompanyCreate(BaseModel):
             raise ValueError("기업명은 비어 있을 수 없습니다.")
         return normalized
 
+    @field_validator("ticker")
+    @classmethod
+    def normalize_ticker(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = "".join(value.split()).upper()
+        return normalized or None
+
+    @field_validator("annual_revenue_100m_krw", mode="before")
+    @classmethod
+    def validate_annual_revenue(cls, value: object) -> Decimal:
+        return _validate_revenue_100m(value)
+
 
 class CompanyUpdate(BaseModel):
     """기업 기본 정보와 전체 검색 키워드를 교체하는 수정 요청의 입력값."""
@@ -79,6 +181,8 @@ class CompanyUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     industry_id: int
     ticker: str | None = Field(default=None, max_length=30)
+    annual_revenue_100m_krw: Decimal
+    company_size_class: Literal["small_medium", "mid_sized", "large"]
     keywords: list[CompanyKeywordCreate] = Field(max_length=100)
 
     @field_validator("name")
@@ -99,13 +203,22 @@ class CompanyUpdate(BaseModel):
         normalized = "".join(value.split()).upper()
         return normalized or None
 
+    @field_validator("annual_revenue_100m_krw", mode="before")
+    @classmethod
+    def validate_annual_revenue(cls, value: object) -> Decimal:
+        return _validate_revenue_100m(value)
+
 
 class CompanyRead(BaseModel):
     """키워드와 모니터링 상태를 포함한 기업 상세 응답."""
 
     id: int
+    workspace_id: int
     name: str
     ticker: str | None
+    company_role: Literal["main", "competitor"]
+    annual_revenue_100m_krw: Decimal
+    company_size_class: Literal["small_medium", "mid_sized", "large"]
     industry_id: int | None
     industry_name: str | None
     backfill_days: int
@@ -592,10 +705,17 @@ class ResponseDraftRead(BaseModel):
 
     id: int
     risk_event_id: int
+    workspace_id: int | None = None
+    source_company_id: int | None = None
+    target_main_company_id: int | None = None
+    generation_kind: Literal["main_response", "competitor_impact"] | None = None
+    schema_version: int = 1
     model_name: str
     content: dict
     evidence_urls: list[str]
     approval_state: Literal["draft", "approved", "rejected"]
+    reviewed_by_user_id: int | None = None
+    reviewed_by: str | None = None
     reviewed_at: datetime | None
     review_notes: str
     created_at: datetime
@@ -634,6 +754,9 @@ class DashboardCompanyRead(BaseModel):
 
     id: int
     name: str
+    company_role: Literal["main", "competitor"]
+    annual_revenue_100m_krw: Decimal
+    company_size_class: Literal["small_medium", "mid_sized", "large"]
     monitoring_status: str
     article_count: int
     story_count: int = 0
@@ -648,6 +771,7 @@ class DashboardOverview(BaseModel):
     """선택 기간의 전체 대시보드 데이터 묶음."""
 
     days: int
+    competitor_company_label: str
     total_companies: int
     active_companies: int
     article_count: int

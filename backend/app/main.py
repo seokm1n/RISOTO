@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.routers import (
+    auth,
     collection,
     companies,
     dashboard,
@@ -19,6 +20,7 @@ from app.routers import (
     notifications,
     operations,
     reviews,
+    workspaces,
 )
 from app.schemas import HealthResponse
 from app.services.monitoring_pipeline import realtime_monitoring_loop
@@ -53,6 +55,8 @@ app.add_middleware(
 )
 
 app.include_router(industries.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(workspaces.router, prefix="/api/v1")
 app.include_router(companies.router, prefix="/api/v1")
 app.include_router(collection.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")

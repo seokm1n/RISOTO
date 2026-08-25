@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     JSON,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +35,89 @@ class TimestampMixin:
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class User(TimestampMixin, Base):
+    """로그인 자격 증명과 계정 상태를 저장한다."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Workspace(TimestampMixin, Base):
+    """한 조직의 기업·위험 데이터를 격리하는 최상위 작업 공간이다."""
+
+    __tablename__ = "workspaces"
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(btrim(competitor_company_label)) BETWEEN 1 AND 30",
+            name="ck_workspaces_competitor_company_label",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    competitor_company_label: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="경쟁사", server_default="경쟁사"
+    )
+
+
+class WorkspaceMember(Base):
+    """사용자와 워크스페이스의 소속 관계를 저장한다."""
+
+    __tablename__ = "workspace_members"
+    __table_args__ = (
+        CheckConstraint("role = 'member'", name="ck_workspace_members_role"),
+        Index("ix_workspace_members_user_id", "user_id"),
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AuthSession(Base):
+    """브라우저에 전달한 불투명 세션 토큰의 해시와 CSRF 토큰을 저장한다."""
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        Index("ix_auth_sessions_user_id", "user_id"),
+        Index("ix_auth_sessions_expires_at", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    csrf_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
@@ -66,14 +150,49 @@ class Company(TimestampMixin, Base):
             name="ck_companies_analysis_status",
         ),
         CheckConstraint("backfill_days >= 0", name="ck_companies_backfill_days"),
-        UniqueConstraint("normalized_name", "industry_id", name="uq_companies_normalized_industry"),
+        CheckConstraint(
+            "company_role IN ('main', 'competitor')",
+            name="ck_companies_company_role",
+        ),
+        CheckConstraint(
+            "company_size_class IN ('small_medium', 'mid_sized', 'large')",
+            name="ck_companies_size_class",
+        ),
+        CheckConstraint(
+            "annual_revenue_krw > 0",
+            name="ck_companies_positive_annual_revenue",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "normalized_name",
+            "industry_id",
+            name="uq_companies_workspace_normalized_industry",
+        ),
+        UniqueConstraint(
+            "workspace_id", "ticker", name="uq_companies_workspace_ticker"
+        ),
+        Index(
+            "uq_companies_one_main_per_workspace",
+            "workspace_id",
+            unique=True,
+            postgresql_where=text("company_role = 'main'"),
+        ),
+        Index("ix_companies_workspace_id", "workspace_id"),
         Index("ix_companies_industry_id", "industry_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(220), nullable=False)
-    ticker: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True)
+    ticker: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    company_role: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="competitor", server_default="competitor"
+    )
+    annual_revenue_krw: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    company_size_class: Mapped[str] = mapped_column(String(20), nullable=False)
     industry_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("industries.id", ondelete="SET NULL"),
@@ -91,31 +210,8 @@ class Company(TimestampMixin, Base):
     baseline_ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class CompanyPeer(TimestampMixin, Base):
-    """기업 사이의 비교 대상 관계와 상대 가중치를 표현한다."""
-
-    __tablename__ = "company_peers"
-    __table_args__ = (
-        CheckConstraint("company_id <> peer_company_id", name="ck_company_peers_not_self"),
-        CheckConstraint("weight > 0", name="ck_company_peers_positive_weight"),
-        Index("ix_company_peers_peer_company_id", "peer_company_id"),
-    )
-
-    company_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("companies.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    peer_company_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("companies.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
-
-
 class CompanyKeyword(TimestampMixin, Base):
-    """기업별 별칭·경쟁사·제품·위험 검색 키워드를 저장한다."""
+    """기업별 별칭·제품·위험 검색 키워드를 저장한다."""
 
     __tablename__ = "company_keywords"
     __table_args__ = (
@@ -123,7 +219,7 @@ class CompanyKeyword(TimestampMixin, Base):
             "company_id", "keyword_type", "value", name="uq_company_keywords_value"
         ),
         CheckConstraint(
-            "keyword_type IN ('alias', 'peer', 'product', 'risk')",
+            "keyword_type IN ('alias', 'product', 'risk')",
             name="ck_company_keywords_type",
         ),
         Index("ix_company_keywords_company_id", "company_id"),
@@ -153,10 +249,14 @@ class CollectionJob(Base):
             "job_type IN ('manual', 'backfill', 'keyword_backfill', 'realtime')",
             name="ck_collection_jobs_type",
         ),
+        Index("ix_collection_jobs_workspace_id", "workspace_id"),
         Index("ix_collection_jobs_company_id", "company_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
     company_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("companies.id", ondelete="CASCADE"),
@@ -454,10 +554,14 @@ class CollectionAttempt(Base):
     __table_args__ = (
         CheckConstraint("status IN ('succeeded', 'failed')", name="ck_collection_attempts_status"),
         UniqueConstraint("job_id", "source", name="uq_collection_attempts_job_source"),
+        Index("ix_collection_attempts_workspace_id", "workspace_id"),
         Index("ix_collection_attempts_company_source_started", "company_id", "source", "started_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
     job_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("collection_jobs.id", ondelete="CASCADE"), nullable=False
     )
@@ -487,11 +591,15 @@ class CollectionIncident(TimestampMixin, Base):
             name="ck_collection_incidents_status",
         ),
         CheckConstraint("data_quality IN ('partial', 'unavailable')", name="ck_collection_incidents_quality"),
+        Index("ix_collection_incidents_workspace_id", "workspace_id"),
         Index("ix_collection_incidents_status_detected", "status", "detected_at"),
         Index("ix_collection_incidents_fingerprint_window", "fingerprint", "scheduled_for"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
     data_quality: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -865,17 +973,37 @@ class ResponseDraft(TimestampMixin, Base):
     __tablename__ = "response_drafts"
     __table_args__ = (
         CheckConstraint("approval_state IN ('draft', 'approved', 'rejected')", name="ck_response_drafts_state"),
+        CheckConstraint(
+            "generation_kind IS NULL OR generation_kind IN ('main_response', 'competitor_impact')",
+            name="ck_response_drafts_generation_kind",
+        ),
+        CheckConstraint("schema_version >= 1", name="ck_response_drafts_schema_version"),
         Index("ix_response_drafts_event_created", "risk_event_id", "created_at"),
+        Index("ix_response_drafts_workspace_id", "workspace_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     risk_event_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("risk_events.id", ondelete="CASCADE"), nullable=False
     )
+    workspace_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True
+    )
+    source_company_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True
+    )
+    target_main_company_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True
+    )
+    generation_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     content: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     evidence_urls: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     approval_state: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
-    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(String(320))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_notes: Mapped[str] = mapped_column(Text, nullable=False, default="")

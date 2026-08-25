@@ -79,17 +79,16 @@ docker compose exec backend alembic check
 초기 마이그레이션은 다음 테이블을 생성합니다.
 
 - `industries`: 상위·하위 산업군
-- `companies`: 기업, 종목코드, 과거 수집 기간, 모니터링 상태
-- `company_peers`: 기업별 경쟁사와 비교 가중치
-- `company_keywords`: 기업 별칭, 유사기업, 제품·브랜드, 키워드
+- `companies`: 메인 기업과 `competitor` 역할의 경쟁사, 재무정보와 모니터링 상태
+- `company_keywords`: 기업 별칭, 제품·브랜드, 위험 키워드
 
 ## 기업 등록 및 관리 화면
 
-React 화면에서 기업명, 종목코드, 산업군을 입력한 뒤 기업 별칭·약칭, 유사기업,
-제품·브랜드와 키워드를 여러 개의 태그로 추가할 수 있습니다. 입력값은 FastAPI를 거쳐
+React 화면에서 기업명, 종목코드, 산업군을 입력한 뒤 기업 별칭·약칭,
+제품·브랜드와 위험 키워드를 여러 개의 태그로 추가할 수 있습니다. 입력값은 FastAPI를 거쳐
 PostgreSQL에 저장됩니다.
 상단의 `수집 기업 관리` 화면에서는 등록 기업을 선택해 기업명, 종목코드, 산업군과
-별칭·유사기업·제품·키워드를 같은 형식으로 수정할 수 있습니다. 삭제한 키워드는 이후 수집부터
+별칭·제품·위험 키워드를 같은 형식으로 수정할 수 있습니다. 삭제한 키워드는 이후 수집부터
 제외되며 기존 기사와 분석 이력은 보존됩니다.
 
 ```powershell
@@ -103,9 +102,8 @@ docker compose up --build -d
 - 기업 상세·수정 API: `GET/PUT http://localhost:8000/api/v1/companies/{company_id}`
 - 산업군 API: `http://localhost:8000/api/v1/industries`
 
-기본 산업군은 두 번째 Alembic 마이그레이션에서 생성됩니다. 유사기업명은 아직 시스템에
-등록된 실제 기업 관계가 아니므로 `peer` 키워드로 저장되고, 제품명은 `product` 키워드로
-저장됩니다.
+기본 산업군은 두 번째 Alembic 마이그레이션에서 생성됩니다. 메인 기업 역할은 `main`,
+경쟁사 역할은 `competitor`로 저장되고, 제품명은 `product` 키워드로 저장됩니다.
 
 ## 뉴스 수집 API 키
 

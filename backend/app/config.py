@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     database_url: str
     cors_origins: str = "http://localhost:5173"
     model_artifact_dir: str = "/app/model_artifacts"
+    session_cookie_name: str = "risoto_session"
+    csrf_cookie_name: str = "risoto_csrf"
+    session_ttl_seconds: int = 604800
+    session_cookie_secure: bool = False
 
     # 외부 기사·검색·댓글 제공자 자격 증명
     naver_api_hub_client_id: str = ""

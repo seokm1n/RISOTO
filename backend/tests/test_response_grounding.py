@@ -85,7 +85,7 @@ class ResponseGroundingTests(unittest.TestCase):
             main,
             MAIN_RESPONSE,
         )
-        peer_content = _template_content(
+        competitor_content = _template_content(
             event,
             ["reputation_consumer"],
             evidence,
@@ -97,9 +97,9 @@ class ResponseGroundingTests(unittest.TestCase):
 
         self.assertEqual(len(main_content["scenarios"]), 2)
         self.assertIn("rationale", main_content["scenarios"][0])
-        self.assertEqual(len(peer_content["scenarios"]), 2)
-        self.assertIn("possible_impact", peer_content["scenarios"][0])
-        self.assertIn("early_indicators", peer_content["scenarios"][0])
+        self.assertEqual(len(competitor_content["scenarios"]), 2)
+        self.assertIn("possible_impact", competitor_content["scenarios"][0])
+        self.assertIn("early_indicators", competitor_content["scenarios"][0])
 
 
 if __name__ == "__main__":

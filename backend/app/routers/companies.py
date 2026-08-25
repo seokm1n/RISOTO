@@ -1,6 +1,7 @@
 """모니터링 기업의 등록·조회와 키워드 보강 API를 제공한다."""
 
 from datetime import datetime, timezone
+from decimal import Decimal
 import re
 import unicodedata
 
@@ -9,8 +10,9 @@ from sqlalchemy import delete, exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.auth import CurrentAuth, require_auth
 from app.config import Settings, get_settings
+from app.database import get_db
 from app.models import (
     ArticleFilterResult,
     Company,
@@ -35,6 +37,7 @@ from app.services.monitoring_pipeline import (
 
 
 router = APIRouter(prefix="/companies", tags=["companies"])
+REVENUE_UNIT_KRW = 100_000_000
 
 
 def _to_response(
@@ -75,8 +78,14 @@ def _to_response(
     )
     return CompanyRead(
         id=company.id,
+        workspace_id=company.workspace_id,
         name=company.name,
         ticker=company.ticker,
+        company_role=company.company_role,
+        annual_revenue_100m_krw=(
+            Decimal(company.annual_revenue_krw) / Decimal(REVENUE_UNIT_KRW)
+        ),
+        company_size_class=company.company_size_class,
         industry_id=company.industry_id,
         industry_name=industry_name,
         backfill_days=company.backfill_days,
@@ -116,15 +125,22 @@ def _get_company_keywords(db: Session, company_id: int) -> list[CompanyKeyword]:
 
 
 @router.get("", response_model=list[CompanyRead])
-def list_companies(db: Session = Depends(get_db)) -> list[CompanyRead]:
+def list_companies(
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> list[CompanyRead]:
     """등록된 기업과 산업·키워드 정보를 최신 등록순으로 조회한다."""
     companies = db.execute(
         select(Company, Industry.name)
         .outerjoin(Industry, Industry.id == Company.industry_id)
-        .order_by(Company.created_at.desc())
+        .where(Company.workspace_id == auth.workspace_id)
+        .order_by(Company.company_role, Company.created_at.desc())
     ).all()
     keyword_rows = db.scalars(
-        select(CompanyKeyword).order_by(CompanyKeyword.keyword_type, CompanyKeyword.value)
+        select(CompanyKeyword)
+        .join(Company, Company.id == CompanyKeyword.company_id)
+        .where(Company.workspace_id == auth.workspace_id)
+        .order_by(CompanyKeyword.keyword_type, CompanyKeyword.value)
     ).all()
     grouped: dict[int, list[CompanyKeyword]] = {}
     for keyword in keyword_rows:
@@ -136,12 +152,16 @@ def list_companies(db: Session = Depends(get_db)) -> list[CompanyRead]:
 
 
 @router.get("/{company_id}", response_model=CompanyRead)
-def get_company(company_id: int, db: Session = Depends(get_db)) -> CompanyRead:
+def get_company(
+    company_id: int,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> CompanyRead:
     """수정 화면에서 사용할 기업 기본 정보와 전체 키워드를 조회한다."""
     row = db.execute(
         select(Company, Industry.name)
         .outerjoin(Industry, Industry.id == Company.industry_id)
-        .where(Company.id == company_id)
+        .where(Company.id == company_id, Company.workspace_id == auth.workspace_id)
     ).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
@@ -154,8 +174,39 @@ def create_or_update_company(
     payload: CompanyCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> CompanyRead:
-    """기업을 새로 등록하거나 기존 기업에 키워드를 보강하고 모니터링을 예약한다."""
+    """현재 워크스페이스에 경쟁사를 등록한다."""
+    return _create_company(payload, "competitor", background_tasks, db, auth)
+
+
+@router.post("/main", response_model=CompanyRead, status_code=status.HTTP_201_CREATED)
+def create_main_company(
+    payload: CompanyCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> CompanyRead:
+    """메인 기업이 없는 워크스페이스에 최초 메인 기업을 등록한다."""
+    return _create_company(payload, "main", background_tasks, db, auth)
+
+
+def _create_company(
+    payload: CompanyCreate,
+    company_role: str,
+    background_tasks: BackgroundTasks,
+    db: Session,
+    auth: CurrentAuth,
+) -> CompanyRead:
+    """역할을 서버에서 고정해 기업을 생성하고 모니터링을 예약한다."""
+    if company_role == "main" and db.scalar(
+        select(Company.id).where(
+            Company.workspace_id == auth.workspace_id,
+            Company.company_role == "main",
+        ).limit(1)
+    ) is not None:
+        raise HTTPException(status_code=409, detail="메인 기업은 워크스페이스당 하나만 등록할 수 있습니다.")
+
     industry = db.get(Industry, payload.industry_id)
     if industry is None:
         raise HTTPException(status_code=404, detail="선택한 산업군을 찾을 수 없습니다.")
@@ -163,18 +214,25 @@ def create_or_update_company(
     normalized_name = normalize_company_name(payload.name)
     company = db.scalar(
         select(Company).where(
+            Company.workspace_id == auth.workspace_id,
             Company.normalized_name == normalized_name,
             Company.industry_id == industry.id,
         )
     )
+    if company is not None and company.company_role != company_role:
+        raise HTTPException(status_code=409, detail="다른 역할로 이미 등록된 기업입니다.")
     is_existing = company is not None
     now = datetime.now(timezone.utc)
     # 같은 산업의 정규화 기업명은 하나만 유지하고 재등록은 설정 보강으로 처리한다.
     if company is None:
         company = Company(
+            workspace_id=auth.workspace_id,
             name=payload.name,
             normalized_name=normalized_name,
             ticker=payload.ticker or None,
+            company_role=company_role,
+            annual_revenue_krw=int(payload.annual_revenue_100m_krw * REVENUE_UNIT_KRW),
+            company_size_class=payload.company_size_class,
             industry_id=industry.id,
             backfill_days=7,
             monitoring_status="backfilling",
@@ -184,6 +242,10 @@ def create_or_update_company(
         db.add(company)
     else:
         company.backfill_days = 7
+        company.annual_revenue_krw = int(
+            payload.annual_revenue_100m_krw * REVENUE_UNIT_KRW
+        )
+        company.company_size_class = payload.company_size_class
         company.monitoring_started_at = company.monitoring_started_at or now
         if payload.ticker and not company.ticker:
             company.ticker = payload.ticker
@@ -247,9 +309,15 @@ def activate_company(
     company_id: int,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> CompanyActivationRead:
     """기사·유효 창 기준을 충족한 기업만 사람 요청으로 활성화한다."""
-    company = db.get(Company, company_id)
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.workspace_id == auth.workspace_id,
+        )
+    )
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
     article_count = db.scalar(
@@ -294,9 +362,15 @@ def update_company(
     payload: CompanyUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> CompanyRead:
     """기업 기본 정보와 키워드 목록을 저장된 설정 전체와 동기화한다."""
-    company = db.get(Company, company_id)
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.workspace_id == auth.workspace_id,
+        )
+    )
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
     industry = db.get(Industry, payload.industry_id)
@@ -307,6 +381,7 @@ def update_company(
     duplicate_company_id = db.scalar(
         select(Company.id).where(
             Company.id != company_id,
+            Company.workspace_id == auth.workspace_id,
             Company.normalized_name == normalized_name,
             Company.industry_id == industry.id,
         )
@@ -319,6 +394,7 @@ def update_company(
     if payload.ticker and db.scalar(
         select(Company.id).where(
             Company.id != company_id,
+            Company.workspace_id == auth.workspace_id,
             func.upper(Company.ticker) == payload.ticker,
         )
     ) is not None:
@@ -358,6 +434,10 @@ def update_company(
     company.name = payload.name
     company.normalized_name = normalized_name
     company.ticker = payload.ticker
+    company.annual_revenue_krw = int(
+        payload.annual_revenue_100m_krw * REVENUE_UNIT_KRW
+    )
+    company.company_size_class = payload.company_size_class
     company.industry_id = industry.id
 
     try:
@@ -391,11 +471,22 @@ def update_company(
 
 
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_company(company_id: int, db: Session = Depends(get_db)) -> Response:
+def delete_company(
+    company_id: int,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> Response:
     """기업과 전용 수집·분석 자료를 삭제하고 공유되지 않은 기사도 정리한다."""
-    company = db.get(Company, company_id)
+    company = db.scalar(
+        select(Company).where(
+            Company.id == company_id,
+            Company.workspace_id == auth.workspace_id,
+        )
+    )
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
+    if company.company_role == "main":
+        raise HTTPException(status_code=409, detail="메인 기업은 삭제할 수 없습니다.")
 
     # 기업을 지우면 FK CASCADE로 키워드, 수집 작업, 필터 판정, 기사 매칭,
     # 기준선, 위험 이벤트와 기업 간 관계가 함께 삭제된다.

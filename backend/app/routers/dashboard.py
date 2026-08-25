@@ -1,11 +1,13 @@
 """기업·기사·감성·위험 데이터를 기간별 대시보드 통계로 집계한다."""
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, func, select
+from sqlalchemy import Numeric, case, cast, func, select
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentAuth, require_auth
 from app.database import get_db
 from app.models import (
     CollectionIncident,
@@ -34,6 +36,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 def get_dashboard_overview(
     days: int = Query(default=7, ge=1, le=90),
     db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
 ) -> DashboardOverview:
     """선택 기간의 기업·기사·감성·위험 현황을 대시보드용 통계로 집계한다."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -41,10 +44,16 @@ def get_dashboard_overview(
     article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
 
     total_companies = db.scalar(
-        select(func.count()).select_from(Company).where(Company.monitoring_status != "archived")
+        select(func.count()).select_from(Company).where(
+            Company.workspace_id == auth.workspace_id,
+            Company.monitoring_status != "archived",
+        )
     ) or 0
     active_companies = db.scalar(
-        select(func.count()).select_from(Company).where(Company.monitoring_status == "active")
+        select(func.count()).select_from(Company).where(
+            Company.workspace_id == auth.workspace_id,
+            Company.monitoring_status == "active",
+        )
     ) or 0
 
     totals = db.execute(
@@ -59,10 +68,14 @@ def get_dashboard_overview(
         )
         .select_from(CompanyArticleMatch)
         .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
-        .where(article_time >= cutoff)
+        .join(Company, Company.id == CompanyArticleMatch.company_id)
+        .where(Company.workspace_id == auth.workspace_id, article_time >= cutoff)
     ).mappings().one()
     risk_count = db.scalar(
-        select(func.count()).select_from(RiskEvent).where(
+        select(func.count()).select_from(RiskEvent).join(
+            Company, Company.id == RiskEvent.company_id
+        ).where(
+            Company.workspace_id == auth.workspace_id,
             RiskEvent.detected_at >= cutoff,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
@@ -83,7 +96,8 @@ def get_dashboard_overview(
         )
         .select_from(CompanyArticleMatch)
         .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
-        .where(article_time >= cutoff)
+        .join(Company, Company.id == CompanyArticleMatch.company_id)
+        .where(Company.workspace_id == auth.workspace_id, article_time >= cutoff)
         .group_by(day)
         .order_by(day)
     ).mappings().all()
@@ -93,7 +107,9 @@ def get_dashboard_overview(
                 func.date_trunc("day", RiskEvent.detected_at).label("day"),
                 func.count(RiskEvent.id).label("risk_count"),
             )
+            .join(Company, Company.id == RiskEvent.company_id)
             .where(
+                Company.workspace_id == auth.workspace_id,
                 RiskEvent.detected_at >= cutoff,
                 RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
             )
@@ -121,7 +137,12 @@ def get_dashboard_overview(
         select(sentiment_label, func.count(CompanyArticleMatch.article_id))
         .select_from(CompanyArticleMatch)
         .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
-        .where(article_time >= cutoff, NewsArticle.sentiment_label.is_not(None))
+        .join(Company, Company.id == CompanyArticleMatch.company_id)
+        .where(
+            Company.workspace_id == auth.workspace_id,
+            article_time >= cutoff,
+            NewsArticle.sentiment_label.is_not(None),
+        )
         .group_by(sentiment_label)
     ).all()
     sentiments = [DashboardSentimentRead(label=label, count=count) for label, count in sentiment_rows]
@@ -161,20 +182,31 @@ def get_dashboard_overview(
         select(
             Company.id,
             Company.name,
+            Company.company_role,
+            (
+                cast(Company.annual_revenue_krw, Numeric(30, 2))
+                / Decimal(100_000_000)
+            ).label("annual_revenue_100m_krw"),
+            Company.company_size_class,
             Company.monitoring_status,
             company_article_count.label("article_count"),
             company_negative_count.label("negative_count"),
             company_risk_count.label("risk_count"),
         )
         .select_from(Company)
-        .where(Company.monitoring_status != "archived")
+        .where(
+            Company.workspace_id == auth.workspace_id,
+            Company.monitoring_status != "archived",
+        )
         .order_by(company_article_count.desc(), Company.name)
     ).mappings().all()
     companies = [DashboardCompanyRead(**row) for row in company_rows]
 
     risk_rows = list(db.scalars(
         select(RiskEvent)
+        .join(Company, Company.id == RiskEvent.company_id)
         .where(
+            Company.workspace_id == auth.workspace_id,
             RiskEvent.detected_at >= cutoff,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
@@ -185,6 +217,7 @@ def get_dashboard_overview(
     recent_incidents = list(
         db.scalars(
             select(CollectionIncident)
+            .where(CollectionIncident.workspace_id == auth.workspace_id)
             .order_by(CollectionIncident.detected_at.desc())
             .limit(10)
         )
@@ -192,6 +225,7 @@ def get_dashboard_overview(
 
     return DashboardOverview(
         days=days,
+        competitor_company_label=auth.workspace.competitor_company_label,
         total_companies=total_companies,
         active_companies=active_companies,
         article_count=totals["article_count"],
