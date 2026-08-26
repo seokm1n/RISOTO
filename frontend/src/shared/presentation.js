@@ -64,7 +64,7 @@ export const MODEL_TASK_DESCRIPTIONS = {
   risk_detector: "이상치 탐지 결과를 바탕으로 최종 위험 여부를 판정합니다.",
   isolation_forest: "평소와 다른 이상 징후를 탐지합니다.",
 };
-export const MODEL_STATUS_LABELS = { production: "운영 중", candidate: "후보", retired: "보관", failed: "실패" };
+export const MODEL_STATUS_LABELS = { production: "운영 중", candidate: "후보", retired: "보관", failed: "실패", unavailable: "연결 대기" };
 export const EMPTY_NOTIFICATIONS = { items: [], total: 0, risk_count: 0, model_promotion_count: 0 };
 
 // 블라인드 기사 라벨링 화면의 선택지 표시 문구다.
