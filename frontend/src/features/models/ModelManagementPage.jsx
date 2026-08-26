@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
-import { Metric, PanelTitle } from "../../shared/components";
+import { IncidentList, Metric, PanelTitle } from "../../shared/components";
 import {
   MODEL_STATUS_LABELS,
   MODEL_TASK_DESCRIPTIONS,
@@ -21,18 +21,22 @@ export default function ModelManagementPage() {
   const [riskStatus, setRiskStatus] = useState(null);
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [llmLabeling, setLlmLabeling] = useState(null);
+  const [companies, setCompanies] = useState([]);
+  const [incidents, setIncidents] = useState([]);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [versionsResponse, readinessResponse, checkResponse, statusResponse, runtimeResponse, llmResponse] = await Promise.all([
+      const [versionsResponse, readinessResponse, checkResponse, statusResponse, runtimeResponse, llmResponse, companiesResponse, incidentsResponse] = await Promise.all([
         api.get("/model-versions"),
         api.get("/model-training-readiness"),
         api.get("/model-monitoring"),
         api.get("/risk-detection-status"),
         api.get("/model-runtime-status"),
         api.get("/llm-labeling/status"),
+        api.get("/companies"),
+        api.get("/collection-incidents?page=1&page_size=10"),
       ]);
       setVersions(versionsResponse.data);
       setReadiness(readinessResponse.data);
@@ -40,6 +44,8 @@ export default function ModelManagementPage() {
       setRiskStatus(statusResponse.data);
       setRuntimeStatus(runtimeResponse.data);
       setLlmLabeling(llmResponse.data);
+      setCompanies(companiesResponse.data);
+      setIncidents(incidentsResponse.data.items);
       setNotice(null);
     } catch (requestError) {
       setNotice({ type: "error", message: getErrorMessage(requestError) });
@@ -74,6 +80,17 @@ export default function ModelManagementPage() {
       setNotice({ type: "error", message: getErrorMessage(requestError) });
     } finally {
       setBusy(null);
+    }
+  };
+
+  const acknowledgeIncident = async (incidentId) => {
+    setNotice(null);
+    try {
+      await api.post(`/collection-incidents/${incidentId}/acknowledge`);
+      await load();
+      setNotice({ type: "success", message: "수집 장애를 확인 처리했습니다." });
+    } catch (requestError) {
+      setNotice({ type: "error", message: getErrorMessage(requestError) });
     }
   };
 
@@ -131,6 +148,10 @@ export default function ModelManagementPage() {
       <section className="panel model-versions-panel"><PanelTitle kicker="MODEL REGISTRY" title="모델 목록" /><div className="model-version-list">{displayedModels.length ? displayedModels.map((model) => <article className="model-version-row" key={model.id}><div><span className={`model-status ${model.status}`}>{MODEL_STATUS_LABELS[model.status] ?? model.status}</span><div><strong>{MODEL_TASK_LABELS[model.task] ?? model.task}</strong><small>{model.version} · {model.base_model || "사용자 정의 모델"}</small><small>{model.note ?? MODEL_TASK_DESCRIPTIONS[model.task]}</small></div></div><div>{model.runtime ? <small>로컬 런타임</small> : <><small>등록 {formatDate(model.created_at)}</small>{model.status === "candidate" && <button type="button" onClick={() => promote(model)} disabled={Boolean(busy)}>{busy === `promote-${model.id}` ? "승격 중..." : "운영 승격"}</button>}</>}</div></article>) : <p className="panel-empty">등록된 모델 버전이 없습니다.</p>}</div></section>
       <section className="panel model-readiness-panel"><PanelTitle kicker="TRAINING READINESS" title="학습 준비도" /><div className="readiness-task-list">{readiness?.tasks?.map((task) => <article className={task.candidate_training_ready ? "ready" : "blocked"} key={task.task}><div><strong>{MODEL_TASK_LABELS[task.task] ?? task.task}</strong><span>{task.candidate_training_ready ? "후보 학습 가능" : "데이터 준비 중"}</span></div><p>확정 라벨 {formatNumber(task.confirmed_total)}건 · 신규 {formatNumber(task.new_since_latest)}/{formatNumber(task.increment_required)}건</p>{task.blockers?.length > 0 && <small>{task.blockers[0]}</small>}</article>) ?? <p className="panel-empty">학습 준비도를 확인하고 있습니다.</p>}</div></section>
     </div>
+    <section className="panel collection-incidents-panel">
+      <PanelTitle kicker="COLLECTION INCIDENTS" title="최근 수집 장애" />
+      <IncidentList incidents={incidents} companies={companies} onAcknowledge={acknowledgeIncident} />
+    </section>
     <section className="panel quality-operations model-quality"><div className="model-quality-head"><PanelTitle kicker="DAILY QUALITY CHECK" title="수집·분석 품질 점검" /><button className="secondary-button" type="button" onClick={rerunCheck} disabled={Boolean(busy)}>{busy === "check" ? "점검 중..." : "지금 다시 점검"}</button></div>{modelCheck ? <div className="daily-check-summary"><div><span>점검 상태</span><strong className={modelCheck.status}>{modelCheck.status === "stable" ? "안정" : modelCheck.status === "warning" ? "확인 필요" : "비교 자료 부족"}</strong></div><div><span>최근 특징 구간</span><strong>{formatNumber(modelCheck.report?.recent_window_count)}</strong></div><div><span>수집 커버리지</span><strong>{formatPercent(modelCheck.report?.collection_coverage)}</strong></div><div><span>분포 변화 경고</span><strong>{formatNumber(modelCheck.report?.drift_flags?.length)}</strong></div><small>마지막 점검 {formatDate(modelCheck.checked_at)}</small></div> : <p className="panel-empty">품질 점검 결과를 불러오는 중입니다.</p>}</section>
     <section className="panel quality-operations model-quality">
       <div className="model-quality-head">

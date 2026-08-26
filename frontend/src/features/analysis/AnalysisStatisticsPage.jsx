@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
-import { Metric, Pagination, PanelTitle } from "../../shared/components";
+import { Pagination, PanelTitle } from "../../shared/components";
 import {
   DATA_QUALITY_LABELS,
   FILTERED_DATA_MODE,
   FILTER_REASON_LABELS,
-  LIGHTGBM_STATE_LABELS,
   MONITORING_LABELS,
-  READINESS_LABELS,
   REVIEW_DATA_MODE,
   RISK_TYPE_LABELS,
   SOURCE_LABELS,
@@ -37,12 +35,70 @@ function FilterResultRow({ result }) {
   </a>;
 }
 
+const STATISTICS_GRAPH_WIDTH = 720;
+const STATISTICS_GRAPH_HEIGHT = 230;
+const STATISTICS_GRAPH_PADDING = { top: 18, right: 12, bottom: 24, left: 8 };
+const SEOUL_DAY_FORMATTER = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
+
+const seoulDayKey = (value) => {
+  const parts = Object.fromEntries(SEOUL_DAY_FORMATTER.formatToParts(new Date(value)).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
+// 일일 요약의 기사 합계와 같은 날짜에 기록된 최고 위험도를 하나의 그래프 점으로 결합한다.
+function buildDailyTrendPoints(dailySummaries, windows) {
+  const riskByDay = new Map();
+  (windows ?? []).forEach((window) => {
+    if (window.risk_probability === null || window.risk_probability === undefined) return;
+    const day = seoulDayKey(window.window_start);
+    riskByDay.set(day, Math.max(riskByDay.get(day) ?? 0, window.risk_probability));
+  });
+  return (dailySummaries ?? []).map((summary) => ({
+    id: `daily-${summary.summary_date}`,
+    window_start: `${summary.summary_date}T00:00:00+09:00`,
+    article_count: summary.article_count,
+    risk_probability: riskByDay.get(summary.summary_date) ?? 0,
+  }));
+}
+
+// 분석 통계의 날짜별 총수집량과 일일 최고 위험도 흐름을 보여준다.
+function DetailTrendGraph({ windows, label }) {
+  const points = [...(windows ?? [])].reverse();
+  const articleValues = points.map((item) => item.article_count ?? 0);
+  const riskValues = points.map((item) => (item.risk_probability ?? 0) * 100);
+  const articleMax = Math.max(...articleValues, 1);
+  const plotWidth = STATISTICS_GRAPH_WIDTH - STATISTICS_GRAPH_PADDING.left - STATISTICS_GRAPH_PADDING.right;
+  const plotHeight = STATISTICS_GRAPH_HEIGHT - STATISTICS_GRAPH_PADDING.top - STATISTICS_GRAPH_PADDING.bottom;
+  const point = (value, max, index) => {
+    const x = STATISTICS_GRAPH_PADDING.left + (points.length < 2 ? plotWidth / 2 : index / (points.length - 1) * plotWidth);
+    const y = STATISTICS_GRAPH_PADDING.top + plotHeight - value / max * plotHeight;
+    return `${x},${y}`;
+  };
+  const articlePoints = points.map((item, index) => point(item.article_count ?? 0, articleMax, index)).join(" ");
+  const riskPoints = points.map((item, index) => point((item.risk_probability ?? 0) * 100, 100, index)).join(" ");
+  const tickIndexes = points.length ? [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])] : [];
+  const formatWindowDate = (value) => value ? new Date(value).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }) : "-";
+  return <section className="home-trend-graphs statistics-trend-graphs" aria-label={`${label} 일별 수집량과 위험도 추세`}>
+    <figure className="home-line-graph">
+      <figcaption><span className="collection">오늘 수집량 <strong>{articleValues.at(-1) ?? 0}</strong></span><span className="risk">오늘 최고 위험도 <strong>{formatPercent((riskValues.at(-1) ?? 0) / 100)}</strong></span></figcaption>
+      {points.length ? <svg viewBox={`0 0 ${STATISTICS_GRAPH_WIDTH} ${STATISTICS_GRAPH_HEIGHT}`} role="img" aria-label={`${label} 일별 수집량과 최고 위험도 그래프`}>
+        {[0, .5, 1].map((ratio) => <line key={ratio} className="home-graph-grid" x1={STATISTICS_GRAPH_PADDING.left} x2={STATISTICS_GRAPH_WIDTH - STATISTICS_GRAPH_PADDING.right} y1={STATISTICS_GRAPH_PADDING.top + plotHeight * ratio} y2={STATISTICS_GRAPH_PADDING.top + plotHeight * ratio} />)}
+        <polyline className="home-graph-line collection" points={articlePoints} />
+        <polyline className="home-graph-line risk" points={riskPoints} />
+        {points.map((item, index) => { const [articleX, articleY] = point(item.article_count ?? 0, articleMax, index).split(","); const [riskX, riskY] = point((item.risk_probability ?? 0) * 100, 100, index).split(","); return <g key={item.id ?? item.window_start}><circle className="home-graph-point collection" cx={articleX} cy={articleY} r="2.4"><title>{`${formatWindowDate(item.window_start)} · 수집량 ${item.article_count ?? 0}건`}</title></circle><circle className="home-graph-point risk" cx={riskX} cy={riskY} r="2.4"><title>{`${formatWindowDate(item.window_start)} · 위험도 ${formatPercent(item.risk_probability)}`}</title></circle></g>; })}
+        {tickIndexes.map((index) => <text className="home-graph-date" key={index} x={STATISTICS_GRAPH_PADDING.left + (points.length < 2 ? plotWidth / 2 : index / (points.length - 1) * plotWidth)} y={STATISTICS_GRAPH_HEIGHT - 5} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{formatWindowDate(points[index].window_start)}</text>)}
+      </svg> : <p>표시할 추세 데이터가 없습니다.</p>}
+    </figure>
+  </section>;
+}
+
 // 최신 15분 특징 창과 수집 완전성, 공통 모델 상태를 요약한다.
 function FeatureWindowSummary({ window: featureWindow }) {
   if (!featureWindow) return <p className="panel-empty">아직 생성된 15분 특징 구간이 없습니다.</p>;
+  const endTime = new Date(featureWindow.window_end).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }).replace(/^(오전|오후)\s*/, "");
   return <div className="feature-window-summary">
-    <div className="feature-window-head"><div><span className="eyebrow">LATEST 15-MIN WINDOW</span><strong>{formatDate(featureWindow.window_start)}–{formatDate(featureWindow.window_end)}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span><span className={`model-pill ${featureWindow.model_state}`}>{LIGHTGBM_STATE_LABELS[featureWindow.model_state] ?? "LightGBM 상태 확인 필요"}</span></div></div>
-    <div className="window-metrics"><div><span>기사</span><strong>{formatNumber(featureWindow.article_count)}</strong></div><div><span>스토리</span><strong>{formatNumber(featureWindow.story_count)}</strong></div><div><span>확산</span><strong>{formatNumber(featureWindow.amplification_count)}</strong></div><div><span>언론사</span><strong>{formatNumber(featureWindow.publisher_count)}</strong></div><div title="운영 중인 LightGBM이 현재 구간의 최종 위험 가능성을 산출합니다."><span>위험도</span><strong>{formatRiskProbability(featureWindow.risk_probability)}</strong></div></div>
+    <div className="feature-window-head"><div><span className="eyebrow">최근 15분 수집</span><strong>{formatDate(featureWindow.window_start)} – {endTime}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span></div></div>
+    <div className="window-metrics"><div><span>기사</span><strong>{formatNumber(featureWindow.article_count)}</strong></div><div><span>스토리</span><strong>{formatNumber(featureWindow.story_count)}</strong></div><div><span>확산</span><strong>{formatNumber(featureWindow.amplification_count)}</strong></div><div><span>언론사</span><strong>{formatNumber(featureWindow.publisher_count)}</strong></div><div><span>위험도</span><strong>{formatRiskProbability(featureWindow.risk_probability)}</strong></div></div>
     {featureWindow.data_quality === "unavailable" && <p className="window-warning">수집 불가 구간이므로 위험도를 계산하지 않았습니다.</p>}
   </div>;
 }
@@ -95,7 +151,7 @@ function RiskDetail({ risk, canReview = false }) {
     catch (requestError) { setError(getErrorMessage(requestError)); } finally { setLoading(false); }
   };
   return <div className="risk-detail">
-    <div className="risk-detail-head"><div><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><h3>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</h3></div><span className={`model-pill ${risk.model_state}`}>{LIGHTGBM_STATE_LABELS[risk.model_state] ?? "LightGBM 상태 확인 필요"}</span></div>
+    <div className="risk-detail-head"><div><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><h3>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</h3></div></div>
     <p>위험도 {formatRiskProbability(risk.risk_probability)} · 이상 점수 {formatScore(risk.anomaly_score)} · {formatDate(risk.detected_at)}</p>
     <div className="risk-type-list">{risk.risk_types.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
     <div className="evidence-list"><strong>근거 기사</strong>{risk.evidence_articles.length ? risk.evidence_articles.map((article) => <a key={article.article_id} href={article.url} target="_blank" rel="noreferrer">{article.title}</a>) : <small>연결된 근거 기사가 없습니다.</small>}</div>
@@ -106,7 +162,7 @@ function RiskDetail({ risk, canReview = false }) {
 }
 
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
-export default function RealtimePage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, onCompanyChange }) {
+export default function AnalysisStatisticsPage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, onCompanyChange }) {
   const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
   const [data, setData] = useState(null); const [error, setError] = useState(null);
   const [articlePage, setArticlePage] = useState(1);
@@ -114,9 +170,7 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
   const [displayMode, setDisplayMode] = useState("");
   const [articleSources, setArticleSources] = useState([]);
   const [changingState, setChangingState] = useState(false);
-  const [bulkChangingState, setBulkChangingState] = useState(null);
   const [selectedRiskId, setSelectedRiskId] = useState(initialRiskEventId);
-  const [activating, setActivating] = useState(false);
   const [now, setNow] = useState(Date.now());
   const refreshSequence = useRef(0);
   const riskDetailRef = useRef(null);
@@ -143,13 +197,14 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
       const articleRequest = filterDecision
         ? api.get(`/companies/${id}/filter-results?decision=${filterDecision}&page=${articlePage}&page_size=10`)
         : api.get(`/companies/${id}/articles?page=${articlePage}&page_size=10${sourceQuery}`);
-      const [monitoring, articles, risks, filtering, windows] = await Promise.all([
+      const [monitoring, articles, risks, filtering, windows, dailySummaries] = await Promise.all([
         api.get(`/companies/${id}/monitoring`), articleRequest, api.get(`/companies/${id}/risk-events?limit=200`),
-        api.get(`/companies/${id}/filter-summary`), api.get(`/companies/${id}/feature-windows?limit=96`),
+        api.get(`/companies/${id}/filter-summary`), api.get(`/companies/${id}/feature-windows?limit=672`),
+        api.get(`/companies/${id}/daily-summaries?days=7`),
       ]);
       if (requestId !== refreshSequence.current) return;
       if (!filterDecision) setArticleSources(articles.data.sources);
-      setData({ monitoring: monitoring.data, articles: articles.data, articleKind: filterDecision ? "filter_results" : "articles", articleDecision: filterDecision, risks: risks.data, filtering: filtering.data, windows: windows.data }); setError(null);
+      setData({ monitoring: monitoring.data, articles: articles.data, articleKind: filterDecision ? "filter_results" : "articles", articleDecision: filterDecision, risks: risks.data, filtering: filtering.data, windows: windows.data, dailySummaries: dailySummaries.data }); setError(null);
     } catch (requestError) { if (requestId === refreshSequence.current) setError(getErrorMessage(requestError)); }
   }, [selectedId, articlePage, displayMode, onCompanyChange]);
   // 수집 주기보다 빠른 30초 간격으로 서버 현황을 다시 조회한다.
@@ -171,6 +226,7 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
     return () => window.cancelAnimationFrame(frame);
   }, [initialRiskEventId, selectedRisk?.id]);
   const latestWindow = data?.windows?.[0] ?? null;
+  const dailyTrendPoints = buildDailyTrendPoints(data?.dailySummaries, data?.windows);
   const secondsUntilCollection = data?.monitoring.monitoring_status === "paused"
     ? data.monitoring.collection_interval_seconds
     : data?.monitoring.next_collection_at
@@ -178,19 +234,15 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
       : null;
   // 백엔드 상태와 진행 중인 요청을 조합해 제어 버튼의 동작·표시 상태를 계산한다.
   const monitoringStatus = selected?.monitoring_status;
-  const startingMonitoring = changingState && monitoringStatus === "paused";
-  const monitoringPreparing = startingMonitoring || ["backfilling", "warming"].includes(monitoringStatus);
-  const monitoringActionAvailable = ["paused", "active"].includes(monitoringStatus);
-  const showCollectionCountdown = ["paused", "active"].includes(monitoringStatus)
+  const monitoringActionAvailable = ["backfilling", "warming", "paused", "active"].includes(monitoringStatus);
+  const showCollectionCountdown = monitoringActionAvailable
     && Boolean(data?.monitoring.next_collection_at);
-  const monitorControlClass = monitoringPreparing ? "preparing" : monitoringStatus === "paused" ? "start" : "stop";
-  const monitorControlLabel = monitoringPreparing
-    ? "실시간 모니터링 준비 중"
-    : changingState
+  const monitorControlClass = monitoringStatus === "paused" ? "start" : "stop";
+  const monitorControlLabel = changingState
       ? "처리 중..."
       : monitoringStatus === "paused"
         ? "실시간 모니터링 시작"
-        : monitoringStatus === "active"
+        : monitoringActionAvailable
           ? "실시간 모니터링 중지"
           : "설정 확인 필요";
   const showingFilterResults = data?.articleKind === "filter_results";
@@ -214,33 +266,11 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
     } catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setChangingState(false); }
   };
-  // 모든 기업의 모니터링 상태를 지정한 동작으로 일괄 변경한다.
-  const changeAllMonitoringStates = async (action) => {
-    const actionLabel = action === "pause" ? "모든 기업의 실시간 모니터링을 중지" : "모든 기업의 실시간 모니터링을 재개";
-    if (!window.confirm(`${actionLabel}할까요?`)) return;
-    setBulkChangingState(action); setError(null);
-    try {
-      await api.post(`/companies/monitoring/bulk/${action}`);
-      await refresh();
-    } catch (requestError) { setError(getErrorMessage(requestError)); }
-    finally { setBulkChangingState(null); }
-  };
-  const activateSelected = async () => {
-    if (!selected || selected.readiness_status !== "pending_approval") return;
-    if (!window.confirm(`${selected.name}의 모니터링을 승인하고 시작할까요?`)) return;
-    setActivating(true); setError(null);
-    try { await api.post(`/companies/${selected.id}/activate`); await refresh(); }
-    catch (requestError) { setError(getErrorMessage(requestError)); }
-    finally { setActivating(false); }
-  };
-  return <section className="workspace"><div className="workspace-head"><div><span className="eyebrow">COMPANY DETAIL / 04</span><h1>기업 상세</h1><p>기업별 수집 통계, 위험 근거와 대응 초안을 한곳에서 확인합니다.</p></div><span className="live-indicator"><i /> LIVE</span></div>
-    {canAdminister && <div className="bulk-monitor-controls"><button className="monitor-control stop" type="button" onClick={() => changeAllMonitoringStates("pause")} disabled={Boolean(bulkChangingState)}>{bulkChangingState === "pause" ? "중지 중..." : "전체 중지"}</button><button className="monitor-control start" type="button" onClick={() => changeAllMonitoringStates("resume")} disabled={Boolean(bulkChangingState)}>{bulkChangingState === "resume" ? "재개 중..." : "전체 모니터링 재개"}</button></div>}
-    <div className="monitor-toolbar"><label>상세 기업<select value={selectedId} onChange={(event) => { const nextCompanyId = event.target.value; setSelectedId(nextCompanyId); setArticlePage(1); setRiskPage(1); setSelectedRiskId(null); setDisplayMode(""); setArticleSources([]); onCompanyChange?.(nextCompanyId); }}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name} · {company.industry_name}</option>)}</select></label>{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}{selected && <><span className={`state-badge ${selected.monitoring_status}`}>{MONITORING_LABELS[selected.monitoring_status]}</span>{canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || bulkChangingState || monitoringPreparing || !monitoringActionAvailable}>{monitoringPreparing && <i className="monitor-loader" aria-hidden="true" />}{monitorControlLabel}</button>}</>}</div>
+  return <section className="workspace analysis-statistics-workspace"><div className="workspace-head"><div><span className="eyebrow">ANALYSIS STATISTICS / 04</span><h1>분석 통계</h1><p>기업별 수집량과 위험도 추세, 위험 근거와 대응 초안을 한곳에서 확인합니다.</p></div></div>
+    <div className="monitor-toolbar"><label>분석 기업<select value={selectedId} onChange={(event) => { const nextCompanyId = event.target.value; setSelectedId(nextCompanyId); setArticlePage(1); setRiskPage(1); setSelectedRiskId(null); setDisplayMode(""); setArticleSources([]); onCompanyChange?.(nextCompanyId); }}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name} · {company.industry_name}</option>)}</select></label>{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}{selected && <><span className={`state-badge ${selected.monitoring_status}`}>{MONITORING_LABELS[selected.monitoring_status]}</span>{canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}</>}</div>
     {error && <div className="notice error">{error}</div>}
     {!selected ? <p className="empty-state">먼저 기업 등록 페이지에서 모니터링할 기업을 등록해 주세요.</p> : data && <>
-      <section className={`readiness-banner ${data.monitoring.readiness_status}`}><div><strong>{READINESS_LABELS[data.monitoring.readiness_status]}</strong><span>{data.monitoring.readiness_status === "active" ? `관련 기사 ${formatNumber(data.monitoring.accepted_article_count)}건 · 유효한 비어 있지 않은 구간 ${formatNumber(data.monitoring.valid_nonempty_window_count)}개` : `관련 기사 ${formatNumber(data.monitoring.accepted_article_count)}/50 · 유효한 비어 있지 않은 구간 ${formatNumber(data.monitoring.valid_nonempty_window_count)}/40`}</span></div><div><span className={`model-pill ${data.monitoring.model_state}`}>{LIGHTGBM_STATE_LABELS[data.monitoring.model_state] ?? "LightGBM 상태 확인 필요"}</span>{canAdminister && data.monitoring.readiness_status === "pending_approval" && <button type="button" onClick={activateSelected} disabled={activating}>{activating ? "활성화 중..." : "승인하고 모니터링 시작"}</button>}</div></section>
-      <div className="metric-grid"><Metric label="정제 통과 기사" value={data.monitoring.article_count} /><Metric label="감성 분석 완료" value={data.monitoring.analyzed_count} /><Metric label="마지막 수집" value={formatDate(data.monitoring.last_collected_at)} small /></div>
-      <section className="filter-summary"><div><span>수집 원문</span><strong>{formatNumber(data.filtering.raw_count)}</strong></div><div><span>중복 병합</span><strong>{formatNumber(data.filtering.duplicate_count)}</strong></div><div><span>광고 제외</span><strong>{formatNumber(data.filtering.advertisement_count)}</strong></div><div><span>무관 제외</span><strong>{formatNumber(data.filtering.irrelevant_count)}</strong></div><div><span>검토 필요</span><strong>{formatNumber(data.filtering.review_required_count)}</strong></div><div><span>자동 판정</span><strong>{formatNumber(data.filtering.ai_assisted_count)}</strong></div></section>
+      <DetailTrendGraph windows={dailyTrendPoints} label={selected.name} />
       <FeatureWindowSummary window={latestWindow} />
       <div className="live-grid"><section className="panel span-two"><PanelTitle kicker={showingFilterResults ? "FILTER RESULTS" : "COLLECTED ARTICLES"} title={articlePanelTitle} /><label className="source-filter">표시할 데이터<select value={displayMode} onChange={(event) => { setDisplayMode(event.target.value); setArticlePage(1); }}><option value="">정제 통과 기사 전체</option><optgroup label="필터 판정"><option value={FILTERED_DATA_MODE}>필터 제외 데이터 · {formatNumber(data.filtering.rejected_count)}건</option><option value={REVIEW_DATA_MODE}>검토 필요 데이터 · {formatNumber(data.filtering.review_required_count)}건</option></optgroup><optgroup label="정제 통과 기사 출처">{articleSources.map((source) => <option value={source} key={source}>{SOURCE_LABELS[source] ?? source}</option>)}{SUPPORTED_SOURCES.filter((source) => !articleSources.includes(source)).map((source) => <option value={source} key={source} disabled>{SOURCE_LABELS[source]} · 수집 데이터 없음</option>)}</optgroup></select></label><div className="article-list">{data.articles.items.length ? (showingFilterResults ? data.articles.items.map((result) => <FilterResultRow result={result} key={result.id} />) : data.articles.items.map((article) => <a className="article-row" key={article.id} href={article.url} target="_blank" rel="noreferrer"><span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span><div><strong>{article.title}</strong><small>{SOURCE_LABELS[article.source] ?? article.source} · {formatDate(article.published_at ?? article.created_at)}</small></div></a>)) : <p className="panel-empty">{articleEmptyText}</p>}</div><Pagination page={data.articles.page} pageSize={data.articles.page_size} total={data.articles.total} onChange={setArticlePage} /></section>
         <section className="panel"><PanelTitle kicker="RISK EVENTS" title="기업 위험 이벤트" /><div className="risk-list selectable">{visibleRisks.length ? visibleRisks.map((risk) => <button className={selectedRisk?.id === risk.id ? "selected" : ""} type="button" onClick={() => setSelectedRiskId(risk.id)} key={risk.id}><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><strong>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</strong><small>위험도 {formatRiskProbability(risk.risk_probability)} · {formatDate(risk.detected_at)}</small></button>) : <p className="panel-empty">새 위험 이벤트가 없습니다.</p>}</div><Pagination page={riskPage} pageSize={riskPageSize} total={data.risks.length} onChange={setRiskPage} /></section>

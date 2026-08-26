@@ -771,7 +771,7 @@ def update_daily_summary(db: Session, company_id: int, at: datetime) -> None:
 
 
 def update_company_readiness(db: Session, company: Company, settings: Settings) -> None:
-    """Move a prepared company only to pending approval; never auto-activate it."""
+    """Update model readiness without blocking or changing collection controls."""
     article_count = db.scalar(
         select(func.count(CompanyArticleMatch.article_id)).where(
             CompanyArticleMatch.company_id == company.id
@@ -792,8 +792,6 @@ def update_company_readiness(db: Session, company: Company, settings: Settings) 
         company.baseline_ready_at = company.baseline_ready_at or datetime.now(timezone.utc)
     elif company.analysis_status != "error":
         company.analysis_status = "warming"
-    if company.monitoring_status == "backfilling":
-        company.monitoring_status = "warming"
 
 
 def build_feature_window(

@@ -87,6 +87,8 @@ class CompanyRoleDatabaseTests(unittest.TestCase):
         stored_main = self.db.get(Company, main.id)
         self.assertEqual(stored_main.company_role, "main")
         self.assertEqual(stored_main.annual_revenue_krw, 12_345_000_000)
+        self.assertEqual(stored_main.monitoring_status, "active")
+        self.assertEqual(main.readiness_status, "active")
 
         with self.assertRaises(HTTPException) as duplicate_main:
             create_main_company(
@@ -110,6 +112,8 @@ class CompanyRoleDatabaseTests(unittest.TestCase):
         stored_competitor = self.db.get(Company, competitor.id)
         self.assertEqual(stored_competitor.company_role, "competitor")
         self.assertEqual(stored_competitor.annual_revenue_krw, 1_001_000_000)
+        self.assertEqual(stored_competitor.monitoring_status, "active")
+        self.assertEqual(competitor.readiness_status, "active")
 
 
 if __name__ == "__main__":

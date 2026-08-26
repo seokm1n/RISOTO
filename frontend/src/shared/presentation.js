@@ -34,7 +34,7 @@ export const FILTER_REASON_LABELS = {
 export const READINESS_LABELS = {
   preparing: "데이터 준비 중",
   pending_approval: "활성화 승인 대기",
-  active: "실시간 모니터링 활성",
+  active: "분석 통계 사용 가능",
 };
 export const DATA_QUALITY_LABELS = { complete: "수집 정상", partial: "일부 수집원 장애", unavailable: "수집 불가" };
 export const LIGHTGBM_STATE_LABELS = { production: "LightGBM 운영 판정", provisional: "LightGBM 검증 판정", unavailable: "LightGBM 판정 대기" };

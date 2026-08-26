@@ -9,6 +9,7 @@ function LoginPage({ onAuthenticated }) {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => { document.title = "RISOTO · 로그인"; }, []);
 
@@ -24,18 +25,19 @@ function LoginPage({ onAuthenticated }) {
     }
   };
 
-  return <main className="login-page">
+  return <main className="login-page login-landing">
     <section className="login-story" aria-labelledby="login-story-title">
       <div className="login-brand"><img src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span>RISOTO</span><small>RISk Out Through Observation</small></div>
       <div className="login-story-copy">
         <h1 id="login-story-title">위험 신호를 먼저 발견하고,<br /><em>대응은 더 빠르게.</em></h1>
         <p>실시간 기업 데이터를 정제하고 위험을 판별해, 근거 기반 대응전략까지 하나의 흐름으로 관리합니다.</p>
       </div>
+      <button className="login-start" type="button" onClick={() => setShowLogin(true)}>지금 시작하기 <span aria-hidden="true">→</span></button>
     </section>
 
-    <section className="login-access" aria-labelledby="login-title">
+    {showLogin && <section className="login-access login-access-modal" aria-labelledby="login-title">
       <div className="login-card">
-        <div className="login-card-head"><span className="login-kicker">MEMBER ACCESS</span></div>
+        <div className="login-card-head"><span className="login-kicker">MEMBER ACCESS</span><button className="login-close" type="button" onClick={() => setShowLogin(false)} aria-label="로그인 창 닫기">×</button></div>
         <h2 id="login-title">로그인</h2>
         <p>등록한 기업의 위험 현황과 대응전략을 확인하세요.</p>
         <form className="login-form" onSubmit={submit}>
@@ -52,7 +54,7 @@ function LoginPage({ onAuthenticated }) {
         <p className="auth-switch">처음 이용하시나요? <Link to="/signup">회원가입</Link></p>
       </div>
       <p className="login-copyright">© 2026 RISOTO · Enterprise risk monitoring</p>
-    </section>
+    </section>}
   </main>;
 }
 

@@ -12,28 +12,25 @@ import {
 
 import { api, getErrorMessage } from "../../api";
 import MyPage from "../account/MyPage";
+import AnalysisStatisticsPage from "../analysis/AnalysisStatisticsPage";
 import CollectionPage from "../collection/CollectionPage";
 import CompanyAdministrationPage from "../companies/CompanyPages";
-import MainPage from "../home/MainPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
-import RealtimePage from "../realtime/RealtimePage";
 import ArticleReviewPage from "../reviews/ArticleReviewPage";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 
 const NAV_ITEMS = [
-  { id: "home", label: "메인", path: "/main" },
-  { id: "companies", label: "기업 관리", path: "/companies" },
   { id: "collection", label: "수집", path: "/collection" },
-  { id: "detail", label: "기업 상세", path: "/companies/overview" },
+  { id: "statistics", label: "분석 통계", path: "/companies/overview" },
+  { id: "companies", label: "기업 관리", path: "/companies" },
   { id: "operations", label: "운영 관리", path: "/operations" },
   { id: "review", label: "기사 검수", path: "/reviews" },
 ];
 
 const PAGE_TITLES = {
-  home: "메인",
   collection: "수집",
-  detail: "기업 상세",
+  statistics: "분석 통계",
   companies: "기업 관리",
   account: "마이페이지",
   operations: "운영 관리",
@@ -43,24 +40,24 @@ const PAGE_TITLES = {
 const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
 
 const pageFromPath = (pathname) => {
-  if (pathname === "/main") return "home";
+  if (pathname === "/main") return "collection";
   if (pathname === "/account") return "account";
   if (pathname === "/operations" || pathname === "/models") return "operations";
   if (pathname === "/reviews") return "review";
   if (pathname === "/collection") return "collection";
   if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "companies";
-  if (pathname === "/companies/overview" || /^\/companies\/[^/]+$/.test(pathname)) return "detail";
-  return "home";
+  if (pathname === "/companies/overview" || /^\/companies\/[^/]+$/.test(pathname)) return "statistics";
+  return "collection";
 };
 
-function CompanyDetailRoute({ canAdminister, onCompanyChange }) {
+function AnalysisStatisticsRoute({ canAdminister, onCompanyChange }) {
   const { companyId } = useParams();
   const [searchParams] = useSearchParams();
   const normalizedCompanyId = companyId ? numericParam(companyId) : null;
   const riskEventId = numericParam(searchParams.get("riskEventId"));
 
   if (companyId && !normalizedCompanyId) return <Navigate to="/companies/overview" replace />;
-  return <RealtimePage
+  return <AnalysisStatisticsPage
     key={normalizedCompanyId ?? "overview"}
     initialCompanyId={normalizedCompanyId}
     initialRiskEventId={riskEventId ? Number(riskEventId) : null}
@@ -124,17 +121,15 @@ export default function WorkspaceApp({ session, onLogout }) {
     navigate(path, options);
   }, [location.pathname, location.search, navigate]);
 
-  const openCompanyDetail = useCallback((companyId, riskEventId = null, options) => {
+  const openAnalysisStatistics = useCallback((companyId, riskEventId = null, options) => {
     if (!companyId) { goTo("/companies/overview", options); return; }
     const riskQuery = riskEventId ? `?riskEventId=${encodeURIComponent(riskEventId)}` : "";
     goTo(`/companies/${encodeURIComponent(companyId)}${riskQuery}`, options);
   }, [goTo]);
 
-  const openManagementCompany = useCallback(() => { goTo("/companies"); }, [goTo]);
-
-  const changeDetailCompany = useCallback((companyId, options) => {
-    openCompanyDetail(companyId, null, options);
-  }, [openCompanyDetail]);
+  const changeStatisticsCompany = useCallback((companyId, options) => {
+    openAnalysisStatistics(companyId, null, options);
+  }, [openAnalysisStatistics]);
 
   const logout = () => {
     if (managementDirty && page === "companies" && !window.confirm("저장하지 않은 변경사항을 버리고 로그아웃할까요?")) return;
@@ -143,14 +138,14 @@ export default function WorkspaceApp({ session, onLogout }) {
 
   const companyAdministrationProps = {
     onDirtyChange: setManagementDirty,
-    onOpenCompany: openCompanyDetail,
+    onOpenCompany: openAnalysisStatistics,
   };
   const allowedNotificationItems = (notifications.items ?? []).filter((item) => item.type === "risk");
   const notificationTotal = allowedNotificationItems.length;
 
   return <main className="min-h-screen">
     <header className="topbar">
-      <button className="brand" onClick={() => goTo("/main")}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
+      <button className="brand" onClick={() => goTo("/collection")}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
       <nav className="main-nav" aria-label="주요 화면">{NAV_ITEMS.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
       <div className="topbar-actions">
         <button className="notification-bell" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`알림 ${notificationTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" /><path d="M10 21h4" /></svg>{notificationTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationTotal > 99 ? "99+" : notificationTotal}</span>}</button>
@@ -160,21 +155,21 @@ export default function WorkspaceApp({ session, onLogout }) {
     </header>
 
     <Routes>
-      <Route path="/" element={<Navigate to="/main" replace />} />
-      <Route path="/main" element={<MainPage canManageCompanies onOpenCompany={openCompanyDetail} onManageCompanies={openManagementCompany} />} />
+      <Route path="/" element={<Navigate to="/collection" replace />} />
+      <Route path="/main" element={<Navigate to="/collection" replace />} />
       <Route path="/account" element={<MyPage session={session} />} />
       <Route path="/operations" element={<ModelManagementPage />} />
       <Route path="/models" element={<Navigate to="/operations" replace />} />
       <Route path="/reviews" element={<ArticleReviewPage />} />
-      <Route path="/collection" element={<CollectionPage onOpenCompany={openCompanyDetail} />} />
+      <Route path="/collection" element={<CollectionPage onOpenCompany={openAnalysisStatistics} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/overview" element={<MainCompanyOverviewRedirect />} />
-      <Route path="/companies/:companyId" element={<CompanyDetailRoute canAdminister onCompanyChange={changeDetailCompany} />} />
-      <Route path="*" element={<Navigate to="/main" replace />} />
+      <Route path="/companies/:companyId" element={<AnalysisStatisticsRoute canAdminister onCompanyChange={changeStatisticsCompany} />} />
+      <Route path="*" element={<Navigate to="/collection" replace />} />
     </Routes>
 
-    <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} onRiskOpen={(item) => item.company_id && openCompanyDetail(item.company_id, item.risk_event_id)} />
+    <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} onRiskOpen={(item) => item.company_id && openAnalysisStatistics(item.company_id, item.risk_event_id)} />
   </main>;
 }

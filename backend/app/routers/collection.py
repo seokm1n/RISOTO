@@ -57,8 +57,8 @@ def _user_company(db: Session, company_id: int, user_id: int) -> Company:
 
 
 def _resumed_monitoring_status(company: Company) -> str:
-    """Keep human activation when resuming; unapproved companies remain in warm-up."""
-    return "active" if company.analysis_status == "ready" else "warming"
+    """Resume collection immediately while model analysis can continue warming up."""
+    return "active"
 
 
 def _latest_filter_results(company_id: int):
@@ -410,14 +410,7 @@ def get_monitoring_summary(
             CompanyFeatureWindow.article_count > 0,
         )
     ) or 0
-    ready = (
-        article_count >= settings.readiness_min_articles
-        and valid_nonempty_window_count >= settings.readiness_min_nonempty_windows
-    )
-    readiness_status = (
-        "active" if company.monitoring_status == "active" else
-        "pending_approval" if ready else "preparing"
-    )
+    readiness_status = "active"
     return MonitoringSummary(
         company_id=company_id,
         monitoring_status=company.monitoring_status,

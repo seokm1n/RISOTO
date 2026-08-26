@@ -6,8 +6,6 @@ import {
   COMPANY_KEYWORD_FIELDS,
   COMPANY_SIZE_LABELS,
   KEYWORD_LABELS,
-  MONITORING_LABELS,
-  READINESS_LABELS,
   formatNumber,
 } from "../../shared/presentation";
 import {
@@ -68,13 +66,16 @@ export function CompanyCard({ company, monitoringSummary, onOpen, onEdit }) {
     return result;
   }, [company]);
   const roleLabel = company.company_role === "main" ? "메인 기업" : COMPETITOR_LABEL;
+  const collectionStopped = company.monitoring_status === "paused" || company.monitoring_status === "archived";
+  const collectedCount = monitoringSummary?.article_count ?? company.accepted_article_count ?? 0;
+  const analyzedCount = monitoringSummary?.analyzed_count ?? 0;
 
   return <article className={`company-card ${company.company_role === "main" ? "main-company-card" : ""} ${onEdit ? "editable-company-card" : ""}`}>
     <div className="company-card-head flex items-start justify-between gap-5">
       <div><div className="company-role-line"><span className={`company-role-badge ${company.company_role}`}>{roleLabel}</span></div><h3><button className="company-name-link" type="button" onClick={() => onOpen(company.id)}>{company.name}</button></h3><p>{company.industry_name}</p></div>
-      {onEdit && <div className="company-card-controls"><button className="company-edit-icon" type="button" onClick={() => onEdit(company.id)} aria-label={`${company.name} 수정`} title="기업 수정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg></button></div>}
+      {onEdit && <div className="company-card-controls"><button className="company-edit-icon" type="button" onClick={() => onEdit(company.id)} aria-label={`${company.name} 수정`} title="기업 수정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg><span>수정</span></button></div>}
     </div>
-    <div className={`pipeline-state ${company.monitoring_status}`}><strong>{READINESS_LABELS[company.readiness_status] ?? MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</strong><span>{company.readiness_status === "active" ? `기사 ${formatNumber(company.accepted_article_count)}건 · 유효 구간 ${formatNumber(company.valid_nonempty_window_count)}개` : `기사 ${formatNumber(company.accepted_article_count)}/50 · 유효 구간 ${formatNumber(company.valid_nonempty_window_count)}/40`}</span>{monitoringSummary && <small>수집 {monitoringSummary.article_count}건 · 분석 {monitoringSummary.analyzed_count}건</small>}</div>
+    <div className="company-collection-summary"><strong className={collectionStopped ? "stopped" : "running"}>{collectionStopped ? "수집 중지" : "수집 중"}</strong><span>수집 {formatNumber(collectedCount)}건 · 분석 {formatNumber(analyzedCount)}건</span></div>
     <div className="company-finance-summary"><div><span>연매출</span><strong>{formatRevenue(company.annual_revenue_100m_krw)}</strong></div><div><span>기업 규모</span><strong>{COMPANY_SIZE_LABELS[company.company_size_class] ?? "미입력"}</strong></div></div>
     <div className="company-card-keywords mt-6 grid gap-4 sm:grid-cols-3">{Object.entries(KEYWORD_LABELS).map(([type, label]) => <div key={type}><span className="mini-label">{label}</span><p className="mt-1 text-sm leading-6 text-[#4e4642]">{grouped[type].join(" · ") || "등록 없음"}</p></div>)}</div>
   </article>;
@@ -143,6 +144,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
     event.preventDefault();
     const validationError = validateCompanyForm(form, keywordCount);
     if (validationError) { setNotice({ type: "error", message: validationError }); return; }
+    if (!window.confirm(`${form.name.trim()}을(를) ${targetLabel}(으)로 등록하고 기사 수집을 시작할까요?`)) return;
     setSubmitting(true); setNotice(null);
     try {
       const endpoint = companyRole === "main" ? "/companies/main" : "/companies";
@@ -157,24 +159,24 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
   };
 
   return <>
-    <section className={`hero-grid ${onboarding ? "onboarding-hero" : ""}`}>
-      <div className="hero-copy">{!onboarding && <span className="eyebrow">COMPETITOR / 01</span>}<h1>{companyRole === "main" ? <>먼저,<br /><em>메인 기업</em>을 등록하세요.</> : <>분석할 <em>{COMPETITOR_LABEL}</em>의<br />정보를 입력하세요.</>}</h1><p>{companyRole === "main" ? "메인 기업은 위험 대응의 기준이 됩니다. 등록 후 정보는 수정할 수 있지만 삭제하거나 역할을 바꿀 수 없습니다." : `${COMPETITOR_LABEL}의 위험은 메인 기업에 미칠 수 있는 영향과 대응 경우의 수로 분석됩니다.`}</p>{!onboarding && <div className="sequence"><span className="active">01 기업 정보 입력</span><span>02 기사 수집·판별</span><span>03 이슈 탐지·대응</span></div>}</div>
+    <section className={`hero-grid ${onboarding ? "onboarding-hero" : "competitor-hero"}`}>
+      {onboarding && <div className="hero-copy"><h1>{companyRole === "main" ? <>먼저,<br /><em>메인 기업</em>을 등록하세요.</> : <>분석할 <em>{COMPETITOR_LABEL}</em>의<br />정보를 입력하세요.</>}</h1><p>{companyRole === "main" ? "메인 기업은 위험 대응의 기준이 됩니다. 등록 후 정보는 수정할 수 있지만 삭제하거나 역할을 바꿀 수 없습니다." : `${COMPETITOR_LABEL}의 위험은 메인 기업에 미칠 수 있는 영향과 대응 경우의 수로 분석됩니다.`}</p></div>}
+      {!onboarding && <div className="competitor-setup-heading"><span className="eyebrow">NEW COMPETITOR TARGET</span><h1>{COMPETITOR_LABEL} 등록</h1></div>}
       <form className="setup-card" onSubmit={submit}>
-        <div className="card-heading"><div><span className="eyebrow">NEW {companyRole === "main" ? "MAIN" : "COMPETITOR"} TARGET</span><h2>{targetLabel} 등록</h2></div></div>
+        {onboarding && <div className="card-heading"><div><span className="eyebrow">NEW MAIN TARGET</span><h2>{targetLabel} 등록</h2></div></div>}
         <CompanySettingsFields idPrefix={companyRole === "main" ? "main-register" : "competitor-register"} form={form} industries={industries} disabled={submitting || loading} version={formVersion} onFieldChange={changeField} onKeywordChange={changeKeyword} onKeywordDraftChange={changeKeywordDraft} />
-        {!onboarding && <div className="settings-note"><strong>수집 문맥</strong><span>별칭·제품·위험 키워드는 기사 수집과 관련성 판별에 사용됩니다.</span><small>키워드 {keywordCount}/100</small></div>}
         {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
         <button className="submit-button" type="submit" disabled={submitting || loading}><span>{submitting ? "등록 중..." : `${targetLabel} 등록`}</span><b aria-hidden="true">→</b></button>
       </form>
     </section>
-    {!onboarding && <section className="registered-section"><div className="section-title"><div><span className="eyebrow">REGISTERED COMPETITORS</span><h2>등록한 {COMPETITOR_LABEL}</h2></div></div>{loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : companies.length ? <div className="company-list">{companies.map((company) => <CompanyCard company={company} key={company.id} monitoringSummary={monitoringSummaries[company.id]} onOpen={onOpenCompany} onEdit={onEditCompany} />)}</div> : <p className="empty-state">아직 등록한 {COMPETITOR_LABEL}가 없습니다.</p>}</section>}
+    {!onboarding && <section className="registered-section"><div className="section-title"><div><span className="eyebrow">REGISTERED COMPETITORS</span><h2>{COMPETITOR_LABEL} 목록</h2></div></div>{loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : companies.length ? <div className="company-list">{companies.map((company) => <CompanyCard company={company} key={company.id} monitoringSummary={monitoringSummaries[company.id]} onOpen={onOpenCompany} onEdit={onEditCompany} />)}</div> : <p className="empty-state">아직 등록한 {COMPETITOR_LABEL}가 없습니다.</p>}</section>}
   </>;
 }
 
 export function MainCompanyOnboardingPage({ onCreated }) {
   const navigate = useNavigate();
   useEffect(() => { document.title = "RISOTO · 메인 기업 등록"; }, []);
-  const complete = async () => { await onCreated(); navigate("/main", { replace: true }); };
+  const complete = async () => { await onCreated(); navigate("/collection", { replace: true }); };
   return <main className="onboarding-page"><header className="onboarding-topbar"><div className="login-brand"><img src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span>RISOTO</span></div></header><SetupPage companyRole="main" onboarding onCreated={complete} /></main>;
 }
 
@@ -245,6 +247,7 @@ function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
     event.preventDefault();
     const validationError = validateCompanyForm(form, keywordCount);
     if (!selected || validationError) { setNotice({ type: "error", message: validationError || "수정할 경쟁사를 찾지 못했습니다." }); return; }
+    if (!window.confirm(`${selected.name}의 변경사항을 저장할까요?`)) return;
     setSaving(true); setNotice(null);
     try {
       const response = await api.put(`/companies/${selected.id}`, companyPayload(form, submittedKeywords));
