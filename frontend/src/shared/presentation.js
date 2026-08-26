@@ -44,15 +44,49 @@ export const RISK_TYPE_LABELS = {
 };
 export const INCIDENT_STATUS_LABELS = { open: "장애 발생", retrying: "재시도 중", recovered: "복구됨", acknowledged: "확인 완료" };
 export const HEALTH_STATUS_LABELS = { healthy: "정상", partial: "일부 장애", down: "장애", unknown: "확인 전" };
+// 모델 버전 화면에 쓰는 표시 이름이다. "무엇을 판별/분류/탐지하는 모델인가"로 통일한다.
 export const MODEL_TASK_LABELS = {
-  article_filter: "기사 관련성·광고 판정",
+  article_filter: "광고·관련성 통합 판별",
+  article_relevance: "광고·스팸 판별",
+  topical_relevance: "기업 관련성 판별",
   sentiment: "감성 분석",
   risk_type_classifier: "위험 유형 분류",
   risk_detector: "최종 위험 판정",
   isolation_forest: "이상치 탐지",
 };
+// 목록에서 각 모델이 실제로 무슨 일을 하는지 한 줄로 보여주는 설명이다.
+export const MODEL_TASK_DESCRIPTIONS = {
+  article_filter: "기사가 광고성인지와 기업 관련성을 하나의 모델로 함께 판정합니다.",
+  article_relevance: "기사 본문이 광고·스팸 문구인지 아닌지를 판별합니다.",
+  topical_relevance: "기사가 실제로 그 기업 얘기인지, 이름만 겹치는 동명이인인지 구분합니다.",
+  sentiment: "기사·댓글의 긍정·중립·부정 감성을 분석합니다.",
+  risk_type_classifier: "위험 사건을 제품·법률·노동 등 8가지 유형으로 분류합니다.",
+  risk_detector: "이상치 탐지 결과를 바탕으로 최종 위험 여부를 판정합니다.",
+  isolation_forest: "평소와 다른 이상 징후를 탐지합니다.",
+};
 export const MODEL_STATUS_LABELS = { production: "운영 중", candidate: "후보", retired: "보관", failed: "실패" };
 export const EMPTY_NOTIFICATIONS = { items: [], total: 0, risk_count: 0, model_promotion_count: 0 };
+
+// 블라인드 기사 라벨링 화면의 선택지 표시 문구다.
+export const RELEVANCE_LABEL_OPTIONS = [
+  { value: "relevant", label: "관련 있음 (기업 핵심 내용)" },
+  { value: "incidental", label: "부수적 언급" },
+  { value: "irrelevant", label: "무관함" },
+  { value: "uncertain", label: "판단 보류" },
+];
+export const ADVERTISEMENT_LABEL_OPTIONS = [
+  { value: "no", label: "광고 아님" },
+  { value: "yes", label: "광고/홍보성" },
+  { value: "uncertain", label: "판단 보류" },
+];
+export const SENTIMENT_LABEL_OPTIONS = [
+  { value: "positive", label: "긍정" },
+  { value: "neutral", label: "중립" },
+  { value: "negative", label: "부정" },
+  { value: "mixed", label: "혼재" },
+  { value: "uncertain", label: "판단 보류" },
+  { value: "not_applicable", label: "해당 없음(무관 기사)" },
+];
 
 // 숫자를 한국어 로캘의 천 단위 구분 형식으로 표시한다.
 export const formatNumber = (value) => new Intl.NumberFormat("ko-KR").format(value ?? 0);

@@ -17,6 +17,7 @@ from app.models import (
     RiskEventLabel,
 )
 from app.presenters import risk_event_read
+from app.services.llm_labeling import audit_sample_candidates, llm_labeling_status
 from app.services.risk_ground_truth import (
     apply_authoritative_risk_label,
     validate_risk_label_evidence,
@@ -97,6 +98,40 @@ def article_review_candidates(
     ]
     candidates.sort(key=lambda item: item.review_priority, reverse=True)
     return candidates[:limit]
+
+
+@router.get("/llm-audit-sample", response_model=list[ArticleReviewCandidate])
+def llm_audit_sample(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> list[ArticleReviewCandidate]:
+    """Blind monthly spot-check sample: LLM-confirmed articles a human hasn't cross-checked yet.
+
+    Unlike /articles, this deliberately resurfaces articles that already have a
+    confirmed label (the LLM's) so a human can independently judge the same
+    article and let us measure agreement, without ever seeing the AI's answer.
+    """
+    status = llm_labeling_status(db)
+    remaining = max(status["audit"]["target_sample_size"] - status["audit"]["reviewed_count"], 0)
+    take = min(limit, remaining)
+    if take <= 0:
+        return []
+    rows = audit_sample_candidates(db, auth.user_id, take)
+    return [
+        ArticleReviewCandidate(
+            company_id=company.id,
+            company_name=company.name,
+            raw_article_id=raw.id,
+            source=raw.source,
+            title=raw.title,
+            summary=raw.summary,
+            url=raw.url,
+            published_at=raw.published_at,
+            review_priority=0.0,
+        )
+        for _result, raw, company in rows
+    ]
 
 
 @router.post("/articles", response_model=ArticleLabelRead)

@@ -663,6 +663,27 @@ class TrainingTaskReadiness(BaseModel):
     trainer_command: str
 
 
+class LlmLabelingAuditRead(BaseModel):
+    """이번 달 사람 표본 검수 진행 상황과 LLM 일치율."""
+
+    month: str
+    target_sample_size: int
+    reviewed_count: int
+    agreement_count: int
+    agreement_rate: float | None
+
+
+class LlmLabelingStatusRead(BaseModel):
+    """LLM 자동 라벨링 가동 현황과 밀린 기사 수를 보여주는 읽기 전용 요약."""
+
+    enabled: bool
+    model_name: str
+    llm_labeled_total: int
+    llm_labeled_last_24h: int
+    pending_backlog: int
+    audit: LlmLabelingAuditRead
+
+
 class ModelTrainingReadinessRead(BaseModel):
     checked_at: datetime
     article_labels_total: int

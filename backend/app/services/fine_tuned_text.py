@@ -20,6 +20,7 @@ _sentiment_cache: tuple[int, object, object, object] | None = None
 _risk_type_cache: tuple[int, object, object, object] | None = None
 _relevance_sequence_cache: tuple[str, object, object, object] | None = None
 _sentiment_sequence_cache: tuple[str, object, object, object] | None = None
+_topical_relevance_cache: tuple[int, object, object, object] | None = None
 
 
 def _configured_path(value: str) -> Path | None:
@@ -98,6 +99,44 @@ def predict_relevance(text: str) -> dict | None:
             "relevant": labels["normal"],
             "irrelevant": labels["filter"],
         }
+    except Exception:
+        return None
+
+
+def predict_topical_relevance(text: str) -> dict | None:
+    """Return relevant/irrelevant probabilities from the promoted company-topicality classifier.
+
+    This answers a different question than predict_relevance(): not "is this spam/an ad"
+    but "does this text substantively concern the tagged company, as opposed to an
+    incidental name collision (e.g. SSG Landers baseball vs SSG the retailer)".
+    """
+    global _topical_relevance_cache
+    version = _active("topical_relevance")
+    if version is None or not Path(version.artifact_path).is_dir() or not text.strip():
+        return None
+    try:
+        if _topical_relevance_cache is None or _topical_relevance_cache[0] != version.id:
+            with _lock:
+                if _topical_relevance_cache is None or _topical_relevance_cache[0] != version.id:
+                    import torch
+                    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+                    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                    model = AutoModelForSequenceClassification.from_pretrained(version.artifact_path)
+                    model.to(device).eval()
+                    tokenizer = AutoTokenizer.from_pretrained(version.artifact_path)
+                    _topical_relevance_cache = (version.id, model, tokenizer, device)
+        _, model, tokenizer, device = _topical_relevance_cache
+        import torch
+
+        encoded = tokenizer(text, truncation=True, max_length=384, return_tensors="pt")
+        with torch.no_grad():
+            logits = model(
+                input_ids=encoded["input_ids"].to(device),
+                attention_mask=encoded["attention_mask"].to(device),
+            ).logits
+        probabilities = torch.softmax(logits, dim=-1)[0].cpu().tolist()
+        return _label_probabilities(model, probabilities)
     except Exception:
         return None
 
