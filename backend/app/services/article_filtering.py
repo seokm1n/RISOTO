@@ -403,7 +403,6 @@ def classify_article(
         )
     groups = _keyword_groups(company, keywords)
     text = normalized_content(item)
-    company_name = str(getattr(company, "name", "")).strip()
     item_url = normalize_url(getattr(item, "url", ""))
 
     relevance_score, relevance_evidence = _rule_relevance(item, groups)
@@ -414,7 +413,7 @@ def classify_article(
     nli_labels: dict[str, float] | None = None
     nli_error: str | None = None
     local_relevance = (
-        predict_relevance(company_name, text)
+        predict_relevance(text)
         if text and config.ai_enabled and nli_classifier is None
         else None
     )
@@ -450,6 +449,7 @@ def classify_article(
         }
     # 규칙 점수를 NLI 문맥 판정으로 보정하되 기업 언급이 전혀 없으면 자동 승인하지 않는다.
     if local_relevance is None and fine_tuned is None and nli is not None and text:
+        company_name = str(getattr(company, "name", "해당 기업"))
         relevance_hypotheses = [
             f"이 글의 중심 주제는 {company_name}의 사업, 경영, 제품 또는 기업 위험이다.",
             f"이 글에서 {company_name}은 부수적으로만 언급된다.",
@@ -533,16 +533,8 @@ def classify_article(
         "ai_relevance_score": ai_relevance,
         "ai_advertising_score": ai_advertising,
         "nli_label_scores": nli_labels,
-        "classifier_model": (
-            local_relevance.get("version") if local_relevance else
-            fine_tuned.get("version") if fine_tuned else
-            config.classifier_model_name if ai_used else None
-        ),
+        "classifier_model": config.classifier_model_name if ai_used else None,
         "fine_tuned_model_version": fine_tuned.get("version") if fine_tuned else None,
-        "target_company": company_name if ai_used else None,
-        "relevance_input_schema": (
-            local_relevance.get("input_schema") if local_relevance else None
-        ),
         "classifier_fallback_error": nli_error,
         "semantic_model": config.semantic_model_name if ai_used else None,
         "semantic_fallback_error": scorer.last_error if scorer and not ai_used else None,
