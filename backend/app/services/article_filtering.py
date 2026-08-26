@@ -18,7 +18,7 @@ import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.services.klue_nli import KlueNliClassifier, get_klue_nli_classifier
-from app.services.fine_tuned_text import predict_filter, predict_relevance
+from app.services.fine_tuned_text import predict_filter, predict_relevance, predict_topical_relevance
 
 
 # 비교 전에 외부 기사 본문을 정리하고 토큰화하는 전처리 규칙이다.
@@ -57,7 +57,30 @@ NON_ARTICLE_PAGE_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"(?:^|[\s)>｜|·-])(?:뉴스|기사|보도자료)?\s*검색\s*결과\s*$",
         re.IGNORECASE,
     ),
+    # 종목토론방·종토방 차트 페이지: 실제 보도가 아니라 투자자 커뮤니티 템플릿이다.
+    re.compile(r"종토방|종목토론방|종토넷", re.IGNORECASE),
+    # 핫딜 게시판 특유의 "쇼핑몰명::상품명 (가격) > 국내핫딜" 말미 카테고리 표기다.
+    # 뉴스 제목에 "핫딜"이 주제로 등장하는 경우와 구분하기 위해 말미 ">카테고리" 형태만 잡는다.
+    re.compile(r">\s*(?:국내|해외|온라인)?\s*핫딜\s*$", re.IGNORECASE),
+    # 온라인 커뮤니티 베스트글·인기글·댓글 모음 페이지 제목이다.
+    re.compile(r"베플|베스트\s*(?:댓글|리플|게시글)|인기\s*(?:글|댓글)\s*모음", re.IGNORECASE),
 )
+# 뉴스 기사를 게재하지 않는 커뮤니티·핫딜 게시판·리뷰·정보 디렉터리 호스트다.
+# 회사명이 제목에 그대로 등장해도 기사 자체가 아니므로 규칙 관련성 판정보다 앞서 걸러낸다.
+NON_ARTICLE_PAGE_HOST_FRAGMENTS = (
+    "dcinside.com", "dealbada.com", "diningcode.com", "mangoplate.com",
+    "nate.com", "jongto.net", "adrything.com",
+    "fmkorea.com", "clien.net", "ppomppu.co.kr", "ruliweb.com",
+    "theqoo.net", "instiz.net", "todayhumor.co.kr", "82cook.com",
+    "ilbe.com", "ygosu.com", "mlbpark.donga.com", "bobaedream.co.kr",
+    "humoruniv.com",
+)
+# topical_relevance 모델이 실제 라벨링 데이터로 학습한 기업만 나열한다. 이 밖의(사용자가 새로
+# 등록한) 기업에는 모델이 어떻게 반응할지 검증되지 않아 적용하지 않는다.
+TOPICAL_RELEVANCE_TRAINED_COMPANIES = {
+    "올리브영", "무신사", "에이블리", "마켓컬리", "SSG",
+    "11번가", "카카오", "네이버", "쿠팡",
+}
 
 
 @dataclass(slots=True)
@@ -75,6 +98,9 @@ class FilterConfig:
     semantic_model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     allow_model_download: bool = True
     max_semantic_duplicate_candidates: int = 5
+    # topical_relevance 모델이 이 확률 이상으로 "무관"을 확신할 때만 관련성 점수를 그만큼 낮춘다.
+    # 정밀도가 낮은 모델이라(관련 있음 예측의 오탐이 잦음) 점수를 올리는 데는 절대 쓰지 않는다.
+    topical_irrelevant_override_threshold: float = 0.90
 
 
 @dataclass(slots=True)
@@ -315,10 +341,13 @@ def _advertising_rules(item: object) -> tuple[float, list[str]]:
 
 
 def _non_article_page_evidence(item: object) -> list[str]:
-    """검색 결과나 카테고리 목록처럼 기사 한 건이 아닌 페이지를 식별한다."""
+    """검색 결과나 카테고리 목록, 커뮤니티·핫딜 게시판처럼 기사 한 건이 아닌 페이지를 식별한다."""
     title = normalize_text(getattr(item, "title", ""))
     if any(pattern.search(title) for pattern in NON_ARTICLE_PAGE_TITLE_PATTERNS):
         return ["generic_listing_title"]
+    host = urlsplit(getattr(item, "url", "") or "").netloc.casefold()
+    if any(fragment in host for fragment in NON_ARTICLE_PAGE_HOST_FRAGMENTS):
+        return ["non_article_host"]
     return []
 
 
@@ -456,6 +485,25 @@ def classify_article(
         except Exception as exc:  # 모델 실패 시에도 결정적 규칙 판정과 실패 기록을 유지한다.
             nli_error = f"{type(exc).__name__}: {exc}"[:500]
 
+    # 회사 관련성(동명이인 등) 보조 모델: "관련 있음" 예측은 오탐이 잦아 점수를 올리는 데 쓰지 않고,
+    # "무관"을 확신할 때(예: SSG 랜더스 야구팀 vs SSG 회사)만 점수를 그만큼 낮추는 안전장치로만 쓴다.
+    # 학습에 쓴 9개 실제 기업 밖에서는 일반화가 검증되지 않았다 (영문·가상 기업 입력에서 90%+ 확신으로
+    # "무관"을 오판하는 과신 현상을 테스트에서 확인함) -- 그래서 학습된 기업일 때만 적용한다.
+    topical_relevance = (
+        predict_topical_relevance(text)
+        if text and str(getattr(company, "name", "")) in TOPICAL_RELEVANCE_TRAINED_COMPANIES
+        else None
+    )
+    if topical_relevance is not None:
+        topical_irrelevant = float(topical_relevance.get("irrelevant", 0.0))
+        if topical_irrelevant >= config.topical_irrelevant_override_threshold:
+            relevance_score = min(relevance_score, 1.0 - topical_irrelevant)
+            details_topical_override = topical_irrelevant
+        else:
+            details_topical_override = None
+    else:
+        details_topical_override = None
+
     # 자료량과 확산을 보존하기 위해 URL이 같은 경우만 중복 제거한다.
     # 같은 본문 해시나 유사 문장은 story_cluster_id로 묶되 이 단계에서는 삭제하지 않는다.
     candidates = [
@@ -498,6 +546,7 @@ def classify_article(
         "classifier_fallback_error": nli_error,
         "semantic_model": config.semantic_model_name if ai_used else None,
         "semantic_fallback_error": scorer.last_error if scorer and not ai_used else None,
+        "topical_irrelevant_override": details_topical_override,
         "thresholds": {
             "duplicate": config.duplicate_threshold,
             "advertising_reject": config.advertising_reject_threshold,

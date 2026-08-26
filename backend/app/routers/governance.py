@@ -15,6 +15,7 @@ from app.models import (
     RiskEvent,
 )
 from app.schemas import (
+    LlmLabelingStatusRead,
     ModelOperationCheckRead,
     ModelTrainingReadinessRead,
     ModelVersionRead,
@@ -22,6 +23,7 @@ from app.schemas import (
     ResponseDraftRead,
     ResponseDraftReview,
 )
+from app.services.llm_labeling import llm_labeling_status, run_llm_labeling_backlog
 from app.services.model_operations import (
     build_training_readiness,
     ensure_daily_model_check,
@@ -127,6 +129,25 @@ def rerun_model_monitoring_check(
 ) -> ModelOperationCheck:
     """Recompute today's report after an operator changes labels or collection state."""
     return ensure_daily_model_check(db, force=True)
+
+
+@router.get("/llm-labeling/status", response_model=LlmLabelingStatusRead)
+def get_llm_labeling_status(
+    db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
+) -> dict:
+    """Report automatic LLM labeling throughput and this month's human audit agreement."""
+    return llm_labeling_status(db)
+
+
+@router.post("/llm-labeling/run", response_model=LlmLabelingStatusRead)
+def trigger_llm_labeling_backlog(
+    db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_auth),
+) -> dict:
+    """Manually catch up any articles the automatic per-company trigger missed."""
+    run_llm_labeling_backlog(db)
+    return llm_labeling_status(db)
 
 
 @router.post("/model-versions/{model_id}/promote", response_model=ModelVersionRead)

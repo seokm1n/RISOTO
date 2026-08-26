@@ -282,6 +282,9 @@ class CollectionJobOwnerTests(unittest.TestCase):
             def __exit__(self, *_args):
                 return False
 
+            def get_bind(self):
+                return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
             def get(self, _model, _company_id):
                 return SimpleNamespace(id=19, user_id=73, name="예시기업")
 

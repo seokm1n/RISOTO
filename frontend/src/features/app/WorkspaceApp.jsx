@@ -18,6 +18,7 @@ import MainPage from "../home/MainPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
 import RealtimePage from "../realtime/RealtimePage";
+import ArticleReviewPage from "../reviews/ArticleReviewPage";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 
 const NAV_ITEMS = [
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { id: "collection", label: "수집", path: "/collection" },
   { id: "detail", label: "기업 상세", path: "/companies/overview" },
   { id: "operations", label: "운영 관리", path: "/operations" },
+  { id: "review", label: "기사 검수", path: "/reviews" },
 ];
 
 const PAGE_TITLES = {
@@ -35,6 +37,7 @@ const PAGE_TITLES = {
   companies: "기업 관리",
   account: "마이페이지",
   operations: "운영 관리",
+  review: "기사 검수",
 };
 
 const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
@@ -43,6 +46,7 @@ const pageFromPath = (pathname) => {
   if (pathname === "/main") return "home";
   if (pathname === "/account") return "account";
   if (pathname === "/operations" || pathname === "/models") return "operations";
+  if (pathname === "/reviews") return "review";
   if (pathname === "/collection") return "collection";
   if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "companies";
   if (pathname === "/companies/overview" || /^\/companies\/[^/]+$/.test(pathname)) return "detail";
@@ -161,6 +165,7 @@ export default function WorkspaceApp({ session, onLogout }) {
       <Route path="/account" element={<MyPage session={session} />} />
       <Route path="/operations" element={<ModelManagementPage />} />
       <Route path="/models" element={<Navigate to="/operations" replace />} />
+      <Route path="/reviews" element={<ArticleReviewPage />} />
       <Route path="/collection" element={<CollectionPage onOpenCompany={openCompanyDetail} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
