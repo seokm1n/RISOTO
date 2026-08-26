@@ -154,7 +154,7 @@ class Company(TimestampMixin, Base):
     )
     backfill_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
     monitoring_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="backfilling"
+        String(20), nullable=False, default="active"
     )
     analysis_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     analysis_error: Mapped[str | None] = mapped_column(Text)

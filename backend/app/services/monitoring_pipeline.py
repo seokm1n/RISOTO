@@ -710,19 +710,23 @@ def initialize_company_monitoring(
     """신규 기업 또는 추가 키워드의 백필을 수행하고 실시간 모니터링을 시작한다."""
     try:
         settings = get_settings()
+        monitoring_paused = False
         with SessionLocal() as db:
             company = db.get(Company, company_id)
             if company is None:
                 return
+            monitoring_paused = company.monitoring_status == "paused"
             started_at = company.monitoring_started_at or datetime.now(timezone.utc)
             company.monitoring_started_at = started_at
             if is_new:
-                company.monitoring_status = "backfilling"
-                company.analysis_status = "pending"
+                company.analysis_status = "warming"
                 company.next_collection_at = started_at + timedelta(
                     seconds=settings.realtime_interval_seconds
                 )
             db.commit()
+
+        if monitoring_paused:
+            return
 
         if is_new:
             run_collection(
