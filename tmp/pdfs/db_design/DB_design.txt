@@ -1,0 +1,232 @@
+
+===== PAGE 1 =====
+RISOTO · DB 설계
+전체 워크플로우에 필요한 DB 테이블 정의
+에이전트 전체 흐름(수집 → 저장 → 집계 → 모델 → 대응전략 → 피드백 → 재학습)에
+필요한 테이블을 10개 후보에서 실제로 필요한 6개로 정리하고, 각 테이블의 전체 스키
+마를 담았다.
+작성일 2026-08-19
+v0.1 · 팀 회의 공유용
+0. 팀 회의 체크리스트
+1. 결론 — 6개 테이블
+2. 왜 10개가 아니라 6개인가
+3. 전체 관계도
+4. 테이블별 전체 스키마
+0
+구현 전에 팀이 합의해야 할 것
+이 문서의 모든 항목을 동일한 무게로 확정할 필요는 없다. 나중에 바꾸는 비용이 큰 것만 지금 못박고, 나머지는 유
+연하게 남겨둔다.
+지금 꼭 확정해야 하는 것 (나중에 바꾸면 비용이 큼)
+테이블명·컬럼명·타입 — 여러 사람이 이 이름으로 코드를 짜기 시작하면, 나중에 바꾸는 순간 관련 스크립트
+를 전부 고쳐야 한다
+기본키(PK)·외래키(FK) 관계 — raw_id , (company, date) 같은 연결 구조가 바뀌면 여러 테이블에 걸친 코
+드가 동시에 깨진다
+테이블별 담당(owner) — 어떤 스크립트/역할이 어느 컬럼에 쓰기 권한이 있는지. 예:
+mentions.sentiment_label 은 감성분석 배치만 쓴다, risk_labels 는 사람 검수를 거쳐야만 값이 들어간다
+실행 순서 의존관계 — "감성분석 배치가 끝나야 daily_features 집계가 가능하다" 같은 순서. 스키마는 아니
+지만 스키마만큼 중요한 합의사항
+지금 확정 안 해도 되는 것 (나중에 유연하게 바꿔도 됨)
+
+===== PAGE 2 =====
+feedback_log / monitoring_log 안의 JSON 구조 — 컬럼 자체는 고정이지만 그 안 내용은 나중에 자유롭게
+조정 가능
+risk_type 목록 자체 — 코드 상수로 관리하기로 했으니 테이블 구조를 안 건드리고 추가/삭제 가능
+z-score 임계값, 모니터링 기간(N일) 같은 파라미터 — 설정값이라 언제든 조정 가능
+회의에서 확인할 것 3가지
+1. 이 6개 테이블·컬럼 구조에 이견 없는지 (특히 이름/타입)
+2. 각 테이블을 "누가"(어느 스크립트/역할) 쓰는지 역할 분담
+3. post_monitoring / user_feedback 을 JSONB로 합친 설계가 실제 검수 프로세스와 맞는지 (여러 시점
+체크가 정말 필요한지)
+1
+결론 — 6개 테이블이면 충분하다
+"다른 이유로, 다른 시점에, 다른 주체가 쓰는 데이터"만 분리하고 나머지는 합친다는 원칙으로 정리하면 이렇게 된
+다.
+테이블
+역할
+raw_mentions
+수집 원본 (append-only, 감사용)
+mentions
+정제된 게시물 (게시물 단위)
+daily_features
+기업×날짜 집계 (모델 입력, 검색량 포함)
+risk_labels
+LightGBM 학습용 확정 정답 (사후 모니터링 포함)
+response_strategies
+LLM 대응전략 결과물 (사용자 피드백 포함)
+model_versions
+모델별 버전/성능 관리
+2
+왜 10개가 아니라 6개인가
+처음엔 10개 후보가 있었지만, 4개는 다른 테이블에 흡수할 수 있었다.
+
+===== PAGE 3 =====
+원래 후보
+흡수된 곳
+이유
+search_trend
+daily_features
+이미 search_index 컬럼이 있어 데이터랩 수집기가 그 컬럼만
+UPSERT하면 됨
+risk_type_taxonomy
+DB 밖 (코드/설정)
+5~6개짜리 고정 목록. risk_keywords 처럼 설정 파일로 충분,
+테이블 불필요
+post_monitoring
+risk_labels
+monitoring_log JSONB 컬럼으로 여러 시점 기록을 같은
+row에 흡수
+user_feedback
+response_strategies
+feedback_log JSONB 컬럼으로 여러 피드백을 같은 row에
+흡수
+JSONB 로그 컬럼으로 "1건이냐 여러 건이냐" 고민을 없앴다 — 애초에 post_monitoring·user_feedback을
+별도 테이블로 둘지 말지가 "한 번만 확정하는지, 여러 시점을 추적하는지"에 달려있었는데, 정답이 정해지지 않은
+상태였다. monitoring_log / feedback_log 를 JSONB 배열로 두면 1건이든 여러 건이든 같은 컬럼에 계속
+append하면 되므로, 테이블을 나눌지 말지를 지금 결정하지 않아도 된다.
+-- monitoring_log 예시
+[
+  {"check_date": "2026-08-22", "outcome": "확산", "note": "뉴스 추가 보도"},
+  {"check_date": "2026-08-29", "outcome": "사그라듦", "note": "언급량 baseline 복귀"}
+]
+합칠 수 없는 이유가 명확한 것들 — raw_mentions / mentions 은 스키마 성격과 row 집합 자체가 다름(JSON
+원본 vs 필터 통과분). risk_labels 는 사람이 확정한 값이라, 자동 재계산되는 daily_features 와 같은 row에
+있으면 재집계 스크립트가 실수로 덮어쓸 위험이 있어 반드시 분리. model_versions 은 아예 단위(grain)가 기업
+×날짜가 아니라 모델×버전이라 합칠 대상 자체가 없음.
+3
+전체 관계도
+
+===== PAGE 4 =====
+raw_id FK
+company+date 집계
+동일 키
+unclassified 시
+raw_mentions
+원본 · append-only
+mentions
+정제된 게시물
+daily_features
+기업×날짜 집계 (검색량 포함)
+Isolation Forest · LightGBM 입력
+risk_labels
+확정 정답 (사후모니터링 포함)
+response_strategies
+LLM 대응전략 (피드백 포함)
+model_versions
+독립 테이블 · 직접 FK 없음
+감성분석·IF·LightGBM 버전 기록
+model_versions 는 우리가 직접 학습시키는 3개 모델(감성분석·Isolation Forest·LightGBM) 전용이다. 6단계 LLM은 외부 API라
+여기 포함되지 않고, 사용한 모델명은 response_strategies.model_version 에 문자열로만 기록한다.
+4
+테이블별 전체 스키마
+raw_mentions
+CREATE TABLE raw_mentions (
+    id             BIGSERIAL PRIMARY KEY,
+    source         TEXT NOT NULL,      -- naver / kakao / youtube / naver_datalab
+    company        TEXT NOT NULL,
+    risk_keyword   TEXT,               -- 키워드 조합 검색이면 그 키워드, 아니면 NULL
+    collected_at   TIMESTAMPTZ NOT NULL,
+    source_url     TEXT,
+    raw_payload    JSONB NOT NULL,     -- API 원본 응답 통째로
+    ingestion_run  TEXT
+);
+mentions
+CREATE TABLE mentions (
+    id                        BIGSERIAL PRIMARY KEY,
+    raw_id                    BIGINT REFERENCES raw_mentions(id),
+    company                   TEXT NOT NULL,
+    source                    TEXT NOT NULL,
+    category                  TEXT,
+
+===== PAGE 5 =====
+    title                     TEXT,
+    content                   TEXT,
+    title_raw                 TEXT,
+    content_raw               TEXT,
+    url                       TEXT UNIQUE,
+    risk_keywords             TEXT[],
+    found_via_broad_search    BOOLEAN DEFAULT false,
+    found_via_keyword_search  BOOLEAN DEFAULT false,
+    embedding                 VECTOR(768),
+    sentiment_label           TEXT,
+    sentiment_score           FLOAT,
+    author                    TEXT,
+    published_at              TIMESTAMPTZ,
+    engagement                INT,
+    created_at                TIMESTAMPTZ DEFAULT now()
+);
+daily_features
+CREATE TABLE daily_features (
+    company                      TEXT NOT NULL,
+    date                         DATE NOT NULL,
+    mention_count_total          INT,
+    mention_count_naver          INT,
+    mention_count_kakao          INT,
+    mention_count_youtube        INT,
+    negative_ratio                FLOAT,
+    positive_ratio                FLOAT,
+    neutral_ratio                 FLOAT,
+    avg_sentiment_score           FLOAT,
+    search_index                  FLOAT,   -- 데이터랩 (별도 테이블 없이 여기로 흡수)
+    search_index_zscore           FLOAT,
+    mention_count_change_pct      FLOAT,
+    risk_keyword_mention_count    INT,
+    risk_keyword_coverage_ratio   FLOAT,
+    news_ratio                    FLOAT,
+    blog_ratio                    FLOAT,
+    cafe_ratio                    FLOAT,
+    youtube_ratio                  FLOAT,
+    engagement_sum                 INT,
+    if_anomaly_score                FLOAT,
+    if_is_anomaly                    BOOLEAN,
+    lgbm_risk_probability           FLOAT,
+    risk_type                       TEXT,   -- taxonomy는 코드에서 검증
+    risk_type_source                TEXT,   -- 'rule' | 'llm'
+    risk_type_confidence             FLOAT,
+    updated_at                       TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (company, date)
+);
+
+===== PAGE 6 =====
+
+
+risk_labels (post_monitoring 흡수)
+CREATE TABLE risk_labels (
+    company         TEXT NOT NULL,
+    date            DATE NOT NULL,
+    is_risk_event   BOOLEAN NOT NULL,
+    source          TEXT NOT NULL,      -- 'auto_candidate' | 'human_reviewed' | 'post_monitoring'
+    confirmed_by    TEXT,
+    confirmed_at    TIMESTAMPTZ,
+    monitoring_log  JSONB DEFAULT '[]', -- [{check_date, outcome, note}, ...]
+    notes           TEXT,
+    PRIMARY KEY (company, date)
+);
+response_strategies (user_feedback 흡수)
+CREATE TABLE response_strategies (
+    id                 BIGSERIAL PRIMARY KEY,
+    company            TEXT NOT NULL,
+    date               DATE NOT NULL,
+    risk_type          TEXT,
+    confidence         FLOAT,
+    strategy_text      TEXT,
+    cited_mention_ids  BIGINT[],          -- LLM이 근거로 인용한 mentions.id
+    model_version      TEXT,              -- 사용한 LLM 이름/프롬프트 버전 (문자열 기록)
+    status             TEXT DEFAULT '초안', -- '초안' | '검토중' | '승인'
+    feedback_log       JSONB DEFAULT '[]', -- [{reviewer, is_correct, usefulness_rating, comment, at}, 
+    created_at         TIMESTAMPTZ DEFAULT now()
+);
+model_versions
+CREATE TABLE model_versions (
+    id             BIGSERIAL PRIMARY KEY,
+    model_name     TEXT NOT NULL,   -- 'sentiment' | 'isolation_forest' | 'lightgbm'
+    version        TEXT NOT NULL,
+    trained_at     TIMESTAMPTZ NOT NULL,
+    metrics        JSONB,           -- {"accuracy":.., "f1_macro":.., ...}
+    is_active      BOOLEAN DEFAULT false,
+    artifact_path  TEXT
+);
+
+===== PAGE 7 =====
+재학습한 새 모델을 바로 교체하지 않고, held-out test set 성능을 metrics 에 기록해 기존 is_active=true 모델과 비교한
+뒤에만 is_active 를 전환한다.
+RISOTO INTERNAL · DB 설계 v0.1 · 팀 회의 공유용

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 
 import { api, setCsrfToken } from "./api";
-import WorkspaceApp from "./app/WorkspaceApp";
+import WorkspaceApp from "./features/app/WorkspaceApp";
 import LoginPage from "./features/auth/LoginPage";
 import { MainCompanyOnboardingPage } from "./features/companies/CompanyPages";
 

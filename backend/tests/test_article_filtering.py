@@ -2,6 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.services.article_filtering import (
     FilterConfig,
@@ -169,6 +170,40 @@ class ArticleFilteringTests(unittest.TestCase):
         )
         self.assertEqual((result.decision, result.reason), ("rejected", "irrelevant"))
         self.assertEqual(result.classifier_kind, "hybrid_klue_nli")
+
+    @patch("app.services.article_filtering.predict_relevance")
+    def test_local_relevance_model_receives_target_company(self, predict_relevance):
+        """로컬 관련성 모델 입력에서 대상 기업이 빠지는 회귀를 방지한다."""
+        predict_relevance.return_value = {
+            "version": "local:test-relevance",
+            "relevant": 0.90,
+            "irrelevant": 0.10,
+            "input_schema": "company-title-content-v1",
+        }
+
+        result = classify_article(
+            self.company,
+            self.keywords,
+            article(
+                "Acme Robotics launches Robo One",
+                "The company announced a product update.",
+            ),
+            config=FilterConfig(
+                ai_enabled=True,
+                semantic_model_name="unused",
+                allow_model_download=False,
+            ),
+        )
+
+        predict_relevance.assert_called_once_with(
+            "Acme Robotics",
+            "acme robotics launches robo one the company announced a product update.",
+        )
+        self.assertEqual(result.details["target_company"], "Acme Robotics")
+        self.assertEqual(
+            result.details["relevance_input_schema"],
+            "company-title-content-v1",
+        )
 
 
 if __name__ == "__main__":

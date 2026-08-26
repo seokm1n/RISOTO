@@ -3,34 +3,116 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getErrorMessage } from "../../api";
 import { Metric, Pagination, PanelTitle } from "../../shared/components";
 import {
+  DATA_QUALITY_LABELS,
   FILTERED_DATA_MODE,
+  FILTER_REASON_LABELS,
   LIGHTGBM_STATE_LABELS,
   MONITORING_LABELS,
   READINESS_LABELS,
   REVIEW_DATA_MODE,
+  RISK_TYPE_LABELS,
   SOURCE_LABELS,
   SUPPORTED_SOURCES,
   formatCountdown,
   formatDate,
   formatNumber,
+  formatPercent,
   formatRiskProbability,
+  formatScore,
   sentimentKind,
   sentimentText,
 } from "../../shared/presentation";
-import { FeatureWindowSummary, FilterResultRow, RiskDetail } from "./RealtimePanels";
+
+// 거부 또는 검토 대기 중인 원문 기사와 필터 판정 근거를 표시한다.
+function FilterResultRow({ result }) {
+  const reasonText = FILTER_REASON_LABELS[result.reason] ?? result.reason;
+  const decisionText = result.decision === "review_required" ? `${reasonText} 검토` : `${reasonText} 제외`;
+  const methodText = result.classifier_kind === "rules_only" ? "규칙 판정" : "자동 판정";
+  return <a className="article-row filter-result-row" href={result.url} target="_blank" rel="noreferrer">
+    <span className={`filter-pill ${result.decision}`}>{decisionText}</span>
+    <div><strong>{result.title}</strong>
+      <small>{SOURCE_LABELS[result.source] ?? result.source} · 판정 {formatDate(result.filtered_at)}</small>
+      <small className="filter-scores">관련성 {formatScore(result.relevance_score)} · 광고성 {formatScore(result.advertising_score)} · 신뢰도 {formatScore(result.confidence)} · {methodText}</small>
+    </div>
+  </a>;
+}
+
+// 최신 15분 특징 창과 수집 완전성, 공통 모델 상태를 요약한다.
+function FeatureWindowSummary({ window: featureWindow }) {
+  if (!featureWindow) return <p className="panel-empty">아직 생성된 15분 특징 구간이 없습니다.</p>;
+  return <div className="feature-window-summary">
+    <div className="feature-window-head"><div><span className="eyebrow">LATEST 15-MIN WINDOW</span><strong>{formatDate(featureWindow.window_start)}–{formatDate(featureWindow.window_end)}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span><span className={`model-pill ${featureWindow.model_state}`}>{LIGHTGBM_STATE_LABELS[featureWindow.model_state] ?? "LightGBM 상태 확인 필요"}</span></div></div>
+    <div className="window-metrics"><div><span>기사</span><strong>{formatNumber(featureWindow.article_count)}</strong></div><div><span>스토리</span><strong>{formatNumber(featureWindow.story_count)}</strong></div><div><span>확산</span><strong>{formatNumber(featureWindow.amplification_count)}</strong></div><div><span>언론사</span><strong>{formatNumber(featureWindow.publisher_count)}</strong></div><div title="운영 중인 LightGBM이 현재 구간의 최종 위험 가능성을 산출합니다."><span>위험도</span><strong>{formatRiskProbability(featureWindow.risk_probability)}</strong></div></div>
+    {featureWindow.data_quality === "unavailable" && <p className="window-warning">수집 불가 구간이므로 위험도를 계산하지 않았습니다.</p>}
+  </div>;
+}
+
+const HORIZON_LABELS = { immediate: "즉시", within_24h: "24시간 이내", within_7d: "7일 이내" };
+
+function ActionGroups({ actions }) {
+  return Object.entries(actions ?? {}).map(([horizon, items]) => <section className="scenario-actions" key={horizon}>
+    <h5>{HORIZON_LABELS[horizon] ?? horizon}</h5>
+    {(items ?? []).map((item, index) => <div className="scenario-action" key={`${horizon}-${index}`}><p>{typeof item === "string" ? item : item.action}</p>{typeof item !== "string" && item.evidence_urls?.map((url, urlIndex) => <a href={url} target="_blank" rel="noreferrer" key={url}>근거 {urlIndex + 1}</a>)}</div>)}
+  </section>);
+}
+
+function ResponseDraftContent({ draft }) {
+  const content = draft.content ?? {};
+  const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
+  const isCompetitorImpact = draft.generation_kind === "competitor_impact";
+  return <div className="response-draft">
+    <div className="response-draft-head"><div><span className="eyebrow">RESPONSE DRAFT · REVIEW REQUIRED</span><strong>{content.risk_summary}</strong></div><span className={`draft-kind ${isCompetitorImpact ? "competitor" : "main"}`}>{isCompetitorImpact ? "경쟁사 → 메인 기업 영향" : "메인 기업 직접 대응"}</span></div>
+    {scenarios.length ? <div className="response-scenario-list">{scenarios.map((scenario, index) => <article className="response-scenario" key={`${scenario.title ?? "scenario"}-${index}`}>
+      <header><span>경우 {String(index + 1).padStart(2, "0")}</span><h4>{scenario.title || `${index + 1}번째 대응안`}</h4></header>
+      {scenario.assumption && <p><strong>전제</strong>{scenario.assumption}</p>}
+      {scenario.possible_impact && <p><strong>메인 기업 예상 영향</strong>{scenario.possible_impact}</p>}
+      {scenario.transmission_path && <p><strong>영향 전파 경로</strong>{scenario.transmission_path}</p>}
+      {scenario.rationale && <p><strong>선택 근거</strong>{scenario.rationale}</p>}
+      {scenario.early_indicators?.length > 0 && <div className="early-indicators"><strong>조기 관찰 지표</strong><ul>{scenario.early_indicators.map((indicator) => <li key={indicator}>{indicator}</li>)}</ul></div>}
+      <ActionGroups actions={scenario.recommended_actions} />
+    </article>)}</div> : <ActionGroups actions={content.recommended_actions} />}
+    {content.uncertainty && <p className="uncertainty">불확실성: {content.uncertainty}</p>}
+  </div>;
+}
+
+// 위험 이벤트의 근거·유형과 관리 승인이 필요한 대응 초안을 한곳에 표시한다.
+function RiskDetail({ risk, canReview = false }) {
+  const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
+  const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
+  const loadDrafts = useCallback(async () => {
+    if (!risk) { setDrafts([]); return; }
+    try { const response = await api.get(`/risk-events/${risk.id}/response-drafts`); setDrafts(response.data); }
+    catch (requestError) { setError(getErrorMessage(requestError)); }
+  }, [risk]);
+  useEffect(() => { loadDrafts(); }, [loadDrafts]);
+  if (!risk) return <p className="panel-empty">확인할 위험 이벤트를 선택해 주세요.</p>;
+  const latest = drafts[0]; const content = latest?.content;
+  const generate = async () => { setLoading(true); setError(null); try { await api.post(`/risk-events/${risk.id}/response-drafts`); await loadDrafts(); } catch (requestError) { setError(getErrorMessage(requestError)); } finally { setLoading(false); } };
+  const review = async (decision) => {
+    if (!latest) return;
+    setLoading(true); setError(null);
+    try { await api.post(`/response-drafts/${latest.id}/${decision}`, { notes }); await loadDrafts(); }
+    catch (requestError) { setError(getErrorMessage(requestError)); } finally { setLoading(false); }
+  };
+  return <div className="risk-detail">
+    <div className="risk-detail-head"><div><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><h3>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</h3></div><span className={`model-pill ${risk.model_state}`}>{LIGHTGBM_STATE_LABELS[risk.model_state] ?? "LightGBM 상태 확인 필요"}</span></div>
+    <p>위험도 {formatRiskProbability(risk.risk_probability)} · 이상 점수 {formatScore(risk.anomaly_score)} · {formatDate(risk.detected_at)}</p>
+    <div className="risk-type-list">{risk.risk_types.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
+    <div className="evidence-list"><strong>근거 기사</strong>{risk.evidence_articles.length ? risk.evidence_articles.map((article) => <a key={article.article_id} href={article.url} target="_blank" rel="noreferrer">{article.title}</a>) : <small>연결된 근거 기사가 없습니다.</small>}</div>
+    {!latest && <button className="secondary-button" type="button" onClick={generate} disabled={loading || !risk.evidence_articles.length}>{loading ? "생성 중..." : "근거 기반 대응 초안 생성"}</button>}
+    {error && <div className="notice error">{error}</div>}
+    {content && <><ResponseDraftContent draft={latest} />{canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}
+  </div>;
+}
 
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
-export default function RealtimePage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, onCompanyChange, onEditCompany }) {
+export default function RealtimePage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, onCompanyChange }) {
   const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
   const [data, setData] = useState(null); const [error, setError] = useState(null);
   const [articlePage, setArticlePage] = useState(1);
   const [riskPage, setRiskPage] = useState(1);
   const [displayMode, setDisplayMode] = useState("");
   const [articleSources, setArticleSources] = useState([]);
-  const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [changingState, setChangingState] = useState(false);
   const [bulkChangingState, setBulkChangingState] = useState(null);
   const [selectedRiskId, setSelectedRiskId] = useState(initialRiskEventId);
@@ -38,11 +120,6 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
   const [now, setNow] = useState(Date.now());
   const refreshSequence = useRef(0);
   const riskDetailRef = useRef(null);
-  // 입력 즉시 요청을 보내는 대신, 타이핑이 잠시 멈췄을 때만 검색어를 반영한다.
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearchQuery(searchInput.trim()), 400);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
   // 선택 기업의 모니터링·기사·위험·대시보드·필터 데이터를 병렬로 갱신한다.
   const refresh = useCallback(async () => {
     const requestId = ++refreshSequence.current;
@@ -63,12 +140,9 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
           ? "review_required"
           : null;
       const sourceQuery = displayMode && !filterDecision ? `&source=${encodeURIComponent(displayMode)}` : "";
-      const searchFilterQuery = !filterDecision
-        ? `${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${dateFrom ? `&date_from=${dateFrom}` : ""}${dateTo ? `&date_to=${dateTo}` : ""}`
-        : "";
       const articleRequest = filterDecision
         ? api.get(`/companies/${id}/filter-results?decision=${filterDecision}&page=${articlePage}&page_size=10`)
-        : api.get(`/companies/${id}/articles?page=${articlePage}&page_size=10${sourceQuery}${searchFilterQuery}`);
+        : api.get(`/companies/${id}/articles?page=${articlePage}&page_size=10${sourceQuery}`);
       const [monitoring, articles, risks, filtering, windows] = await Promise.all([
         api.get(`/companies/${id}/monitoring`), articleRequest, api.get(`/companies/${id}/risk-events?limit=200`),
         api.get(`/companies/${id}/filter-summary`), api.get(`/companies/${id}/feature-windows?limit=96`),
@@ -77,7 +151,7 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
       if (!filterDecision) setArticleSources(articles.data.sources);
       setData({ monitoring: monitoring.data, articles: articles.data, articleKind: filterDecision ? "filter_results" : "articles", articleDecision: filterDecision, risks: risks.data, filtering: filtering.data, windows: windows.data }); setError(null);
     } catch (requestError) { if (requestId === refreshSequence.current) setError(getErrorMessage(requestError)); }
-  }, [selectedId, articlePage, displayMode, searchQuery, dateFrom, dateTo, onCompanyChange]);
+  }, [selectedId, articlePage, displayMode, onCompanyChange]);
   // 수집 주기보다 빠른 30초 간격으로 서버 현황을 다시 조회한다.
   useEffect(() => { refresh(); const timer = window.setInterval(refresh, 30000); return () => { window.clearInterval(timer); refreshSequence.current += 1; }; }, [refresh]);
   // 서버 요청 없이 카운트다운 표시만 매초 다시 계산하도록 현재 시각을 갱신한다.
@@ -159,19 +233,19 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
     catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setActivating(false); }
   };
-  return <section className="workspace realtime-workspace"><div className="workspace-head"><div><span className="eyebrow">COMPANY DETAIL / 04</span><h1>{selected ? <button className="company-name-link main-company-name" type="button" onClick={() => onEditCompany?.(selected.id)}>{selected.name}</button> : "기업 상세"}</h1><p className="main-lead">수집 통계, 이상 탐지·위험 근거와 대응 초안을 한 화면에서 확인합니다.</p></div><span className="live-indicator"><i /> LIVE</span></div>
+  return <section className="workspace"><div className="workspace-head"><div><span className="eyebrow">COMPANY DETAIL / 04</span><h1>기업 상세</h1><p>기업별 수집 통계, 위험 근거와 대응 초안을 한곳에서 확인합니다.</p></div><span className="live-indicator"><i /> LIVE</span></div>
     {canAdminister && <div className="bulk-monitor-controls"><button className="monitor-control stop" type="button" onClick={() => changeAllMonitoringStates("pause")} disabled={Boolean(bulkChangingState)}>{bulkChangingState === "pause" ? "중지 중..." : "전체 중지"}</button><button className="monitor-control start" type="button" onClick={() => changeAllMonitoringStates("resume")} disabled={Boolean(bulkChangingState)}>{bulkChangingState === "resume" ? "재개 중..." : "전체 모니터링 재개"}</button></div>}
-    <div className="monitor-toolbar">{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}{selected && <><span className={`state-badge ${selected.monitoring_status}`}>{MONITORING_LABELS[selected.monitoring_status]}</span>{canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || bulkChangingState || monitoringPreparing || !monitoringActionAvailable}>{monitoringPreparing && <i className="monitor-loader" aria-hidden="true" />}{monitorControlLabel}</button>}</>}</div>
+    <div className="monitor-toolbar"><label>상세 기업<select value={selectedId} onChange={(event) => { const nextCompanyId = event.target.value; setSelectedId(nextCompanyId); setArticlePage(1); setRiskPage(1); setSelectedRiskId(null); setDisplayMode(""); setArticleSources([]); onCompanyChange?.(nextCompanyId); }}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name} · {company.industry_name}</option>)}</select></label>{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}{selected && <><span className={`state-badge ${selected.monitoring_status}`}>{MONITORING_LABELS[selected.monitoring_status]}</span>{canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || bulkChangingState || monitoringPreparing || !monitoringActionAvailable}>{monitoringPreparing && <i className="monitor-loader" aria-hidden="true" />}{monitorControlLabel}</button>}</>}</div>
     {error && <div className="notice error">{error}</div>}
     {!selected ? <p className="empty-state">먼저 기업 등록 페이지에서 모니터링할 기업을 등록해 주세요.</p> : data && <>
       <section className={`readiness-banner ${data.monitoring.readiness_status}`}><div><strong>{READINESS_LABELS[data.monitoring.readiness_status]}</strong><span>{data.monitoring.readiness_status === "active" ? `관련 기사 ${formatNumber(data.monitoring.accepted_article_count)}건 · 유효한 비어 있지 않은 구간 ${formatNumber(data.monitoring.valid_nonempty_window_count)}개` : `관련 기사 ${formatNumber(data.monitoring.accepted_article_count)}/50 · 유효한 비어 있지 않은 구간 ${formatNumber(data.monitoring.valid_nonempty_window_count)}/40`}</span></div><div><span className={`model-pill ${data.monitoring.model_state}`}>{LIGHTGBM_STATE_LABELS[data.monitoring.model_state] ?? "LightGBM 상태 확인 필요"}</span>{canAdminister && data.monitoring.readiness_status === "pending_approval" && <button type="button" onClick={activateSelected} disabled={activating}>{activating ? "활성화 중..." : "승인하고 모니터링 시작"}</button>}</div></section>
-      <div className="metric-grid realtime-metrics"><Metric label="정제 통과 기사" value={data.monitoring.article_count} /><Metric label="감성 분석 완료" value={data.monitoring.analyzed_count} /><Metric label="이상치 탐지" value={data.monitoring.anomaly_count} /><Metric label="마지막 수집" value={formatDate(data.monitoring.last_collected_at)} small /></div>
+      <div className="metric-grid"><Metric label="정제 통과 기사" value={data.monitoring.article_count} /><Metric label="감성 분석 완료" value={data.monitoring.analyzed_count} /><Metric label="마지막 수집" value={formatDate(data.monitoring.last_collected_at)} small /></div>
       <section className="filter-summary"><div><span>수집 원문</span><strong>{formatNumber(data.filtering.raw_count)}</strong></div><div><span>중복 병합</span><strong>{formatNumber(data.filtering.duplicate_count)}</strong></div><div><span>광고 제외</span><strong>{formatNumber(data.filtering.advertisement_count)}</strong></div><div><span>무관 제외</span><strong>{formatNumber(data.filtering.irrelevant_count)}</strong></div><div><span>검토 필요</span><strong>{formatNumber(data.filtering.review_required_count)}</strong></div><div><span>자동 판정</span><strong>{formatNumber(data.filtering.ai_assisted_count)}</strong></div></section>
       <FeatureWindowSummary window={latestWindow} />
-      <div className="live-grid"><section className="panel span-two"><PanelTitle kicker={showingFilterResults ? "FILTER RESULTS" : "COLLECTED ARTICLES"} title={articlePanelTitle} /><div className="article-controls"><label className="source-filter">표시할 데이터<select value={displayMode} onChange={(event) => { setDisplayMode(event.target.value); setArticlePage(1); }}><option value="">정제 통과 기사 전체</option><optgroup label="필터 판정"><option value={FILTERED_DATA_MODE}>필터 제외 데이터 · {formatNumber(data.filtering.rejected_count)}건</option><option value={REVIEW_DATA_MODE}>검토 필요 데이터 · {formatNumber(data.filtering.review_required_count)}건</option></optgroup><optgroup label="정제 통과 기사 출처">{articleSources.map((source) => <option value={source} key={source}>{SOURCE_LABELS[source] ?? source}</option>)}{SUPPORTED_SOURCES.filter((source) => !articleSources.includes(source)).map((source) => <option value={source} key={source} disabled>{SOURCE_LABELS[source]} · 수집 데이터 없음</option>)}</optgroup></select></label>{!showingFilterResults && <><label className="article-date-filter">시작일<input type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => { setDateFrom(event.target.value); setArticlePage(1); }} /></label><label className="article-date-filter">종료일<input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => { setDateTo(event.target.value); setArticlePage(1); }} /></label><label className="article-search">검색<input type="search" value={searchInput} onChange={(event) => { setSearchInput(event.target.value); setArticlePage(1); }} placeholder="제목·요약으로 검색" /></label></>}</div><div className="article-list scroll-box">{data.articles.items.length ? (showingFilterResults ? data.articles.items.map((result) => <FilterResultRow result={result} key={result.id} />) : data.articles.items.map((article) => <a className="article-row" key={article.id} href={article.url} target="_blank" rel="noreferrer"><span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span><div><strong>{article.title}</strong><small>{SOURCE_LABELS[article.source] ?? article.source} · {formatDate(article.published_at ?? article.created_at)}</small></div></a>)) : <p className="panel-empty">{articleEmptyText}</p>}</div><Pagination page={data.articles.page} pageSize={data.articles.page_size} total={data.articles.total} onChange={setArticlePage} /></section>
-        <section className="panel"><PanelTitle kicker="RISK EVENTS" title="기업 위험 이벤트" /><div className="risk-list selectable scroll-box">{visibleRisks.length ? visibleRisks.map((risk) => <button className={selectedRisk?.id === risk.id ? "selected" : ""} type="button" onClick={() => setSelectedRiskId(risk.id)} key={risk.id}><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><strong>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</strong><small>위험도 {formatRiskProbability(risk.risk_probability)} · {formatDate(risk.detected_at)}</small></button>) : <p className="panel-empty">새 위험 이벤트가 없습니다.</p>}</div><Pagination page={riskPage} pageSize={riskPageSize} total={data.risks.length} onChange={setRiskPage} /></section>
+      <div className="live-grid"><section className="panel span-two"><PanelTitle kicker={showingFilterResults ? "FILTER RESULTS" : "COLLECTED ARTICLES"} title={articlePanelTitle} /><label className="source-filter">표시할 데이터<select value={displayMode} onChange={(event) => { setDisplayMode(event.target.value); setArticlePage(1); }}><option value="">정제 통과 기사 전체</option><optgroup label="필터 판정"><option value={FILTERED_DATA_MODE}>필터 제외 데이터 · {formatNumber(data.filtering.rejected_count)}건</option><option value={REVIEW_DATA_MODE}>검토 필요 데이터 · {formatNumber(data.filtering.review_required_count)}건</option></optgroup><optgroup label="정제 통과 기사 출처">{articleSources.map((source) => <option value={source} key={source}>{SOURCE_LABELS[source] ?? source}</option>)}{SUPPORTED_SOURCES.filter((source) => !articleSources.includes(source)).map((source) => <option value={source} key={source} disabled>{SOURCE_LABELS[source]} · 수집 데이터 없음</option>)}</optgroup></select></label><div className="article-list">{data.articles.items.length ? (showingFilterResults ? data.articles.items.map((result) => <FilterResultRow result={result} key={result.id} />) : data.articles.items.map((article) => <a className="article-row" key={article.id} href={article.url} target="_blank" rel="noreferrer"><span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span><div><strong>{article.title}</strong><small>{SOURCE_LABELS[article.source] ?? article.source} · {formatDate(article.published_at ?? article.created_at)}</small></div></a>)) : <p className="panel-empty">{articleEmptyText}</p>}</div><Pagination page={data.articles.page} pageSize={data.articles.page_size} total={data.articles.total} onChange={setArticlePage} /></section>
+        <section className="panel"><PanelTitle kicker="RISK EVENTS" title="기업 위험 이벤트" /><div className="risk-list selectable">{visibleRisks.length ? visibleRisks.map((risk) => <button className={selectedRisk?.id === risk.id ? "selected" : ""} type="button" onClick={() => setSelectedRiskId(risk.id)} key={risk.id}><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><strong>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</strong><small>위험도 {formatRiskProbability(risk.risk_probability)} · {formatDate(risk.detected_at)}</small></button>) : <p className="panel-empty">새 위험 이벤트가 없습니다.</p>}</div><Pagination page={riskPage} pageSize={riskPageSize} total={data.risks.length} onChange={setRiskPage} /></section>
       </div>
-      {selectedRisk && <section className="panel risk-detail-panel" ref={riskDetailRef} tabIndex={-1}><PanelTitle kicker="EVIDENCE & RESPONSE" title="위험 근거와 대응 초안" /><div className="risk-detail-scroll"><RiskDetail risk={selectedRisk} canReview={canAdminister} /></div></section>}
+      {selectedRisk && <section className="panel risk-detail-panel" ref={riskDetailRef} tabIndex={-1}><PanelTitle kicker="EVIDENCE & RESPONSE" title="위험 근거와 대응 초안" /><RiskDetail risk={selectedRisk} canReview={canAdminister} /></section>}
     </>}
   </section>;
 }
