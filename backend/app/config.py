@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     serpapi_api_key: str = ""  # 향후 수집기 연결을 위해 예약된 미사용 키
     # 기업 등록 백필, 수동 수집 및 주기적 실시간 댓글 수집에 모두 사용한다.
     youtube_api_key: str = ""
+    # 무료 등급 하루 10,000 유닛 기준: 검색 1회(100) + 영상당 댓글 조회(최대 5개 x 1) = 쿼리당 105.
+    # 회사당 검색어 1개, 3시간 간격(하루 8회)이면 9개 회사 x 105 x 8 = 7,560/일로 여유를 둔다.
+    youtube_daily_quota_units: int = 10000
+    youtube_query_quota_units: int = 105
+    youtube_realtime_interval_hours: int = 3
+    youtube_max_queries_per_run: int = 1
 
     # 수집 장애 알림과 재시도
     collection_alert_webhook_url: str = ""
@@ -81,6 +87,13 @@ class Settings(BaseSettings):
     # 근거 기반 대응 초안. 키가 없으면 결정적 템플릿 초안으로 안전하게 폴백한다.
     openai_api_key: str = ""
     response_model_name: str = "gpt-5.6-luna"
+
+    # 수집된 기사에 대한 LLM 자동 라벨링(사람 대신 1차 정답지 생성)과 월간 표본 검수 목표치.
+    # 사람이 매 건 검수하지 않고, LLM이 독립적으로 판단한 라벨을 바로 confirmed로 저장한다.
+    llm_labeling_enabled: bool = True
+    llm_labeling_model_name: str = "gpt-5.6-luna"
+    llm_labeling_batch_size: int = 20
+    llm_labeling_audit_sample_size: int = 20
 
     model_config = SettingsConfigDict(
         case_sensitive=False,

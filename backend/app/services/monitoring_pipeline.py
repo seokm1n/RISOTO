@@ -40,6 +40,7 @@ from app.services.news_collectors import (
     TavilyNewsCollector,
     YouTubeCommentCollector,
 )
+from app.services.llm_labeling import enqueue_llm_labeling_for_company
 from app.services.sentiment import analyze_company_articles
 from app.services.risk_analysis import backfill_historical_windows, build_feature_window
 from app.services.story_clustering import assign_story_cluster
@@ -149,6 +150,18 @@ def _lock_curated_raw(db, raw_article_id: int) -> None:
         )
 
 
+def _lock_company_collection(db, company_id: int) -> None:
+    """Serialize collection runs for one company so overlapping triggers
+    (scheduler tick, incident retry, manual run) can't both compute the same
+    stale existing_match_ids and race each other into company_article_matches."""
+    bind = db.get_bind()
+    if bind.dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"company-collection:{company_id}"},
+        )
+
+
 def _curated_for_raw(db, raw_article_id: int | None) -> NewsArticle | None:
     """원문 기사에 연결된 정제 기사를 직접 또는 필터 결과를 통해 찾는다."""
     if raw_article_id is None:
@@ -242,6 +255,25 @@ def _realtime_sources(settings: Settings) -> list[str]:
     if settings.youtube_api_key:
         sources.append("youtube_comment")
     return sources
+
+
+def _youtube_realtime_due(scheduled_for: datetime, settings: Settings) -> bool:
+    """YouTube Data API 무료 쿼터(하루 10,000유닛) 안에서 반복 실시간 수집이 가능한 주기인지 확인한다.
+
+    검색 1회는 100유닛, 영상당 댓글 조회가 최대 5회(1유닛)라 쿼리당 최대 105유닛이다.
+    매 15분 틱마다 돌리면 회사 9곳만으로도 하루 한도를 몇 번 만에 소진하므로,
+    설정된 시간 간격(기본 3시간, 즉 하루 8회)에 맞는 15분 구간에서만 실행한다.
+    """
+    interval_minutes = max(15, settings.youtube_realtime_interval_hours * 60)
+    epoch_minutes = int(scheduled_for.timestamp() // 60)
+    return epoch_minutes % interval_minutes == 0
+
+
+def _throttle_youtube_for_tick(sources: list[str], scheduled_for: datetime, settings: Settings) -> list[str]:
+    """정기 실시간 틱에서만 유튜브를 쿼터 안전 주기로 제한하고, 그 외 호출은 그대로 둔다."""
+    if "youtube_comment" not in sources or _youtube_realtime_due(scheduled_for, settings):
+        return sources
+    return [source for source in sources if source != "youtube_comment"]
 
 
 def _incident_retry_sources(settings: Settings, sources: list[str]) -> list[str]:
@@ -376,6 +408,8 @@ def run_collection(
         company = db.get(Company, company_id)
         if company is None:
             raise ValueError("기업을 찾을 수 없습니다.")
+        # 같은 기업의 수집이 스케줄러와 재시도·수동 실행에서 겹쳐도 순차 실행되도록 잠근다.
+        _lock_company_collection(db, company_id)
 
         # 키워드 백필은 새 키워드만, 일반 수집은 기업의 전체 키워드를 사용한다.
         keyword_query = select(CompanyKeyword).where(CompanyKeyword.company_id == company_id)
@@ -434,8 +468,13 @@ def run_collection(
         semantic_scorer = get_semantic_scorer(filter_config)
 
         # 제공자와 검색어의 모든 조합을 실행하되 한 요청의 실패가 나머지를 막지 않게 한다.
+        # 유튜브는 검색 1회가 100유닛이라, 반복되는 실시간 수집에서는 회사당 대표 검색어만 사용해 쿼터를 아낀다.
+        # 등록 시 1회뿐인 백필·수동 수집은 전체 검색어를 그대로 사용한다.
         for collector in collectors:
-            for query in queries:
+            collector_queries = queries
+            if collector.source == "youtube_comment" and job_type == "realtime":
+                collector_queries = queries[: max(1, settings.youtube_max_queries_per_run)]
+            for query in collector_queries:
                 attempted_count += 1
                 source_stats[collector.source]["query_count"] += 1
                 try:
@@ -649,6 +688,7 @@ def run_collection(
     # 수집 트랜잭션을 끝낸 뒤 후속 감성 분석과 15분 특징 생성을 별도 세션에서 수행한다.
     if matched_count:
         analyze_company_articles(company_id)
+        enqueue_llm_labeling_for_company(company_id)
     if job_type == "realtime":
         build_feature_window(
             company_id,
@@ -766,6 +806,7 @@ def run_realtime_tick() -> None:
     # 수집원이 하나도 구성되지 않은 상태도 조용히 건너뛰지 않고 운영 장애로 기록한다.
     realtime_sources = _realtime_sources(settings) or ["naver_api_hub"]
     scheduled_for = completed_window_start(now, settings.collection_window_minutes)
+    realtime_sources = _throttle_youtube_for_tick(realtime_sources, scheduled_for, settings)
     for company_id in company_ids:
         cursor = now - timedelta(minutes=settings.realtime_overlap_minutes)
         try:
@@ -852,6 +893,7 @@ def run_due_collection_retries() -> int:
             settings,
             list(incident.sources or []),
         )
+        retry_sources = _throttle_youtube_for_tick(retry_sources, incident.scheduled_for, settings)
         for company_id in company_ids:
             try:
                 job = run_collection(
