@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
-import { IncidentList, Metric, Pagination, PanelTitle } from "../../shared/components";
+import { Metric, Pagination, PanelTitle } from "../../shared/components";
 import {
   DATA_QUALITY_LABELS,
   FILTERED_DATA_MODE,
   FILTER_REASON_LABELS,
-  HEALTH_STATUS_LABELS,
   LIGHTGBM_STATE_LABELS,
   MONITORING_LABELS,
   READINESS_LABELS,
@@ -106,37 +105,6 @@ function RiskDetail({ risk, canReview = false }) {
   </div>;
 }
 
-// 일별 기사 수와, 운영 LightGBM이 준비된 경우에만 위험 수를 겹친 선 그래프로 표시한다.
-function OverlayLineChart({ overview, riskAvailable = true }) {
-  const items = overview?.daily ?? [];
-  if (!items.length) return <p className="panel-empty">최근 7일간 표시할 수집 데이터가 없습니다.</p>;
-
-  // 고정 viewBox 안에서 기사 수와 위험 수를 각각 독립적인 최대값으로 정규화한다.
-  const width = 900; const height = 280;
-  const left = 52; const right = 52; const top = 24; const bottom = 42;
-  const plotWidth = width - left - right; const plotHeight = height - top - bottom;
-  const collectionMax = Math.max(...items.map((item) => item.article_count), 1);
-  const riskMax = Math.max(...items.map((item) => item.risk_count), 1);
-  // 일별 데이터 인덱스를 SVG 가로 좌표로 변환한다.
-  const x = (index) => left + (items.length === 1 ? plotWidth / 2 : index / (items.length - 1) * plotWidth);
-  // 기사 수를 왼쪽 축 기준 SVG 세로 좌표로 변환한다.
-  const collectionY = (value) => top + plotHeight - value / collectionMax * plotHeight;
-  // 위험 수를 오른쪽 축 기준 SVG 세로 좌표로 변환한다.
-  const riskY = (value) => top + plotHeight - value / riskMax * plotHeight;
-  const collectionPoints = items.map((item, index) => `${x(index)},${collectionY(item.article_count)}`).join(" ");
-  const riskPoints = items.map((item, index) => `${x(index)},${riskY(item.risk_count)}`).join(" ");
-
-  return <div className="overlay-chart">
-    <div className="trend-legend"><span className="collection-line">수집량 <strong>{formatNumber(overview.article_count)}건</strong></span><span className="risk-line">위험량 <strong>{riskAvailable ? `${formatNumber(overview.risk_count)}건` : "판정 대기"}</strong></span><small>{riskAvailable ? "수집량 좌측 축 · 위험량 우측 축" : "운영 LightGBM 준비 후 위험 추세 제공"}</small></div>
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={riskAvailable ? "최근 7일 전체 수집량과 위험량 선 그래프" : "최근 7일 전체 수집량 선 그래프, 위험량은 판정 대기"}>
-      {[0, .25, .5, .75, 1].map((ratio) => { const y = top + ratio * plotHeight; return <g key={ratio}><line className="trend-grid-line" x1={left} x2={width - right} y1={y} y2={y} /><text className="trend-axis-label" x={left - 10} y={y + 4} textAnchor="end">{Math.round(collectionMax * (1 - ratio))}</text>{riskAvailable && <text className="trend-axis-label risk-axis-label" x={width - right + 10} y={y + 4}>{Math.round(riskMax * (1 - ratio))}</text>}</g>; })}
-      <polyline className="trend-line collection" points={collectionPoints} />
-      {riskAvailable && <polyline className="trend-line risk" points={riskPoints} />}
-      {items.map((item, index) => <g key={item.day}><circle className="trend-dot collection" cx={x(index)} cy={collectionY(item.article_count)} r="4" />{riskAvailable && <circle className="trend-dot risk" cx={x(index)} cy={riskY(item.risk_count)} r="4" />}<text className="trend-date-label" x={x(index)} y={height - 13} textAnchor="middle">{new Date(item.day).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}</text></g>)}
-    </svg>
-  </div>;
-}
-
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
 export default function RealtimePage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, onCompanyChange }) {
   const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
@@ -175,15 +143,13 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
       const articleRequest = filterDecision
         ? api.get(`/companies/${id}/filter-results?decision=${filterDecision}&page=${articlePage}&page_size=10`)
         : api.get(`/companies/${id}/articles?page=${articlePage}&page_size=10${sourceQuery}`);
-      const [monitoring, articles, risks, overview, filtering, windows, health, incidents] = await Promise.all([
+      const [monitoring, articles, risks, filtering, windows] = await Promise.all([
         api.get(`/companies/${id}/monitoring`), articleRequest, api.get(`/companies/${id}/risk-events?limit=200`),
-        api.get("/dashboard/overview?days=7"), api.get(`/companies/${id}/filter-summary`),
-        api.get(`/companies/${id}/feature-windows?limit=96`), api.get("/collection-health"),
-        api.get("/collection-incidents?page=1&page_size=20"),
+        api.get(`/companies/${id}/filter-summary`), api.get(`/companies/${id}/feature-windows?limit=96`),
       ]);
       if (requestId !== refreshSequence.current) return;
       if (!filterDecision) setArticleSources(articles.data.sources);
-      setData({ monitoring: monitoring.data, articles: articles.data, articleKind: filterDecision ? "filter_results" : "articles", articleDecision: filterDecision, risks: risks.data, overview: overview.data, filtering: filtering.data, windows: windows.data, health: health.data, incidents: incidents.data.items }); setError(null);
+      setData({ monitoring: monitoring.data, articles: articles.data, articleKind: filterDecision ? "filter_results" : "articles", articleDecision: filterDecision, risks: risks.data, filtering: filtering.data, windows: windows.data }); setError(null);
     } catch (requestError) { if (requestId === refreshSequence.current) setError(getErrorMessage(requestError)); }
   }, [selectedId, articlePage, displayMode, onCompanyChange]);
   // 수집 주기보다 빠른 30초 간격으로 서버 현황을 다시 조회한다.
@@ -267,10 +233,6 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
     catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setActivating(false); }
   };
-  const acknowledgeIncident = async (incidentId) => {
-    try { await api.post(`/collection-incidents/${incidentId}/acknowledge`); await refresh(); }
-    catch (requestError) { setError(getErrorMessage(requestError)); }
-  };
   return <section className="workspace"><div className="workspace-head"><div><span className="eyebrow">COMPANY DETAIL / 04</span><h1>기업 상세</h1><p>기업별 수집 통계, 위험 근거와 대응 초안을 한곳에서 확인합니다.</p></div><span className="live-indicator"><i /> LIVE</span></div>
     {canAdminister && <div className="bulk-monitor-controls"><button className="monitor-control stop" type="button" onClick={() => changeAllMonitoringStates("pause")} disabled={Boolean(bulkChangingState)}>{bulkChangingState === "pause" ? "중지 중..." : "전체 중지"}</button><button className="monitor-control start" type="button" onClick={() => changeAllMonitoringStates("resume")} disabled={Boolean(bulkChangingState)}>{bulkChangingState === "resume" ? "재개 중..." : "전체 모니터링 재개"}</button></div>}
     <div className="monitor-toolbar"><label>상세 기업<select value={selectedId} onChange={(event) => { const nextCompanyId = event.target.value; setSelectedId(nextCompanyId); setArticlePage(1); setRiskPage(1); setSelectedRiskId(null); setDisplayMode(""); setArticleSources([]); onCompanyChange?.(nextCompanyId); }}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name} · {company.industry_name}</option>)}</select></label>{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}{selected && <><span className={`state-badge ${selected.monitoring_status}`}>{MONITORING_LABELS[selected.monitoring_status]}</span>{canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || bulkChangingState || monitoringPreparing || !monitoringActionAvailable}>{monitoringPreparing && <i className="monitor-loader" aria-hidden="true" />}{monitorControlLabel}</button>}</>}</div>
@@ -284,8 +246,6 @@ export default function RealtimePage({ initialCompanyId, initialRiskEventId = nu
         <section className="panel"><PanelTitle kicker="RISK EVENTS" title="기업 위험 이벤트" /><div className="risk-list selectable">{visibleRisks.length ? visibleRisks.map((risk) => <button className={selectedRisk?.id === risk.id ? "selected" : ""} type="button" onClick={() => setSelectedRiskId(risk.id)} key={risk.id}><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><strong>{risk.summary || risk.article_title || `위험 이벤트 #${risk.id}`}</strong><small>위험도 {formatRiskProbability(risk.risk_probability)} · {formatDate(risk.detected_at)}</small></button>) : <p className="panel-empty">새 위험 이벤트가 없습니다.</p>}</div><Pagination page={riskPage} pageSize={riskPageSize} total={data.risks.length} onChange={setRiskPage} /></section>
       </div>
       {selectedRisk && <section className="panel risk-detail-panel" ref={riskDetailRef} tabIndex={-1}><PanelTitle kicker="EVIDENCE & RESPONSE" title="위험 근거와 대응 초안" /><RiskDetail risk={selectedRisk} canReview={canAdminister} /></section>}
-      <div className="operations-grid"><section className="panel"><PanelTitle kicker="COLLECTION HEALTH" title="수집 시스템 상태" /><div className={`health-state ${data.health.status}`}><strong>{data.health.status === "healthy" ? "정상" : data.health.status === "degraded" ? "일부 장애" : data.health.status === "unavailable" ? "수집 불가" : "확인 전"}</strong><span>열린 장애 {formatNumber(data.health.open_incident_count)}건</span></div><div className="source-health-list">{data.health.sources.map((source) => <div key={source.source}><span>{SOURCE_LABELS[source.source] ?? source.source}</span><strong className={source.status}>{HEALTH_STATUS_LABELS[source.status] ?? source.status}</strong><small>연속 실패 {source.consecutive_failures}회</small></div>)}</div></section><section className="panel"><PanelTitle kicker="COLLECTION INCIDENTS" title="수집 장애" /><IncidentList incidents={data.incidents} companies={companies} onAcknowledge={canAdminister ? acknowledgeIncident : undefined} /></section></div>
-      <section className="panel realtime-trend-panel"><PanelTitle kicker="TOTAL TREND / 7 DAYS" title={data.monitoring.model_state === "production" ? "전체 수집량 · 위험량" : "전체 수집량 · 위험 판정 대기"} /><OverlayLineChart overview={data.overview} riskAvailable={data.monitoring.model_state === "production"} /></section>
     </>}
   </section>;
 }

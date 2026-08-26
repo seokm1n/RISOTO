@@ -237,7 +237,7 @@ def _realtime_sources(settings: Settings) -> list[str]:
         sources.append("naver_api_hub")
     if settings.kakao_rest_api_key:
         sources.append("kakao_daum")
-    if not sources and settings.tavily_api_key:
+    if settings.tavily_api_key:
         sources.append("tavily")
     if settings.youtube_api_key:
         sources.append("youtube_comment")

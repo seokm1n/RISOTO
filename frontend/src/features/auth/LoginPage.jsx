@@ -28,21 +28,14 @@ function LoginPage({ onAuthenticated }) {
     <section className="login-story" aria-labelledby="login-story-title">
       <div className="login-brand"><img src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span>RISOTO</span><small>RISk Out Through Observation</small></div>
       <div className="login-story-copy">
-        <span className="login-kicker">ENTERPRISE RISK INTELLIGENCE</span>
         <h1 id="login-story-title">위험 신호를 먼저 발견하고,<br /><em>대응은 더 빠르게.</em></h1>
         <p>실시간 기업 데이터를 정제하고 위험을 판별해, 근거 기반 대응전략까지 하나의 흐름으로 관리합니다.</p>
       </div>
-      <div className="login-pipeline" aria-label="RISOTO 분석 흐름">
-        <article><span>01</span><div><strong>실시간 수집</strong><small>기업별 이슈 신호 관찰</small></div></article>
-        <article><span>02</span><div><strong>위험 판정</strong><small>이상 징후와 위험 유형 분석</small></div></article>
-        <article><span>03</span><div><strong>대응 관리</strong><small>근거 기반 전략 검토·승인</small></div></article>
-      </div>
-      <div className="login-live-note"><i aria-hidden="true" /><span>15분 단위 리스크 신호 모니터링</span></div>
     </section>
 
     <section className="login-access" aria-labelledby="login-title">
       <div className="login-card">
-        <div className="login-card-head"><span className="login-kicker">MEMBER ACCESS</span><span className="login-role">사용자 계정</span></div>
+        <div className="login-card-head"><span className="login-kicker">MEMBER ACCESS</span></div>
         <h2 id="login-title">로그인</h2>
         <p>등록한 기업의 위험 현황과 대응전략을 확인하세요.</p>
         <form className="login-form" onSubmit={submit}>

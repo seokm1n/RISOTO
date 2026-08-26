@@ -22,6 +22,10 @@ _relevance_sequence_cache: tuple[str, object, object, object] | None = None
 _sentiment_sequence_cache: tuple[str, object, object, object] | None = None
 
 
+RELEVANCE_INPUT_SCHEMA = "company-title-content-v1"
+RELEVANCE_MAX_LENGTH = 128
+
+
 def _configured_path(value: str) -> Path | None:
     """Return a usable explicitly configured local Hugging Face artifact path."""
     path = Path(value).expanduser() if value.strip() else None
@@ -45,6 +49,8 @@ def _predict_local_sequence(
     path: Path,
     texts: list[str],
     cache: tuple[str, object, object, object] | None,
+    *,
+    max_length: int = 384,
 ) -> tuple[tuple[str, object, object, object], list[dict[str, float]]]:
     """Load a local sequence classifier lazily and return label-keyed probabilities."""
     import torch
@@ -63,7 +69,7 @@ def _predict_local_sequence(
         batch = tokenizer(
             texts[start:start + 16],
             truncation=True,
-            max_length=384,
+            max_length=max_length,
             padding=True,
             return_tensors="pt",
         )
@@ -79,16 +85,29 @@ def _predict_local_sequence(
     return cache, rows
 
 
-def predict_relevance(text: str) -> dict | None:
-    """Return relevance probabilities from the shared local normal/filter model."""
+def format_relevance_input(company_name: str, text: str) -> str:
+    """Reproduce the target-company/article contract used by the relevance model."""
+    company = company_name.strip()
+    article = text.strip()
+    if not company or not article:
+        return ""
+    return f"기업명: {company} 제목 및 내용: {article}"
+
+
+def predict_relevance(company_name: str, text: str) -> dict | None:
+    """Return target-company relevance probabilities from the local normal/filter model."""
     global _relevance_sequence_cache
     path = _configured_path(get_settings().pretrained_relevance_model_path)
-    if path is None or not text.strip():
+    model_input = format_relevance_input(company_name, text)
+    if path is None or not model_input:
         return None
     try:
         with _lock:
             _relevance_sequence_cache, rows = _predict_local_sequence(
-                path, [text], _relevance_sequence_cache
+                path,
+                [model_input],
+                _relevance_sequence_cache,
+                max_length=RELEVANCE_MAX_LENGTH,
             )
         labels = rows[0]
         if "normal" not in labels or "filter" not in labels:
@@ -97,6 +116,7 @@ def predict_relevance(text: str) -> dict | None:
             "version": f"local:{path.name}",
             "relevant": labels["normal"],
             "irrelevant": labels["filter"],
+            "input_schema": RELEVANCE_INPUT_SCHEMA,
         }
     except Exception:
         return None

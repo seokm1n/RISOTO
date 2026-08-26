@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     baseline_min_days: int = 3
 
     # 기사 중복·광고·관련성 하이브리드 필터 설정
-    article_filter_version: str = "hybrid-klue-roberta-v2"
+    article_filter_version: str = "hybrid-klue-roberta-v3-company-context"
     article_filter_ai_enabled: bool = True
     article_filter_classifier_model: str = "Huffon/klue-roberta-base-nli"
     article_filter_semantic_model: str = (
