@@ -623,6 +623,20 @@ class RiskDetectionStatusRead(BaseModel):
     model_state: Literal["production", "provisional", "unavailable"]
 
 
+class ModelRuntimeStatusRead(BaseModel):
+    """로컬 텍스트 모델과 위험 판정 런타임의 연결 상태를 노출한다."""
+
+    article_filter_version: str
+    article_filter_ai_enabled: bool
+    relevance_model_name: str | None = None
+    relevance_model_available: bool
+    sentiment_model_name: str | None = None
+    sentiment_model_available: bool
+    external_lightgbm_model_name: str | None = None
+    external_lightgbm_model_available: bool
+    external_lightgbm_message: str
+
+
 class NotificationItemRead(BaseModel):
     """Unified, non-personal notice for an open risk or promotable model."""
 

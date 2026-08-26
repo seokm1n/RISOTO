@@ -1,11 +1,13 @@
 """Model promotion and human-approved response draft APIs."""
 
 from datetime import datetime, timezone
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
+from app.config import get_settings
 from app.database import get_db
 from app.models import (
     Company,
@@ -17,6 +19,7 @@ from app.models import (
 from app.schemas import (
     LlmLabelingStatusRead,
     ModelOperationCheckRead,
+    ModelRuntimeStatusRead,
     ModelTrainingReadinessRead,
     ModelVersionRead,
     RiskDetectionStatusRead,
@@ -101,6 +104,32 @@ def get_risk_detection_status(
         model_id=runtime.version.id,
         model_version=runtime.version.version,
         model_state=model_state,
+    )
+
+
+@router.get("/model-runtime-status", response_model=ModelRuntimeStatusRead)
+def get_model_runtime_status(
+    _auth: CurrentAuth = Depends(require_auth),
+) -> ModelRuntimeStatusRead:
+    """Expose configured local model identities without leaking filesystem paths."""
+    settings = get_settings()
+    relevance_path = Path(settings.pretrained_relevance_model_path).expanduser()
+    sentiment_path = Path(settings.pretrained_sentiment_model_path).expanduser()
+    lightgbm_path = Path(settings.external_lightgbm_model_path).expanduser()
+    lightgbm_available = lightgbm_path.is_file()
+    return ModelRuntimeStatusRead(
+        article_filter_version=settings.article_filter_version,
+        article_filter_ai_enabled=settings.article_filter_ai_enabled,
+        relevance_model_name=relevance_path.name if relevance_path.name else None,
+        relevance_model_available=relevance_path.is_dir(),
+        sentiment_model_name=sentiment_path.name if sentiment_path.name else None,
+        sentiment_model_available=sentiment_path.is_dir(),
+        external_lightgbm_model_name=lightgbm_path.name if lightgbm_path.name else None,
+        external_lightgbm_model_available=lightgbm_available,
+        external_lightgbm_message=(
+            "외부 LightGBM 파일을 찾았습니다. 현재 서비스의 15분 특징·Isolation Forest 의존성 계약과 달라 운영 판정에는 사용하지 않습니다."
+            if lightgbm_available else "외부 LightGBM 파일을 찾지 못했습니다."
+        ),
     )
 
 

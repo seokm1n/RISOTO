@@ -19,23 +19,26 @@ export default function ModelManagementPage() {
   const [readiness, setReadiness] = useState(null);
   const [modelCheck, setModelCheck] = useState(null);
   const [riskStatus, setRiskStatus] = useState(null);
+  const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [llmLabeling, setLlmLabeling] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const [versionsResponse, readinessResponse, checkResponse, statusResponse, llmResponse] = await Promise.all([
+      const [versionsResponse, readinessResponse, checkResponse, statusResponse, runtimeResponse, llmResponse] = await Promise.all([
         api.get("/model-versions"),
         api.get("/model-training-readiness"),
         api.get("/model-monitoring"),
         api.get("/risk-detection-status"),
+        api.get("/model-runtime-status"),
         api.get("/llm-labeling/status"),
       ]);
       setVersions(versionsResponse.data);
       setReadiness(readinessResponse.data);
       setModelCheck(checkResponse.data);
       setRiskStatus(statusResponse.data);
+      setRuntimeStatus(runtimeResponse.data);
       setLlmLabeling(llmResponse.data);
       setNotice(null);
     } catch (requestError) {
@@ -96,7 +99,7 @@ export default function ModelManagementPage() {
     <div className="workspace-head"><div><span className="eyebrow">MODEL OPERATIONS</span><h1>운영 관리</h1><p>운영 모델, 후보 승격 조건과 데이터 품질을 관리합니다.</p></div></div>
     {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
     <div className="metric-grid dashboard-metrics model-metrics"><Metric label="운영 모델" value={productionCount} /><Metric label="후보 모델" value={candidateCount} /><Metric label="학습 준비 작업" value={readyTaskCount} /><Metric label="최종 위험 판정" value={riskStatus?.risk_detection_status === "available" ? "운영 중" : "판정 대기"} tone={riskStatus?.risk_detection_status === "available" ? "" : "pending"} small /></div>
-    <section className="panel analysis-status"><PanelTitle kicker="ANALYSIS RUNTIME" title="운영 분석 상태" /><div className="analysis-status-grid"><article className="active"><span>기본 기사 분석</span><strong>KLUE 기본 모델 사용 중</strong><small>관련성·광고·감성 분석과 위험 유형 분류를 보조합니다.</small></article><article className={riskStatus?.risk_detection_status === "available" ? "active" : "pending"}><span>최종 위험 판정</span><strong>{riskStatus?.risk_detection_status === "available" ? `${riskStatus.model_version ?? "LightGBM"} 운영 중` : "LightGBM 준비 전"}</strong><small>{riskStatus?.message ?? "운영 상태를 확인하고 있습니다."}</small></article></div></section>
+    <section className="panel analysis-status"><PanelTitle kicker="ANALYSIS RUNTIME" title="운영 분석 상태" /><div className="analysis-status-grid"><article className={runtimeStatus?.relevance_model_available ? "active" : "pending"}><span>기본 기사 분석</span><strong>{runtimeStatus?.article_filter_version ?? "모델 설정 확인 중"}</strong><small>{runtimeStatus?.relevance_model_available ? `${runtimeStatus.relevance_model_name} 로컬 모델 연결됨` : "관련성 로컬 모델을 찾지 못했습니다."}</small><small>{runtimeStatus?.sentiment_model_available ? `${runtimeStatus.sentiment_model_name} 감성 모델 연결됨` : "감성 로컬 모델을 찾지 못했습니다."}</small></article><article className={riskStatus?.risk_detection_status === "available" ? "active" : "pending"}><span>최종 위험 판정</span><strong>{riskStatus?.risk_detection_status === "available" ? `${riskStatus.model_version ?? "LightGBM"} 운영 중` : "LightGBM 등록 대기"}</strong><small>{riskStatus?.message ?? "운영 상태를 확인하고 있습니다."}</small><small>{runtimeStatus?.external_lightgbm_model_available ? `${runtimeStatus.external_lightgbm_model_name} 감지됨 · ${runtimeStatus.external_lightgbm_message}` : runtimeStatus?.external_lightgbm_message}</small></article></div></section>
     <div className="model-layout">
       <section className="panel model-versions-panel"><PanelTitle kicker="MODEL REGISTRY" title="모델 버전" /><div className="model-version-list">{versions.length ? versions.map((model) => <article className="model-version-row" key={model.id}><div><span className={`model-status ${model.status}`}>{MODEL_STATUS_LABELS[model.status] ?? model.status}</span><div><strong>{MODEL_TASK_LABELS[model.task] ?? model.task}</strong><small>{model.version} · {model.base_model || "사용자 정의 모델"}</small>{MODEL_TASK_DESCRIPTIONS[model.task] && <small>{MODEL_TASK_DESCRIPTIONS[model.task]}</small>}</div></div><div><small>등록 {formatDate(model.created_at)}</small>{model.status === "candidate" && <button type="button" onClick={() => promote(model)} disabled={Boolean(busy)}>{busy === `promote-${model.id}` ? "승격 중..." : "운영 승격"}</button>}</div></article>) : <p className="panel-empty">등록된 모델 버전이 없습니다.</p>}</div></section>
       <section className="panel model-readiness-panel"><PanelTitle kicker="TRAINING READINESS" title="학습 준비도" /><div className="readiness-task-list">{readiness?.tasks?.map((task) => <article className={task.candidate_training_ready ? "ready" : "blocked"} key={task.task}><div><strong>{MODEL_TASK_LABELS[task.task] ?? task.task}</strong><span>{task.candidate_training_ready ? "후보 학습 가능" : "데이터 준비 중"}</span></div><p>확정 라벨 {formatNumber(task.confirmed_total)}건 · 신규 {formatNumber(task.new_since_latest)}/{formatNumber(task.increment_required)}건</p>{task.blockers?.length > 0 && <small>{task.blockers[0]}</small>}</article>) ?? <p className="panel-empty">학습 준비도를 확인하고 있습니다.</p>}</div></section>
