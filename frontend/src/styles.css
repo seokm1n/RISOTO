@@ -4,6 +4,13 @@
 /* 전역 색상과 브라우저 기본 요소 */
 :root {
   --font-soft: "NanumSquareRound", "Pretendard", "Noto Sans KR", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif;
+  /* 라벨·수치처럼 라틴/숫자로만 된 짧은 텍스트에만 쓰는 시스템/에이전트 느낌의 모노스페이스. 한글에는 쓰지 않는다(폴백이 깨짐). */
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", "Roboto Mono", monospace;
+  /* 어두운 배경 위 텍스트 대비 단계. 앞으로 다른 화면의 다크 영역도 이 톤을 그대로 쓴다. */
+  --ink-on-dark-strong: #fbf7ee;
+  --ink-on-dark-muted: rgba(251, 247, 238, .86);
+  --accent-gold: #f3c988;
+  --accent-gold-strong: #ffd699;
   --success-strong: #3f7653;
   --success: #5f8c6b;
   --success-soft: #e5efe6;
@@ -24,12 +31,6 @@ button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 
 /* 제품 진입점: 관리자 데모 로그인 */
-.login-page {
-  min-height: 100svh;
-  display: grid;
-  grid-template-columns: minmax(0, 1.12fr) minmax(430px, .88fr);
-  background: #eeeade;
-}
 .login-story {
   position: relative;
   isolation: isolate;
@@ -69,27 +70,25 @@ button { cursor: pointer; }
 .login-brand { display: flex; align-items: center; gap: 11px; width: fit-content; }
 .login-brand img { width: 42px; height: 42px; border-radius: 11px; object-fit: cover; box-shadow: 0 8px 22px rgba(0,0,0,.2); }
 .login-brand span { font-size: 1.45rem; font-weight: 800; letter-spacing: -.04em; }
-.login-brand small { margin-left: 3px; color: rgba(247,242,230,.58); font-size: .57rem; font-weight: 700; letter-spacing: .1em; }
+.login-brand small { margin-left: 3px; color: var(--ink-on-dark-muted); font-size: .62rem; font-weight: 700; letter-spacing: .1em; }
 .login-story-copy { align-self: center; max-width: 780px; }
-.login-kicker { color: #dcb271; font: 800 .62rem/1 var(--font-soft); letter-spacing: .2em; }
-.login-story-copy h1 { margin: 26px 0 24px; font: 400 clamp(3rem, 5.35vw, 5.7rem)/1.04 var(--font-soft); letter-spacing: -.07em; word-break: keep-all; }
-.login-story-copy h1 em { color: #efbd70; font-style: normal; }
-.login-story-copy > p { max-width: 640px; margin: 0; color: rgba(247,242,230,.7); font-size: clamp(.86rem, 1.15vw, 1rem); line-height: 1.8; word-break: keep-all; }
-.login-pipeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid rgba(247,242,230,.16); border-bottom: 1px solid rgba(247,242,230,.16); }
+.login-agent-badge { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 7px 14px; border: 1px solid rgba(243, 201, 136, .4); border-radius: 999px; background: rgba(243, 201, 136, .1); }
+.login-agent-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-gold-strong); box-shadow: 0 0 0 4px rgba(243, 201, 136, .25); }
+.login-agent-badge span { color: var(--accent-gold-strong); font: 800 .68rem/1 var(--font-mono); letter-spacing: .16em; }
+.login-kicker { color: var(--accent-gold); font: 700 .74rem/1 var(--font-mono); letter-spacing: .22em; }
+.login-story-copy h1 { margin: 18px 0 24px; color: var(--ink-on-dark-strong); font: 500 clamp(3rem, 5.35vw, 5.7rem)/1.04 var(--font-soft); letter-spacing: -.07em; word-break: keep-all; }
+.login-story-copy h1 em { color: var(--accent-gold-strong); font-style: normal; }
+.login-story-copy > p { max-width: 640px; margin: 0; color: var(--ink-on-dark-muted); font-size: clamp(.94rem, 1.2vw, 1.08rem); line-height: 1.8; word-break: keep-all; }
+.login-pipeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid rgba(247,242,230,.22); border-bottom: 1px solid rgba(247,242,230,.22); }
 .login-pipeline article { display: flex; gap: 14px; align-items: center; min-width: 0; padding: 19px 16px 19px 0; }
-.login-pipeline article + article { padding-left: 18px; border-left: 1px solid rgba(247,242,230,.14); }
-.login-pipeline article > span { color: #efbd70; font: 700 .64rem/1 var(--font-soft); letter-spacing: .08em; }
+.login-pipeline article + article { padding-left: 18px; border-left: 1px solid rgba(247,242,230,.18); }
+.login-pipeline article > span { color: var(--accent-gold-strong); font: 800 .78rem/1 var(--font-mono); letter-spacing: .04em; }
 .login-pipeline article div { display: grid; min-width: 0; gap: 5px; }
-.login-pipeline strong { font-size: .76rem; }
-.login-pipeline small { overflow: hidden; color: rgba(247,242,230,.48); font-size: .63rem; text-overflow: ellipsis; white-space: nowrap; }
-.login-live-note { display: flex; align-items: center; gap: 10px; color: rgba(247,242,230,.65); font-size: .65rem; font-weight: 700; letter-spacing: .02em; }
+.login-pipeline strong { color: var(--ink-on-dark-strong); font-size: .84rem; }
+.login-pipeline small { overflow: hidden; color: var(--ink-on-dark-muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.login-live-note { display: flex; align-items: center; gap: 10px; color: var(--ink-on-dark-muted); font-size: .72rem; font-weight: 700; letter-spacing: .02em; }
 .login-live-note i { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 5px var(--success-ring); }
-.login-access { display: grid; align-content: center; justify-items: center; min-height: 100svh; padding: clamp(36px, 6vw, 92px); background: radial-gradient(circle at 80% 12%, rgba(225,177,105,.16), transparent 23%), #eeeade; }
 .login-card { width: min(100%, 470px); padding: clamp(34px, 4vw, 52px); background: #f9f6ed; box-shadow: 0 30px 80px rgba(46,39,35,.13); }
-.login-role-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: -14px 0 30px; padding: 4px; background: #e5e1d7; }
-.login-role-switch button { min-height: 42px; border: 0; background: transparent; color: #746d68; font-size: .72rem; font-weight: 800; }
-.login-role-switch button.active { background: #fffdf8; color: #b65432; box-shadow: 0 5px 16px rgba(55,45,40,.08); }
-.login-role-switch button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .login-card-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .login-card .login-kicker { color: #756057; }
 .login-role { padding: 6px 8px; background: #f2e8e2; color: #9c4e31; font-size: .61rem; font-weight: 800; }
@@ -108,12 +107,28 @@ button { cursor: pointer; }
 .login-submit:hover:not(:disabled) { background: #b45837; transform: translateY(-1px); }
 .login-submit:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 .login-submit:disabled { opacity: .58; cursor: wait; }
-.login-copyright { align-self: end; margin: 30px 0 0; color: #918b86; font-size: .61rem; }
+/* 로그인 랜딩: 히어로를 전체 화면으로 펼치고, 로그인 폼은 버튼을 눌러야 뜨는 팝업으로 뺀다 */
+.login-landing { min-height: 100svh; }
+.login-topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.login-topbar-actions { display: flex; align-items: center; gap: 12px; }
+.login-trigger { min-height: 46px; padding: 0 28px; border: 1px solid rgba(239,195,124,.4); background: rgba(239,195,124,.1); color: #f7f2e6; font-size: .76rem; font-weight: 800; transition: background 160ms ease, border-color 160ms ease, transform 160ms ease; }
+.login-trigger:hover, .login-trigger:focus-visible { background: rgba(239,195,124,.2); border-color: #efc37c; transform: translateY(-1px); }
+.auth-switch { margin: 18px 0 0; color: #746d68; font-size: .78rem; text-align: center; }
+.auth-switch-link { border: 0; background: none; padding: 0; color: #b65432; font: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; }
+.login-error { margin: 4px 0 18px; padding: 10px 14px; border-left: 3px solid #c95431; background: #f7e7e0; color: #8e321b; font-size: .78rem; }
+.login-modal-layer { position: fixed; z-index: 300; inset: 0; display: grid; place-items: center; padding: 24px; }
+.login-modal-backdrop { position: absolute; inset: 0; width: 100%; border: 0; background: rgba(20,17,15,.62); backdrop-filter: blur(3px); }
+.login-modal { position: relative; width: min(100%, 470px); max-height: calc(100svh - 48px); overflow-y: auto; }
+.login-modal .login-card { width: 100%; box-shadow: 0 40px 100px rgba(20,17,15,.35); }
+.login-modal-close { position: absolute; z-index: 1; top: 16px; right: 16px; display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgba(48,43,41,.17); border-radius: 50%; background: #f9f6ed; color: #544a46; font-size: 1.4rem; line-height: 1; }
+.login-modal-close:hover, .login-modal-close:focus-visible { border-color: #b65432; color: #b65432; outline: 2px solid rgba(182,84,50,.18); outline-offset: 2px; }
 
 .brand { display: inline-flex; align-items: center; border: 0; background: transparent; color: inherit; padding: 0; }
 .main-nav { display: flex; align-items: center; gap: 5px; }
-.main-nav button { border: 0; background: transparent; padding: 7px 10px; color: #746d68; font-size: .71rem; font-weight: 700; }
-.main-nav button.active { background: #f0e9e5; color: #b65432; }
+.main-nav button { position: relative; border: 0; border-radius: 6px; background: transparent; padding: 9px 14px; color: #4a423d; font-size: .8rem; font-weight: 800; transition: background 150ms ease, color 150ms ease; }
+.main-nav button:hover:not(.active) { background: #f2ede4; }
+.main-nav button.active { background: #f5ded0; color: #92371c; }
+.main-nav button.active::after { position: absolute; right: 14px; bottom: 4px; left: 14px; height: 3px; border-radius: 2px; background: #b65432; content: ""; }
 
 /* 상단 브랜드 및 화면 전환 내비게이션 */
 .topbar {
@@ -192,6 +207,129 @@ button { cursor: pointer; }
 .home-empty { display: grid; gap: 13px; justify-items: center; }
 .home-empty p { margin: 0; }
 .home-empty button { border: 0; border-bottom: 1px solid currentColor; background: transparent; padding: 4px 0; color: #b65432; font-size: .72rem; font-weight: 800; }
+
+/* 메인 화면: 좌(요약·추세·경쟁사 비교) / 우(기사·위험 판정) 3분할 대시보드.
+   와이드하게 펼치고 여백을 줄여 스크롤 없이 한 화면에 담는다. 박스는 배경보다
+   또렷한 리소토 톤(사프란 오렌지)으로 띄워서 카드 경계가 보이도록 한다. */
+.workspace.main-workspace { display: flex; flex-direction: column; max-width: none; height: calc(100svh - 58px); min-height: 0; padding: 22px 5vw 26px; }
+.main-workspace .workspace-head { flex: 0 0 auto; align-items: center; margin-bottom: 18px; }
+.main-workspace .workspace-head .eyebrow { color: #8a4310; font-weight: 800; }
+.main-workspace .workspace-head h1 { margin: 8px 0; font-weight: 600; font-size: clamp(2rem, 2.9vw, 2.8rem); }
+.main-company-name { color: #2e1f14; text-decoration-color: rgba(180,90,40,.4); }
+.main-lead { color: #4a3f38; font-size: .95rem; font-weight: 600; }
+.main-live-collecting { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; color: var(--success-strong); font-size: .78rem; font-weight: 800; letter-spacing: .02em; }
+.main-live-spinner { width: 13px; height: 13px; border: 2px solid rgba(63, 118, 83, .25); border-top-color: var(--success-strong); border-radius: 50%; animation: monitor-spin .75s linear infinite; }
+.main-dashboard-grid { flex: 1; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; min-height: 0; }
+.main-dashboard-grid .panel {
+  padding: 18px 22px;
+  border: 1px solid rgba(180, 96, 42, .16);
+  border-radius: 16px;
+  background: linear-gradient(165deg, #fbf3e5 0%, #f8ecd9 100%);
+  box-shadow: 0 8px 20px rgba(140, 76, 32, .06);
+}
+.main-dashboard-grid .eyebrow { color: #8a4310; font-size: .76rem; font-weight: 800; letter-spacing: .03em; }
+.main-dashboard-grid .panel-title { flex: 0 0 auto; margin-bottom: 8px; padding-bottom: 8px; border-bottom-color: rgba(180, 96, 42, .2); }
+.main-dashboard-grid .panel-title h2 { color: #2e1f14; font-size: 1.2rem; font-weight: 800; }
+.main-left-panel { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.metric-grid.main-summary-metrics { flex: 0 0 auto; grid-template-columns: repeat(4, 1fr); align-items: stretch; gap: 10px; margin-bottom: 0; }
+.main-metric-link, .main-metric-tile { display: flex; width: 100%; height: 100%; border: 0; background: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.main-metric-link:hover .metric, .main-metric-tile:hover { filter: brightness(1.04); }
+.main-metric-link .metric { flex: 1; }
+.main-summary-metrics .metric { min-height: 0; display: grid; align-content: start; gap: 6px; padding: 10px 12px; border: 1px solid rgba(180, 96, 42, .12); border-radius: 12px; background: #fffaf1; }
+.main-summary-metrics .metric span, .main-metric-tile-label { display: inline-block; width: fit-content; padding: 2px 8px; border-radius: 999px; background: rgba(180, 96, 42, .12); color: #7a3f14; font-size: .68rem; font-weight: 800; line-height: 1; letter-spacing: .03em; }
+.main-summary-metrics .metric strong { display: block; color: #2e1f14; font-size: 1.6rem; font-weight: 800; text-align: center; }
+.main-metric-tile { flex-direction: column; min-height: 0; padding: 10px 12px; border: 1px solid rgba(180, 96, 42, .12); border-radius: 12px; background: #fffaf1; }
+.main-metric-tile-label { margin-bottom: 8px; }
+.main-charts-row { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: 0; }
+.main-chart-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 0; }
+.main-right-column { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.main-articles-panel { flex: 1.2; display: flex; flex-direction: column; min-height: 0; }
+.main-articles-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.main-articles-panel-head .panel-title { flex: 1; min-width: 0; }
+.main-live-clock { flex: 0 0 auto; color: #8a4310; font-size: .76rem; font-weight: 800; letter-spacing: .03em; font-style: normal; }
+.main-article-list { flex: 1; display: grid; gap: 4px; max-height: none; overflow-y: auto; }
+.main-article-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 11px; padding: 9px 2px; color: inherit; text-decoration: none; border-bottom: 1px solid rgba(154, 84, 36, .16); }
+.main-article-row:last-child { border-bottom: 0; }
+.main-article-row strong { display: block; overflow: hidden; color: #2e1f14; font-size: .88rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.main-article-row p { margin: 4px 0 0; color: #4a3626; font-size: .78rem; line-height: 1.5; }
+.main-risk-panel-link { flex: 1; display: flex; flex-direction: column; min-height: 0; width: 100%; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.main-risk-panel-link.panel { padding: 16px 22px; }
+.main-risk-panel-link:hover { filter: brightness(1.03); }
+.main-risk-panel-link .panel-title { margin-bottom: 8px; padding-bottom: 8px; }
+.main-risk-notice-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+.main-risk-notice { display: grid; align-content: start; gap: 7px; }
+.main-risk-notice p { margin: 0; color: #2e1f14; font-size: .9rem; font-weight: 800; line-height: 1.5; }
+.main-risk-notice small { color: #5c4432; font-size: .74rem; line-height: 1.5; }
+
+/* 위험 판정 추이(막대)와 경쟁사 비교(선) — 좌우로 나란히, 리소토 톤(사프란 골드 vs 짙은 브라운) 유지 */
+.main-trend-chart-wrap { flex: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.main-trend-legend { display: flex; gap: 14px; }
+.main-trend-legend-item { display: inline-flex; align-items: center; gap: 6px; color: #3c2a1c; font-size: .74rem; font-weight: 800; }
+.main-trend-legend-item i { width: 9px; height: 9px; border-radius: 50%; }
+.main-trend-legend-item.main i { background: #d9860f; }
+.main-trend-legend-item.competitor i { background: #6b4226; }
+.main-chart-canvas { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.main-trend-svg { display: block; width: 100%; height: 100%; min-height: 0; min-width: 0; }
+.main-chart-canvas .panel-empty { margin: auto; }
+.main-trend-grid-line { stroke: rgba(140, 76, 32, .22); stroke-width: 1px; }
+.main-trend-axis-label { fill: #5c3d1f; font: 800 12px/1 var(--font-soft); }
+.main-trend-line-main { fill: none; stroke: #d9860f; stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; }
+.main-trend-line-competitor { fill: none; stroke: #6b4226; stroke-width: 2.5px; stroke-dasharray: 6 4; stroke-linecap: round; stroke-linejoin: round; }
+.main-trend-dot-main { fill: #d9860f; }
+.main-trend-dot-risk { fill: #c0392b; stroke: #fbf1e3; stroke-width: 2px; }
+.main-trend-label, .main-trend-label-competitor { fill: #6b4226; font: 800 12px/1 var(--font-soft); }
+.main-risk-bar { fill: rgba(140, 76, 32, .18); }
+.main-risk-bar-active { fill: #c0392b; }
+.main-trend-bar-label { fill: #8e321b; font: 800 12px/1 var(--font-soft); }
+
+.sentiment-ratio { display: grid; gap: 6px; }
+.sentiment-ratio-track { display: flex; overflow: hidden; height: 10px; border-radius: 999px; }
+.sentiment-ratio-track .positive { background: var(--success); }
+.sentiment-ratio-track .neutral { background: #c9b48a; }
+.sentiment-ratio-track .negative { background: #c0392b; }
+.sentiment-ratio-legend { display: flex; flex-wrap: wrap; gap: 7px; font-size: .68rem; font-weight: 800; }
+.sentiment-ratio-legend .positive { color: var(--success-strong); }
+.sentiment-ratio-legend .neutral { color: #6b4423; }
+.sentiment-ratio-legend .negative { color: #8e321b; }
+
+/* 기업 상세: 메인 화면과 같은 리소토 톤(따뜻한 골드/크림 패널), 와이드 레이아웃, 굵은 타이포그래피로 통일한다.
+   진행 상태에 따라 색이 바뀌는 준비도 배너·metric 상태 변형은 그대로 두고 손대지 않는다. */
+.workspace.realtime-workspace { max-width: none; padding: 22px 5vw 26px; }
+.workspace.realtime-workspace .workspace-head { align-items: center; margin-bottom: 18px; }
+.workspace.realtime-workspace .workspace-head h1 { margin: 8px 0; font-weight: 600; font-size: clamp(2rem, 2.9vw, 2.8rem); }
+.workspace.realtime-workspace .eyebrow { color: #8a4310; font-weight: 800; }
+.workspace.realtime-workspace .panel-title { border-bottom-color: rgba(180, 96, 42, .2); }
+.workspace.realtime-workspace .panel-title h2 { color: #2e1f14; font-weight: 800; }
+.workspace.realtime-workspace .panel,
+.workspace.realtime-workspace .filter-summary,
+.workspace.realtime-workspace .feature-window-summary {
+  border-radius: 16px;
+  border-color: rgba(180, 96, 42, .16);
+  background: linear-gradient(165deg, #fbf3e5 0%, #f8ecd9 100%);
+  box-shadow: 0 8px 20px rgba(140, 76, 32, .06);
+}
+.workspace.realtime-workspace .readiness-banner { border-radius: 12px; }
+.workspace.realtime-workspace .filter-summary div { border-right-color: rgba(180, 96, 42, .16); }
+.workspace.realtime-workspace .filter-summary span { color: #8a4310; font-weight: 800; text-align: center; }
+.workspace.realtime-workspace .filter-summary strong { color: #2e1f14; font-weight: 800; text-align: center; }
+.metric-grid.realtime-metrics { grid-template-columns: repeat(4, 1fr); }
+.workspace.realtime-workspace .metric { background: #fffaf1; border: 1px solid rgba(180, 96, 42, .12); border-radius: 12px; }
+.workspace.realtime-workspace .metric span { color: #7a3f14; text-align: center; }
+.workspace.realtime-workspace .metric strong { display: block; color: #2e1f14; font-weight: 800; text-align: center; }
+.workspace.realtime-workspace .feature-window-summary .window-metrics span { text-align: center; }
+.workspace.realtime-workspace .feature-window-summary .window-metrics strong { color: #2e1f14; font-weight: 800; text-align: center; }
+.workspace.realtime-workspace .article-row { border-bottom-color: rgba(154, 84, 36, .16); }
+.workspace.realtime-workspace .risk-list a::after { background: rgba(154, 84, 36, .16); }
+.workspace.realtime-workspace .source-filter select,
+.workspace.realtime-workspace .article-date-filter input,
+.workspace.realtime-workspace .article-search input {
+  border-color: rgba(180, 96, 42, .3);
+  background: #fffaf1;
+}
+/* 기사·위험 이벤트 목록과 대응 초안은 내용이 길어도 박스 자체는 커지지 않고 안에서만 스크롤한다. */
+.workspace.realtime-workspace .article-list.scroll-box { max-height: 460px; overflow-y: auto; }
+.workspace.realtime-workspace .risk-list.scroll-box { max-height: 460px; overflow-y: auto; }
+.workspace.realtime-workspace .risk-detail-scroll { max-height: 560px; overflow-y: auto; }
 
 /* 관리자용 기업 등록·수정 작업 전환 */
 .company-admin-page { min-height: calc(100svh - 58px); }
@@ -433,8 +571,13 @@ button { cursor: pointer; }
 .span-two { grid-column: span 2; }
 .panel-title { margin-bottom: 19px; padding-bottom: 17px; border-bottom: 1px solid rgba(48,43,41,.12); }
 .panel-title h2 { margin: 9px 0 0; font: 400 1.45rem/1 var(--font-soft); letter-spacing: -.04em; }
-.source-filter { display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin: -6px 0 10px; color: #706965; font-size: .68rem; font-weight: 700; }
+.article-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 9px 14px; margin: -6px 0 10px; }
+.source-filter { display: flex; align-items: center; gap: 9px; margin: 0; color: #706965; font-size: .68rem; font-weight: 700; }
 .source-filter select { min-width: 170px; border: 1px solid #cbc8bd; background: #fffdf7; padding: 8px 10px; color: #302b29; }
+.article-date-filter { display: flex; align-items: center; gap: 7px; color: #706965; font-size: .68rem; font-weight: 700; }
+.article-date-filter input { border: 1px solid #cbc8bd; background: #fffdf7; padding: 7px 8px; color: #302b29; font-size: .72rem; }
+.article-search { display: flex; align-items: center; gap: 7px; color: #706965; font-size: .68rem; font-weight: 700; }
+.article-search input { min-width: 180px; border: 1px solid #cbc8bd; background: #fffdf7; padding: 7px 10px; color: #302b29; font-size: .72rem; }
 .panel-empty { margin: 20px 0; color: #807975; font-size: .82rem; }
 .article-list, .risk-list { display: grid; }
 .article-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 11px; padding: 13px 0; color: inherit; text-decoration: none; border-bottom: 1px solid rgba(48,43,41,.09); }
@@ -465,7 +608,7 @@ button { cursor: pointer; }
 .realtime-trend-panel { margin-top: 18px; }
 .feature-window-summary { margin-bottom: 18px; padding: 20px; border: 1px solid rgba(48,43,41,.13); background: #f8f5ec; }
 .feature-window-head { display: flex; justify-content: space-between; align-items: center; gap: 18px; }.feature-window-head > div { display: flex; align-items: center; gap: 9px; }.feature-window-head > div:first-child { display: grid; gap: 8px; }.feature-window-head > div:first-child strong { font-size: .83rem; }
-.window-metrics { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 17px; border-top: 1px solid rgba(48,43,41,.11); }.window-metrics div { display: grid; gap: 7px; padding: 14px 12px 0; border-right: 1px solid rgba(48,43,41,.09); }.window-metrics div:first-child { padding-left: 0; }.window-metrics div:last-child { border-right: 0; }.window-metrics span { color: #766f6a; font-size: .62rem; }.window-metrics strong { font: 400 1.25rem/1 var(--font-soft); color: #5a4035; }.window-warning { margin: 15px 0 0; padding: 10px; background: #f5dfd7; color: #8e321b; font-size: .7rem; }
+.window-metrics { display: grid; grid-template-columns: repeat(7, 1fr); margin-top: 17px; border-top: 1px solid rgba(48,43,41,.11); }.window-metrics div { display: grid; gap: 7px; padding: 14px 12px 0; border-right: 1px solid rgba(48,43,41,.09); }.window-metrics div:first-child { padding-left: 0; }.window-metrics div:last-child { border-right: 0; }.window-metrics span { color: #766f6a; font-size: .62rem; }.window-metrics strong { font: 400 1.25rem/1 var(--font-soft); color: #5a4035; }.window-warning { margin: 15px 0 0; padding: 10px; background: #f5dfd7; color: #8e321b; font-size: .7rem; }
 .operations-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 18px; margin-top: 18px; }.health-state { display: flex; justify-content: space-between; margin-bottom: 13px; padding: 13px; background: #e5e1d7; }.health-state.healthy { background: var(--success-soft); color: var(--success-strong); }.health-state.degraded { background: #efe7cc; color: #745f1e; }.health-state.unavailable { background: #f5dfd7; color: #9c3d25; }.health-state span { font-size: .7rem; }
 .source-health-list { display: grid; }.source-health-list > div { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(48,43,41,.08); font-size: .72rem; }.source-health-list strong { text-transform: uppercase; font-size: .62rem; }.source-health-list strong.healthy { color: var(--success-strong); }.source-health-list strong.partial { color: #8a6b11; }.source-health-list strong.down { color: #9c3d25; }.source-health-list small { color: #827a75; }
 .incident-list { display: grid; gap: 10px; max-height: 430px; overflow: auto; }.incident-row { display: grid; gap: 6px; padding: 12px; border-left: 3px solid #c95431; background: #fff8f4; }.incident-row.recovered, .incident-row.acknowledged { border-color: #89817b; background: #eeece4; }.incident-row > div { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.incident-row p { margin: 0; font-size: .75rem; }.incident-row small { color: #7e7772; font-size: .63rem; line-height: 1.45; }.incident-row button { justify-self: end; border: 1px solid #9eaaa4; background: #fffdf7; padding: 6px 8px; color: #544a46; font-size: .64rem; font-weight: 800; }
@@ -513,10 +656,8 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 900px) {
-  .login-page { grid-template-columns: 1fr; }
   .login-story { min-height: 660px; grid-template-rows: auto 1fr auto auto; }
   .login-story::before { right: -34%; width: 110vw; }
-  .login-access { min-height: auto; padding-block: 72px; }
   .topbar { gap: 10px; padding-inline: 3vw; }.brand span { display: none; }.main-nav { flex: 1 1 auto; overflow-x: auto; scrollbar-width: none; }.main-nav::-webkit-scrollbar { display: none; }
   .hero-grid { grid-template-columns: 1fr; }
   .hero-copy { padding-top: 62px; border-right: 0; border-bottom: 1px solid rgba(48, 43, 41, 0.18); }
@@ -544,11 +685,8 @@ button { cursor: pointer; }
   .login-pipeline article { display: grid; gap: 8px; align-content: start; padding: 14px 8px 14px 0; }
   .login-pipeline article + article { padding-left: 10px; }
   .login-pipeline small { white-space: normal; line-height: 1.35; }
-  .login-access { padding: 0; background: #f9f6ed; }
   .login-card { width: 100%; padding: 44px 24px 36px; box-shadow: none; }
-  .login-role-switch { margin-top: -18px; }
   .login-card h2 { font-size: 2.65rem; }
-  .login-copyright { margin: 0; padding: 0 24px 28px; }
   .topbar { padding: 0 22px; }
   .brand-icon { width: 32px; height: 32px; margin-right: 8px; border-radius: 8px; }
   .brand span { display: none; }

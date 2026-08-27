@@ -14,6 +14,7 @@ import { api, getErrorMessage } from "../api";
 import MyPage from "../features/account/MyPage";
 import CollectionPage from "../features/collection/CollectionPage";
 import CompanyAdministrationPage from "../features/companies/CompanyPages";
+import CompetitorsPage from "../features/companies/CompetitorsPage";
 import MainPage from "../features/home/MainPage";
 import ModelManagementPage from "../features/models/ModelManagementPage";
 import NotificationDrawer from "../features/notifications/NotificationDrawer";
@@ -23,15 +24,17 @@ import { EMPTY_NOTIFICATIONS } from "../shared/presentation";
 
 const NAV_ITEMS = [
   { id: "home", label: "메인", path: "/main" },
+  { id: "detail", label: "기업 상세", path: "/companies/overview" },
+  { id: "competitors", label: "경쟁사", path: "/competitors" },
   { id: "companies", label: "기업 관리", path: "/companies" },
   { id: "collection", label: "수집", path: "/collection" },
-  { id: "detail", label: "기업 상세", path: "/companies/overview" },
   { id: "operations", label: "운영 관리", path: "/operations" },
   { id: "review", label: "기사 검수", path: "/reviews" },
 ];
 
 const PAGE_TITLES = {
   home: "메인",
+  competitors: "경쟁사",
   collection: "수집",
   detail: "기업 상세",
   companies: "기업 관리",
@@ -44,6 +47,7 @@ const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
 
 const pageFromPath = (pathname) => {
   if (pathname === "/main") return "home";
+  if (pathname === "/competitors") return "competitors";
   if (pathname === "/account") return "account";
   if (pathname === "/operations" || pathname === "/models") return "operations";
   if (pathname === "/reviews") return "review";
@@ -53,7 +57,7 @@ const pageFromPath = (pathname) => {
   return "home";
 };
 
-function CompanyDetailRoute({ canAdminister, onCompanyChange }) {
+function CompanyDetailRoute({ canAdminister, onCompanyChange, onEditCompany }) {
   const { companyId } = useParams();
   const [searchParams] = useSearchParams();
   const normalizedCompanyId = companyId ? numericParam(companyId) : null;
@@ -66,6 +70,7 @@ function CompanyDetailRoute({ canAdminister, onCompanyChange }) {
     initialRiskEventId={riskEventId ? Number(riskEventId) : null}
     canAdminister={canAdminister}
     onCompanyChange={onCompanyChange}
+    onEditCompany={onEditCompany}
   />;
 }
 
@@ -98,6 +103,7 @@ export default function WorkspaceApp({ session, onLogout }) {
   const [notifications, setNotifications] = useState(EMPTY_NOTIFICATIONS);
   const [notificationError, setNotificationError] = useState(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState(() => new Set());
 
   const shouldBlockNavigation = useCallback(({ currentLocation, nextLocation }) => (
     managementDirty
@@ -162,7 +168,9 @@ export default function WorkspaceApp({ session, onLogout }) {
     onModeChange: changeCompanyAdminMode,
   };
   const allowedNotificationItems = (notifications.items ?? []).filter((item) => item.type === "risk");
-  const notificationTotal = allowedNotificationItems.length;
+  const notificationTotal = allowedNotificationItems.filter((item) => !readNotificationIds.has(item.id)).length;
+  const markNotificationRead = (item) => setReadNotificationIds((current) => new Set(current).add(item.id));
+  const markAllNotificationsRead = () => setReadNotificationIds(new Set(allowedNotificationItems.map((item) => item.id)));
 
   return <main className="min-h-screen">
     <header className="topbar">
@@ -177,7 +185,8 @@ export default function WorkspaceApp({ session, onLogout }) {
 
     <Routes>
       <Route path="/" element={<Navigate to="/main" replace />} />
-      <Route path="/main" element={<MainPage canManageCompanies onOpenCompany={openCompanyDetail} onManageCompanies={openManagementCompany} />} />
+      <Route path="/main" element={<MainPage onOpenCompany={openCompanyDetail} onEditCompany={(companyId) => openManagementCompany(companyId, "edit")} onViewCompetitors={() => goTo("/competitors")} />} />
+      <Route path="/competitors" element={<CompetitorsPage onOpenCompany={openCompanyDetail} onRegister={() => openManagementCompany(null, "register")} onEditCompany={(companyId) => openManagementCompany(companyId, "edit")} />} />
       <Route path="/account" element={<MyPage session={session} />} />
       <Route path="/operations" element={<ModelManagementPage />} />
       <Route path="/models" element={<Navigate to="/operations" replace />} />
@@ -187,10 +196,18 @@ export default function WorkspaceApp({ session, onLogout }) {
       <Route path="/companies/new" element={<CompanyAdministrationPage {...companyAdministrationProps} mode="register" initialCompanyId={null} />} />
       <Route path="/companies/:companyId/settings" element={<CompanySettingsRoute {...companyAdministrationProps} />} />
       <Route path="/companies/overview" element={<MainCompanyOverviewRedirect />} />
-      <Route path="/companies/:companyId" element={<CompanyDetailRoute canAdminister onCompanyChange={changeDetailCompany} />} />
+      <Route path="/companies/:companyId" element={<CompanyDetailRoute canAdminister onCompanyChange={changeDetailCompany} onEditCompany={(companyId) => openManagementCompany(companyId, "edit")} />} />
       <Route path="*" element={<Navigate to="/main" replace />} />
     </Routes>
 
-    <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} onRiskOpen={(item) => item.company_id && openCompanyDetail(item.company_id, item.risk_event_id)} />
+    <NotificationDrawer
+      open={notificationOpen}
+      onClose={() => setNotificationOpen(false)}
+      notifications={{ ...notifications, items: allowedNotificationItems }}
+      error={notificationError}
+      readIds={readNotificationIds}
+      onMarkAllRead={markAllNotificationsRead}
+      onRiskOpen={(item) => { markNotificationRead(item); if (item.company_id) openCompanyDetail(item.company_id, item.risk_event_id); }}
+    />
   </main>;
 }

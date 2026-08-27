@@ -62,19 +62,17 @@ def _company_context(db: Session, company: Company) -> dict:
     }
 
 
-def call_llm_label(company_context: dict, raw: RawNewsArticle, model_name: str) -> dict | None:
-    """Ask the configured model to independently label one article; return None on any failure."""
-    settings = get_settings()
-    if not settings.openai_api_key:
-        return None
-    instruction = (
-        "다음 뉴스 기사가 지정된 기업 자체에 관한 내용인지, 광고·홍보성 문구인지, 어떤 감성 어조인지를 "
-        "사람 검수자처럼 독립적으로 판단하라. 기업명이 같아도 스포츠팀, 인물, 다른 업종 등 동명이인을 "
-        "다루는 기사면 relevance_label을 irrelevant로 표시하라. 기사가 무관하면 sentiment_label은 "
-        "not_applicable로 하라. 판단 근거를 reason에 한두 문장으로 남겨라."
-    )
-    prompt = {
-        "instruction": instruction,
+_INSTRUCTION = (
+    "다음 뉴스 기사가 지정된 기업 자체에 관한 내용인지, 광고·홍보성 문구인지, 어떤 감성 어조인지를 "
+    "사람 검수자처럼 독립적으로 판단하라. 기업명이 같아도 스포츠팀, 인물, 다른 업종 등 동명이인을 "
+    "다루는 기사면 relevance_label을 irrelevant로 표시하라. 기사가 무관하면 sentiment_label은 "
+    "not_applicable로 하라. 판단 근거를 reason에 한두 문장으로 남겨라."
+)
+
+
+def _label_prompt(company_context: dict, raw: RawNewsArticle) -> dict:
+    return {
+        "instruction": _INSTRUCTION,
         "company": company_context,
         "article": {
             "title": raw.title,
@@ -82,25 +80,9 @@ def call_llm_label(company_context: dict, raw: RawNewsArticle, model_name: str) 
             "source": raw.source,
         },
     }
-    try:
-        from openai import OpenAI
 
-        response = OpenAI(api_key=settings.openai_api_key).responses.create(
-            model=model_name,
-            input=json.dumps(prompt, ensure_ascii=False, default=str),
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "article_llm_label_v1",
-                    "strict": True,
-                    "schema": _label_schema(),
-                }
-            },
-        )
-        payload = json.loads(response.output_text)
-    except Exception:
-        logger.exception("LLM article labeling call failed for raw_article_id=%s", raw.id)
-        return None
+
+def _valid_payload(payload: object) -> dict | None:
     if (
         not isinstance(payload, dict)
         or payload.get("relevance_label") not in RELEVANCE_LABELS
@@ -109,6 +91,66 @@ def call_llm_label(company_context: dict, raw: RawNewsArticle, model_name: str) 
     ):
         return None
     return payload
+
+
+def _call_openai_label(prompt: dict, model_name: str, api_key: str) -> dict | None:
+    from openai import OpenAI
+
+    response = OpenAI(api_key=api_key).responses.create(
+        model=model_name,
+        input=json.dumps(prompt, ensure_ascii=False, default=str),
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "article_llm_label_v1",
+                "strict": True,
+                "schema": _label_schema(),
+            }
+        },
+    )
+    return json.loads(response.output_text)
+
+
+def _call_ollama_label(prompt: dict, model_name: str, base_url: str) -> dict | None:
+    import httpx
+
+    with httpx.Client(timeout=120.0) as client:
+        response = client.post(
+            f"{base_url.rstrip('/')}/api/chat",
+            json={
+                "model": model_name,
+                "messages": [
+                    {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}
+                ],
+                "stream": False,
+                "format": _label_schema(),
+            },
+        )
+        response.raise_for_status()
+    return json.loads(response.json()["message"]["content"])
+
+
+def _provider_ready(settings) -> bool:
+    if settings.llm_labeling_provider == "ollama":
+        return bool(settings.ollama_base_url)
+    return bool(settings.openai_api_key)
+
+
+def call_llm_label(company_context: dict, raw: RawNewsArticle, model_name: str) -> dict | None:
+    """Ask the configured model to independently label one article; return None on any failure."""
+    settings = get_settings()
+    if not _provider_ready(settings):
+        return None
+    prompt = _label_prompt(company_context, raw)
+    try:
+        if settings.llm_labeling_provider == "ollama":
+            payload = _call_ollama_label(prompt, model_name, settings.ollama_base_url)
+        else:
+            payload = _call_openai_label(prompt, model_name, settings.openai_api_key)
+    except Exception:
+        logger.exception("LLM article labeling call failed for raw_article_id=%s", raw.id)
+        return None
+    return _valid_payload(payload)
 
 
 def _latest_filter_result_ids():
@@ -198,7 +240,7 @@ def enqueue_llm_labeling_for_company(company_id: int) -> None:
     delays or blocks ingestion, and failures stay visible only in logs.
     """
     settings = get_settings()
-    if not settings.llm_labeling_enabled or not settings.openai_api_key:
+    if not settings.llm_labeling_enabled or not _provider_ready(settings):
         return
 
     def _run() -> None:
@@ -315,7 +357,8 @@ def llm_labeling_status(db: Session, *, now: datetime | None = None) -> dict:
     agreement_rate = (agreement_count / reviewed_count) if reviewed_count else None
 
     return {
-        "enabled": bool(settings.llm_labeling_enabled and settings.openai_api_key),
+        "enabled": bool(settings.llm_labeling_enabled and _provider_ready(settings)),
+        "provider": settings.llm_labeling_provider,
         "model_name": settings.llm_labeling_model_name,
         "llm_labeled_total": llm_total,
         "llm_labeled_last_24h": llm_last_24h,

@@ -1,6 +1,7 @@
 """수집 실행, 기사 조회, 필터 감사 및 모니터링 제어 API를 제공한다."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -41,6 +42,7 @@ from app.services.monitoring_pipeline import run_collection
 
 
 router = APIRouter(tags=["collection"])
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 def _user_company(db: Session, company_id: int, user_id: int) -> Company:
@@ -299,10 +301,13 @@ def list_company_articles(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     source: str | None = Query(default=None, min_length=1, max_length=40),
+    q: str | None = Query(default=None, min_length=1, max_length=200),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> NewsArticlePage:
-    """기업에 연결된 기사를 출처 필터와 페이지 정보에 맞춰 반환한다."""
+    """기업에 연결된 기사를 출처·기간·검색어 필터와 페이지 정보에 맞춰 반환한다."""
     _user_company(db, company_id, auth.user_id)
     company_articles = (
         select(
@@ -330,7 +335,18 @@ def list_company_articles(
         .distinct()
         .order_by(NewsArticle.source)
     ))
-    base_query = company_articles.where(NewsArticle.source == source) if source else company_articles
+    base_query = company_articles
+    if source:
+        base_query = base_query.where(NewsArticle.source == source)
+    if q:
+        like = f"%{q}%"
+        base_query = base_query.where(NewsArticle.title.ilike(like) | NewsArticle.summary.ilike(like))
+    # 화면에는 한국 시간으로 날짜가 표시되므로, 필터도 한국 달력 기준 하루로 계산한다.
+    article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+    if date_from:
+        base_query = base_query.where(article_time >= datetime.combine(date_from, datetime.min.time(), tzinfo=SEOUL).astimezone(timezone.utc))
+    if date_to:
+        base_query = base_query.where(article_time < (datetime.combine(date_to, datetime.min.time(), tzinfo=SEOUL) + timedelta(days=1)).astimezone(timezone.utc))
     total = db.scalar(select(func.count()).select_from(base_query.subquery())) or 0
     rows = db.execute(
         base_query

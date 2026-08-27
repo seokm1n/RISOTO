@@ -677,6 +677,7 @@ class LlmLabelingStatusRead(BaseModel):
     """LLM 자동 라벨링 가동 현황과 밀린 기사 수를 보여주는 읽기 전용 요약."""
 
     enabled: bool
+    provider: str
     model_name: str
     llm_labeled_total: int
     llm_labeled_last_24h: int

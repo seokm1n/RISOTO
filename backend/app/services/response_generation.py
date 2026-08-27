@@ -330,6 +330,49 @@ def _scenario_schema(generation_kind: str) -> dict[str, Any]:
     }
 
 
+def _response_provider_ready(settings) -> bool:
+    if settings.response_generation_provider == "ollama":
+        return bool(settings.ollama_base_url)
+    return bool(settings.openai_api_key)
+
+
+def _call_openai_content(prompt: dict, schema: dict, model_name: str, api_key: str) -> dict:
+    from openai import OpenAI
+
+    response = OpenAI(api_key=api_key).responses.create(
+        model=model_name,
+        input=json.dumps(prompt, ensure_ascii=False, default=str),
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "risk_response_draft_v2",
+                "strict": True,
+                "schema": schema,
+            }
+        },
+    )
+    return json.loads(response.output_text)
+
+
+def _call_ollama_content(prompt: dict, schema: dict, model_name: str, base_url: str) -> dict:
+    import httpx
+
+    with httpx.Client(timeout=180.0) as client:
+        response = client.post(
+            f"{base_url.rstrip('/')}/api/chat",
+            json={
+                "model": model_name,
+                "messages": [
+                    {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}
+                ],
+                "stream": False,
+                "format": schema,
+            },
+        )
+        response.raise_for_status()
+    return json.loads(response.json()["message"]["content"])
+
+
 def _llm_content(
     event: RiskEvent,
     risk_types: list[str],
@@ -341,7 +384,7 @@ def _llm_content(
 ) -> dict | None:
     """Ask the configured model for 2-5 grounded scenarios of the required kind."""
     settings = get_settings()
-    if not settings.openai_api_key:
+    if not _response_provider_ready(settings):
         return None
     citation_item = {
         "type": "object",
@@ -420,22 +463,15 @@ def _llm_content(
         "precedents": precedents,
     }
     try:
-        from openai import OpenAI
-
-        response = OpenAI(api_key=settings.openai_api_key).responses.create(
-            model=settings.response_model_name,
-            input=json.dumps(prompt, ensure_ascii=False, default=str),
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "risk_response_draft_v2",
-                    "strict": True,
-                    "schema": schema,
-                }
-            },
+        if settings.response_generation_provider == "ollama":
+            return _call_ollama_content(
+                prompt, schema, settings.response_model_name, settings.ollama_base_url
+            )
+        return _call_openai_content(
+            prompt, schema, settings.response_model_name, settings.openai_api_key
         )
-        return json.loads(response.output_text)
     except Exception:
+        logger.exception("LLM response draft generation call failed for event_id=%s", event.id)
         return None
 
 

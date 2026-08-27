@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
@@ -10,6 +10,7 @@ import {
   READINESS_LABELS,
   formatNumber,
 } from "../../shared/presentation";
+import { useMonitoringSummaries, useSharedResource } from "../../shared/useSharedResource";
 import {
   companyFormSignature,
   companyKeywordPayload,
@@ -99,15 +100,25 @@ function companyPayload(form, submittedKeywords) {
 }
 
 function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEditCompany, onboarding = false }) {
-  const [industries, setIndustries] = useState([]);
-  const [companies, setCompanies] = useState([]);
+  // 온보딩 중에는 아직 볼 기업 목록이 없으니 네트워크를 타지 않는 별도 키로 건너뛴다.
+  const { data: allCompanies = [], loading, refresh: refreshCompanies } = useSharedResource(
+    onboarding ? "/companies:onboarding-skip" : "/companies",
+    onboarding ? () => Promise.resolve([]) : () => api.get("/companies").then((response) => response.data),
+    { intervalMs: onboarding ? 0 : 30000 },
+  );
+  const companies = useMemo(
+    () => onboarding ? [] : allCompanies.filter((company) => company.company_role === "competitor"),
+    [allCompanies, onboarding],
+  );
+  const { data: monitoringSummaries } = useMonitoringSummaries(companies);
+  const { data: industries = [] } = useSharedResource(
+    "/industries", () => api.get("/industries").then((response) => response.data), { intervalMs: 0 },
+  );
   const [form, setForm] = useState(() => companyToForm(null));
   const [keywordDrafts, setKeywordDrafts] = useState(() => emptyKeywordDrafts());
   const [formVersion, setFormVersion] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState(null);
-  const [monitoringSummaries, setMonitoringSummaries] = useState({});
   const submittedKeywords = companyKeywordsWithDrafts(form, keywordDrafts);
   const keywordCount = Object.values(submittedKeywords).reduce((sum, values) => sum + values.length, 0);
   const targetLabel = companyRole === "main" ? "메인 기업" : COMPETITOR_LABEL;
@@ -115,29 +126,6 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
   const changeField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
   const changeKeyword = (field, values) => setForm((current) => ({ ...current, [field]: values }));
   const changeKeywordDraft = (field, value) => setKeywordDrafts((current) => ({ ...current, [field]: value }));
-
-  const loadData = useCallback(async () => {
-    try {
-      const industryResponse = await api.get("/industries");
-      setIndustries(industryResponse.data);
-      if (!onboarding) {
-        const companyResponse = await api.get("/companies");
-        const competitorCompanies = companyResponse.data.filter((company) => company.company_role === "competitor");
-        setCompanies(competitorCompanies);
-        const results = await Promise.allSettled(competitorCompanies.map((company) => api.get(`/companies/${company.id}/monitoring`)));
-        setMonitoringSummaries(Object.fromEntries(results.flatMap((result, index) => result.status === "fulfilled" ? [[competitorCompanies[index].id, result.value.data]] : [])));
-      }
-      setNotice(null);
-    } catch (error) { setNotice({ type: "error", message: getErrorMessage(error) }); }
-    finally { setLoading(false); }
-  }, [onboarding]);
-
-  useEffect(() => {
-    loadData();
-    if (onboarding) return undefined;
-    const timer = window.setInterval(loadData, 30000);
-    return () => window.clearInterval(timer);
-  }, [loadData, onboarding]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -149,7 +137,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
       const response = await api.post(endpoint, { ...companyPayload(form, submittedKeywords), backfill_days: 7 });
       if (onCreated) await onCreated(response.data);
       if (!onboarding) {
-        setForm(companyToForm(null)); setKeywordDrafts(emptyKeywordDrafts()); setFormVersion((current) => current + 1); await loadData();
+        setForm(companyToForm(null)); setKeywordDrafts(emptyKeywordDrafts()); setFormVersion((current) => current + 1); await refreshCompanies();
         setNotice({ type: "success", message: `${response.data.name}을(를) ${targetLabel}(으)로 등록하고 수집을 시작했습니다.` });
       }
     } catch (error) { setNotice({ type: "error", message: getErrorMessage(error) }); }
