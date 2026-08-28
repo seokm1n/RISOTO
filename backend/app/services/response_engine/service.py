@@ -195,7 +195,11 @@ def _build_content(db, payload, event, generation_kind, target_company):
     decision = tier.decide(code, payload)
 
     # 3) 근거 수집 - 검수 사례 우선, 모자란 만큼 검색. 법령은 시행 중인 것만 의무로.
-    retriever = TeamCaseRetriever(company_name=payload.company_name, db=db)
+    retriever = TeamCaseRetriever(
+        company_name=payload.company_name,
+        db=db,
+        exclude_urls=[m.url for m in payload.mentions if m.url],
+    )
     ev = evidence.build(
         payload, code,
         case_retriever=retriever,
@@ -371,11 +375,20 @@ def _build_peer_content(db, payload):
 
     # 2) 근거 수집 - 사례는 우리 기업 관점으로(검수 DB 우선 + 부족분 검색), 법령은
     #    verified 조문만. 채널 조건부 주입 여부는 recommend.build_user_prompt가 판단한다.
-    retriever = TeamCaseRetriever(company_name=payload.main_company_name or "", db=db)
+    retriever = TeamCaseRetriever(
+        company_name=payload.main_company_name or "",
+        db=db,
+        exclude_urls=[m.url for m in payload.mentions if m.url],
+    )
     query_text = " ".join(m.text for m in payload.mentions[:3])[:300]
     cases = retriever.search(analysis["risk_type"], query_text, top_k=3)
     _add(retriever.last_usage)
-    regs = KoreanRegulationMapper().lookup(analysis["risk_type"])
+    # 동종 경로는 시행 중인 조문만 쓴다. 여기 블록은 recommend.build_user_prompt에서
+    # "우리 쪽 점검 항목 후보"로 렌더링되는데, 시행 예정 조문(예: 산업안전보건법 제54조
+    # 2027-01-08 시행)이 섞이면 아직 의무가 아닌 것을 지금 점검하라고 안내하게 된다.
+    # 메인 경로는 [시행 예정] 블록으로 분리해 살려 두지만, 동종 추천은 한 줄짜리 참고
+    # 목록이라 구분이 표현되지 않으므로 조회 시점에 거른다.
+    regs = KoreanRegulationMapper(include_upcoming=False).lookup(analysis["risk_type"])
 
     peer["cases"] = [
         {
@@ -384,8 +397,18 @@ def _build_peer_content(db, payload):
         }
         for c in cases
     ]
+    # 적용 요건(원사업자 해당 여부 등)은 회사마다 달라 사람이 확인해야 하는 값이라
+    # 요건 문장에 붙여 내보낸다. 프롬프트 렌더러가 law_name/article/requirement 세 키만
+    # 읽으므로, 여기서 합쳐야 단서가 보고서까지 살아 남는다.
     peer["regulations"] = [
-        {"law_name": r.law_name, "article": r.article, "requirement": r.requirement}
+        {
+            "law_name": r.law_name,
+            "article": r.article,
+            "requirement": (
+                r.requirement
+                + (f" (※ 적용 요건 확인 필요: {r.applicability_note})" if r.applicability_note else "")
+            ),
+        }
         for r in regs
     ]
 

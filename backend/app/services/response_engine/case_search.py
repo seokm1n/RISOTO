@@ -88,6 +88,18 @@ def _collectors():
     return out
 
 
+def _norm_url(url: str) -> str:
+    """URL 비교용 정규화. 스킴·대소문자·끝 슬래시 차이로 같은 기사를 놓치지 않게 한다."""
+    u = (url or "").strip().lower()
+    for prefix in ("https://", "http://"):
+        if u.startswith(prefix):
+            u = u[len(prefix):]
+            break
+    if u.startswith("www."):
+        u = u[4:]
+    return u.rstrip("/")
+
+
 def _search_articles(company: str, risk_type: str, query: str) -> list[dict]:
     """수집기를 돌려 기사 목록을 만든다. URL 중복은 제거한다."""
     rt = get_type(risk_type)
@@ -122,9 +134,13 @@ def _search_articles(company: str, risk_type: str, query: str) -> list[dict]:
 class TeamCaseRetriever:
     """CaseRetriever 프로토콜 구현. 검수 사례를 먼저 쓰고 모자란 만큼 검색으로 채운다."""
 
-    def __init__(self, company_name: str = "", db=None) -> None:
+    def __init__(self, company_name: str = "", db=None, exclude_urls=None) -> None:
         self.company_name = company_name
         self.db = db
+        # 이번 사안 자체의 기사 URL. 검색어가 회사명 + 유형이라 방금 터진 사건의 기사가
+        # 그대로 "과거 유사 사례"로 되돌아온다. 자기 자신을 근거로 인용하는 보고서가
+        # 되므로 검색 결과 단계에서 걸러낸다.
+        self.exclude_urls = {_norm_url(u) for u in (exclude_urls or []) if u}
         self.last_usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
         self.last_error: str | None = None
 
@@ -170,6 +186,8 @@ class TeamCaseRetriever:
             return cases[:top_k]
 
         articles = _search_articles(self.company_name, risk_type, query_text[:300])
+        if self.exclude_urls:
+            articles = [a for a in articles if _norm_url(a["url"]) not in self.exclude_urls]
         if not articles:
             return cases
 

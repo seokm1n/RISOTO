@@ -61,6 +61,6 @@ from app.services.response_engine import generate_response_draft
 
 ## 아직 사람 확인이 필요한 것
 
-- 법령 매핑 61건 중 **검증 완료 7건**만 서빙됩니다(R01 3건, R04 2건, R11 2건).
+- 법령 매핑 77건 중 **검증 완료 22건**만 서빙됩니다(R01 4건, R02 2건, R04 3건, R05 2건, R10 2건, R11 6건, R12 3건). 미검증 조문은 `KoreanRegulationMapper`가 아예 반환하지 않습니다.
   나머지는 `verified: false`라 나가지 않습니다.
 - 대응 원칙 13개 중 **11개가 근거 기반**, R07(노무·고용)·R11(정산·거래조건)은 초안입니다.
