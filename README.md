@@ -291,6 +291,52 @@ GET  /api/v1/model-monitoring
 POST /api/v1/model-monitoring/check
 ```
 
+## 팀원 온보딩: 모델·정답 데이터 반입
+
+`backend/local_models`(미세조정 KLUE/RoBERTa, 약 1.3GB)와 `model_artifacts` Docker 볼륨
+(LightGBM, Isolation Forest, `model_versions`에 등록된 관련성 모델)은 용량이 커서 git에
+커밋하지 않고 `.gitignore`로 제외합니다. 정답 라벨(`article_labels`, `risk_event_labels`)도
+저장소가 아니라 각자 로컬 Postgres 안에 있습니다. 저장소를 새로 clone한 팀원은 팀에서 공유
+받은 아래 세 파일을 순서대로 반입하면 코드는 물론 모델·데이터까지 동일한 상태로 맞출 수
+있습니다.
+
+- `local_models.tar.gz` → `backend/local_models/`에 압축 해제
+- `model_artifacts.tar.gz` → `model_artifacts` Docker 볼륨에 반입
+- `ground_truth_labels.sql` → 로컬 Postgres에 복원
+
+### 1. KLUE/RoBERTa 로컬 모델
+
+압축 파일을 저장소 `backend` 폴더 기준으로 풉니다.
+
+```powershell
+tar -xzf local_models.tar.gz -C backend
+```
+
+`backend/local_models/klue_roberta_domain_finetuned` 등 3개 폴더가 생기면 됩니다. 경로는
+`compose.yaml`의 `PRETRAINED_RELEVANCE_MODEL_PATH`/`PRETRAINED_SENTIMENT_MODEL_PATH`가
+이미 가리키고 있어 추가 설정은 필요 없습니다.
+
+### 2. LightGBM·Isolation Forest·운영 등록 모델
+
+먼저 `docker compose up -d`를 한 번 실행해 `model_artifacts` 볼륨을 만든 뒤, 압축 파일이
+있는 폴더에서 아래처럼 그 볼륨 안에 풀어 넣습니다(`<폴더>`는 `model_artifacts.tar.gz`가
+있는 실제 경로로 바꿉니다).
+
+```powershell
+docker compose up -d
+docker run --rm -v risoto_model_artifacts:/data -v "<폴더>:/backup" alpine sh -c "rm -rf /data/* && tar xzf /backup/model_artifacts.tar.gz -C /data"
+docker compose restart backend
+```
+
+### 3. 정답 데이터(라벨) 복원
+
+빈 DB이거나 아직 해당 라벨을 넣지 않은 상태에서 실행합니다. 이미 같은 `id`가 있으면
+충돌합니다.
+
+```powershell
+Get-Content ground_truth_labels.sql -Raw | docker compose exec -T db psql -U risoto_app -d risoto
+```
+
 ## 위험 사건과 대응 초안
 
 LightGBM 임계값을 처음 넘은 구간에서 사건을 즉시 열고, 같은 사건의 연속 구간은 하나로

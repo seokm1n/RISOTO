@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
 import { IncidentList, PanelTitle } from "../../shared/components";
@@ -9,48 +9,44 @@ import {
   formatDate,
   formatNumber,
 } from "../../shared/presentation";
+import { useMonitoringSummaries, useSharedResource } from "../../shared/useSharedResource";
 
 // 전체 수집기 상태와 사용자별 기업의 실시간 수집 현황 및 제어 기능을 제공한다.
+// 기업 목록·수집 헬스·장애 목록은 다른 화면과 캐시를 공유해 중복 폴링을 하지 않는다.
 export default function CollectionPage({ onOpenCompany }) {
-  const [companies, setCompanies] = useState([]);
-  const [summaries, setSummaries] = useState({});
-  const [health, setHealth] = useState(null);
-  const [incidents, setIncidents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: companies = [], error: companiesError, loading, refresh: refreshCompanies } = useSharedResource(
+    "/companies", () => api.get("/companies").then((response) => response.data),
+  );
+  const { data: health } = useSharedResource(
+    "/collection-health", () => api.get("/collection-health").then((response) => response.data),
+  );
+  const { data: incidentPage, refresh: refreshIncidents } = useSharedResource(
+    "/collection-incidents?page=1&page_size=10",
+    () => api.get("/collection-incidents?page=1&page_size=10").then((response) => response.data),
+  );
+  const { data: summaries } = useMonitoringSummaries(companies);
+  const incidents = incidentPage?.items ?? [];
   const [busy, setBusy] = useState(null);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [companyResponse, healthResponse, incidentResponse] = await Promise.all([api.get("/companies"), api.get("/collection-health"), api.get("/collection-incidents?page=1&page_size=10")]);
-      const nextCompanies = companyResponse.data;
-      const summaryResults = await Promise.allSettled(nextCompanies.map((company) => api.get(`/companies/${company.id}/monitoring`)));
-      setCompanies(nextCompanies); setHealth(healthResponse.data); setIncidents(incidentResponse.data.items);
-      setSummaries(Object.fromEntries(summaryResults.flatMap((result, index) => result.status === "fulfilled" ? [[nextCompanies[index].id, result.value.data]] : [])));
-      setError(null);
-    } catch (requestError) { setError(getErrorMessage(requestError)); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { load(); const timer = window.setInterval(load, 30000); return () => window.clearInterval(timer); }, [load]);
+  const [actionError, setActionError] = useState(null);
+  const error = actionError ?? (companiesError ? getErrorMessage(companiesError) : null);
 
   const changeAll = async (action) => {
     if (!window.confirm(`모든 기업의 실시간 수집을 ${action === "pause" ? "중지" : "재개"}할까요?`)) return;
     setBusy(`all-${action}`);
-    try { await api.post(`/companies/monitoring/bulk/${action}`); await load(); }
-    catch (requestError) { setError(getErrorMessage(requestError)); }
+    try { await api.post(`/companies/monitoring/bulk/${action}`); await refreshCompanies(); setActionError(null); }
+    catch (requestError) { setActionError(getErrorMessage(requestError)); }
     finally { setBusy(null); }
   };
   const changeCompany = async (company) => {
     const action = company.monitoring_status === "paused" ? "resume" : "pause";
     setBusy(company.id);
-    try { await api.post(`/companies/${company.id}/monitoring/${action}`); await load(); }
-    catch (requestError) { setError(getErrorMessage(requestError)); }
+    try { await api.post(`/companies/${company.id}/monitoring/${action}`); await refreshCompanies(); setActionError(null); }
+    catch (requestError) { setActionError(getErrorMessage(requestError)); }
     finally { setBusy(null); }
   };
   const acknowledgeIncident = async (incidentId) => {
-    try { await api.post(`/collection-incidents/${incidentId}/acknowledge`); await load(); }
-    catch (requestError) { setError(getErrorMessage(requestError)); }
+    try { await api.post(`/collection-incidents/${incidentId}/acknowledge`); await refreshIncidents(); setActionError(null); }
+    catch (requestError) { setActionError(getErrorMessage(requestError)); }
   };
   const activeCount = companies.filter((company) => company.monitoring_status === "active").length;
 

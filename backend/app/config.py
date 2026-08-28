@@ -84,16 +84,22 @@ class Settings(BaseSettings):
     model_drift_recent_hours: int = 24
     model_drift_baseline_days: int = 7
 
-    # 근거 기반 대응 초안. 키가 없으면 결정적 템플릿 초안으로 안전하게 폴백한다.
+    # 근거 기반 대응 초안. 프로바이더가 준비되지 않으면 결정적 템플릿 초안으로 안전하게 폴백한다.
     openai_api_key: str = ""
     response_model_name: str = "gpt-5.6-luna"
+    # "openai"(API 키 필요, 유료) 또는 "ollama"(로컬 무료 모델, API 키 불필요).
+    response_generation_provider: str = "openai"
 
     # 수집된 기사에 대한 LLM 자동 라벨링(사람 대신 1차 정답지 생성)과 월간 표본 검수 목표치.
     # 사람이 매 건 검수하지 않고, LLM이 독립적으로 판단한 라벨을 바로 confirmed로 저장한다.
     llm_labeling_enabled: bool = True
+    # "openai"(API 키 필요, 유료) 또는 "ollama"(로컬 무료 모델, API 키 불필요).
+    llm_labeling_provider: str = "openai"
     llm_labeling_model_name: str = "gpt-5.6-luna"
     llm_labeling_batch_size: int = 20
     llm_labeling_audit_sample_size: int = 20
+    # 백엔드 컨테이너에서 호스트의 Ollama 서버로 접근하는 주소.
+    ollama_base_url: str = "http://host.docker.internal:11434"
 
     model_config = SettingsConfigDict(
         case_sensitive=False,

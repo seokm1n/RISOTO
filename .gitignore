@@ -30,6 +30,7 @@ pnpm-debug.log*
 *.log
 *.pid
 backend/local_models/
+exports/
 
 # IDE and operating system
 .vscode/

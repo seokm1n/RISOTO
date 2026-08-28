@@ -4,7 +4,6 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router"
 import { api, setCsrfToken } from "./api";
 import WorkspaceApp from "./app/WorkspaceApp";
 import LoginPage from "./features/auth/LoginPage";
-import SignupPage from "./features/auth/SignupPage";
 import { MainCompanyOnboardingPage } from "./features/companies/CompanyPages";
 
 function AuthLoading() {
@@ -60,7 +59,7 @@ export default function App() {
   if (!auth) {
     return <Routes>
       <Route path="/login" element={<LoginPage onAuthenticated={completeAuthentication} />} />
-      <Route path="/signup" element={<SignupPage onAuthenticated={completeAuthentication} />} />
+      <Route path="/signup" element={<LoginPage onAuthenticated={completeAuthentication} />} />
       <Route path="*" element={<Navigate to="/login" replace state={{ from: location }} />} />
     </Routes>;
   }

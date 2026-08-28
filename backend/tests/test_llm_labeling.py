@@ -32,6 +32,7 @@ FAKE_PAYLOAD = {
 class LlmLabelingUnitTests(unittest.TestCase):
     def test_call_llm_label_returns_none_without_an_api_key(self):
         class _EmptySettings:
+            llm_labeling_provider = "openai"
             openai_api_key = ""
 
         with patch("app.services.llm_labeling.get_settings", return_value=_EmptySettings()):
@@ -133,7 +134,10 @@ class LlmLabelingDatabaseTests(unittest.TestCase):
         )
         self.db.flush()
 
-        sample = audit_sample_candidates(self.db, user_id, 100)
+        # A large limit keeps this deterministic even once real usage has
+        # produced its own llm-labeled backlog for this user (LIMIT beyond
+        # the eligible row count just returns everything, no random cutoff).
+        sample = audit_sample_candidates(self.db, user_id, 100_000)
         self.assertTrue(
             any(
                 result.company_id == candidate.company_id

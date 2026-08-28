@@ -89,6 +89,11 @@ services:
       MODEL_ARTIFACT_DIR: /app/model_artifacts
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       RESPONSE_MODEL_NAME: ${RESPONSE_MODEL_NAME:-gpt-5.6-luna}
+      RESPONSE_GENERATION_PROVIDER: ${RESPONSE_GENERATION_PROVIDER:-openai}
+      LLM_LABELING_ENABLED: ${LLM_LABELING_ENABLED:-true}
+      LLM_LABELING_PROVIDER: ${LLM_LABELING_PROVIDER:-openai}
+      LLM_LABELING_MODEL_NAME: ${LLM_LABELING_MODEL_NAME:-gpt-5.6-luna}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     command: >-
       sh -c "alembic upgrade head
       && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
