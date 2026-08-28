@@ -9,8 +9,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.routers import (
+    admin,
     auth,
     collection,
     companies,
@@ -23,6 +24,7 @@ from app.routers import (
 )
 from app.schemas import HealthResponse
 from app.services.monitoring_pipeline import realtime_monitoring_loop
+from app.services.risk_analysis import import_exported_models
 
 
 settings = get_settings()
@@ -31,6 +33,10 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """앱 실행 중 실시간 모니터링 작업을 유지하고 종료 시 안전하게 정리한다."""
+    if settings.import_exported_models:
+        with SessionLocal() as db:
+            import_exported_models(db, settings)
+            db.commit()
     stop_event = asyncio.Event()
     monitoring_task = asyncio.create_task(realtime_monitoring_loop(stop_event))
     try:
@@ -55,6 +61,7 @@ app.add_middleware(
 
 app.include_router(industries.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 app.include_router(companies.router, prefix="/api/v1")
 app.include_router(collection.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")

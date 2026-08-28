@@ -11,39 +11,54 @@ import {
 } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
+import AdminDashboardPage from "../admin/AdminDashboardPage";
 import MyPage from "../account/MyPage";
 import AnalysisStatisticsPage from "../analysis/AnalysisStatisticsPage";
 import CollectionPage from "../collection/CollectionPage";
 import CompanyAdministrationPage from "../companies/CompanyPages";
+import MainPage from "../home/MainPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
 import ArticleReviewPage from "../reviews/ArticleReviewPage";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 
-const NAV_ITEMS = [
-  { id: "collection", label: "수집", path: "/collection" },
+const GENERAL_NAV_ITEMS = [
+  { id: "main", label: "요약", path: "/main" },
+  { id: "collection", label: "수집 현황", path: "/collection" },
+  { id: "companies", label: "기업 목록", path: "/companies" },
   { id: "statistics", label: "분석 통계", path: "/companies/overview" },
-  { id: "companies", label: "기업 관리", path: "/companies" },
-  { id: "operations", label: "운영 관리", path: "/operations" },
-  { id: "review", label: "기사 검수", path: "/reviews" },
+];
+
+const ADMIN_NAV_ITEMS = [
+  { id: "admin-members", label: "회원 관리", path: "/admin/members" },
+  { id: "admin-collection", label: "수집 관리", path: "/admin/collection" },
+  { id: "admin-operations", label: "운영 관리", path: "/admin/operations" },
+  { id: "admin-review", label: "기사 검수", path: "/admin/reviews" },
 ];
 
 const PAGE_TITLES = {
-  collection: "수집",
+  main: "요약",
+  collection: "수집 현황",
   statistics: "분석 통계",
-  companies: "기업 관리",
+  companies: "기업 목록",
   account: "마이페이지",
-  operations: "운영 관리",
-  review: "기사 검수",
+  "admin-members": "회원 관리",
+  "admin-collection": "수집 관리",
+  "admin-operations": "운영 관리",
+  "admin-review": "기사 검수",
 };
 
 const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
 
 const pageFromPath = (pathname) => {
-  if (pathname === "/main") return "collection";
+  if (pathname === "/main") return "main";
   if (pathname === "/account") return "account";
-  if (pathname === "/operations" || pathname === "/models") return "operations";
-  if (pathname === "/reviews") return "review";
+  if (pathname === "/admin/members") return "admin-members";
+  if (pathname === "/admin/collection") return "admin-collection";
+  if (pathname === "/admin/operations") return "admin-operations";
+  if (pathname === "/admin/reviews") return "admin-review";
+  if (pathname === "/operations" || pathname === "/models") return "admin-operations";
+  if (pathname === "/reviews") return "admin-review";
   if (pathname === "/collection") return "collection";
   if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "companies";
   if (pathname === "/companies/overview" || /^\/companies\/[^/]+$/.test(pathname)) return "statistics";
@@ -75,7 +90,7 @@ function MainCompanyOverviewRedirect() {
     }).catch(() => active && setMainCompanyId(null));
     return () => { active = false; };
   }, []);
-  if (mainCompanyId === undefined) return <p className="empty-state">메인 기업을 불러오는 중입니다.</p>;
+  if (mainCompanyId === undefined) return <p className="empty-state">나의 기업을 불러오는 중입니다.</p>;
   return <Navigate to={mainCompanyId ? `/companies/${mainCompanyId}` : "/companies"} replace />;
 }
 
@@ -83,6 +98,9 @@ function MainCompanyOverviewRedirect() {
 export default function WorkspaceApp({ session, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const isAdmin = session.user.role === "admin";
+  const navItems = isAdmin ? ADMIN_NAV_ITEMS : GENERAL_NAV_ITEMS;
+  const homePath = isAdmin ? "/admin/members" : "/main";
   const page = pageFromPath(location.pathname);
   const [managementDirty, setManagementDirty] = useState(false);
   const [notifications, setNotifications] = useState(EMPTY_NOTIFICATIONS);
@@ -143,32 +161,43 @@ export default function WorkspaceApp({ session, onLogout }) {
   const allowedNotificationItems = (notifications.items ?? []).filter((item) => item.type === "risk");
   const notificationTotal = allowedNotificationItems.length;
 
-  return <main className="min-h-screen">
+  return <main className={`min-h-screen ${isAdmin ? "admin-app" : "general-app"}`}>
     <header className="topbar">
-      <button className="brand" onClick={() => goTo("/collection")}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
-      <nav className="main-nav" aria-label="주요 화면">{NAV_ITEMS.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
+      <button className="brand" onClick={() => goTo(homePath)}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
+      <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
       <div className="topbar-actions">
-        <button className="notification-bell" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`알림 ${notificationTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" /><path d="M10 21h4" /></svg>{notificationTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationTotal > 99 ? "99+" : notificationTotal}</span>}</button>
+        <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`위험 알림 ${notificationTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationTotal > 99 ? "99+" : notificationTotal}</span>}</button>
         <button className={`account-button ${page === "account" ? "active" : ""}`} type="button" onClick={() => goTo("/account")} title={`${session.user.email} · 마이페이지`} aria-current={page === "account" ? "page" : undefined}><span>{session.user.email}</span><strong>마이페이지</strong></button>
         <button className="logout-button" type="button" onClick={logout}>로그아웃</button>
       </div>
     </header>
 
-    <Routes>
-      <Route path="/" element={<Navigate to="/collection" replace />} />
-      <Route path="/main" element={<Navigate to="/collection" replace />} />
+    <Routes>{isAdmin ? <>
+      <Route path="/" element={<Navigate to="/admin/members" replace />} />
+      <Route path="/admin/members" element={<AdminDashboardPage view="members" />} />
+      <Route path="/admin/collection" element={<AdminDashboardPage view="collection" />} />
+      <Route path="/admin/operations" element={<ModelManagementPage />} />
+      <Route path="/admin/reviews" element={<ArticleReviewPage />} />
+      <Route path="/operations" element={<Navigate to="/admin/operations" replace />} />
+      <Route path="/models" element={<Navigate to="/admin/operations" replace />} />
+      <Route path="/reviews" element={<Navigate to="/admin/reviews" replace />} />
       <Route path="/account" element={<MyPage session={session} />} />
-      <Route path="/operations" element={<ModelManagementPage />} />
-      <Route path="/models" element={<Navigate to="/operations" replace />} />
-      <Route path="/reviews" element={<ArticleReviewPage />} />
+      <Route path="*" element={<Navigate to="/admin/members" replace />} />
+    </> : <>
+      <Route path="/" element={<Navigate to="/main" replace />} />
+      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} onEditCompany={() => goTo("/companies")} />} />
+      <Route path="/account" element={<MyPage session={session} />} />
       <Route path="/collection" element={<CollectionPage onOpenCompany={openAnalysisStatistics} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/overview" element={<MainCompanyOverviewRedirect />} />
       <Route path="/companies/:companyId" element={<AnalysisStatisticsRoute canAdminister onCompanyChange={changeStatisticsCompany} />} />
-      <Route path="*" element={<Navigate to="/collection" replace />} />
-    </Routes>
+      <Route path="/operations" element={<Navigate to="/main" replace />} />
+      <Route path="/models" element={<Navigate to="/main" replace />} />
+      <Route path="/reviews" element={<Navigate to="/main" replace />} />
+      <Route path="*" element={<Navigate to="/main" replace />} />
+    </>}</Routes>
 
     <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} onRiskOpen={(item) => item.company_id && openAnalysisStatistics(item.company_id, item.risk_event_id)} />
   </main>;

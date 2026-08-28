@@ -1,19 +1,39 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
 
-function LoginPage({ onAuthenticated }) {
+function LoginPage({ onAuthenticated, initialMode = null }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const [showLogin, setShowLogin] = useState(false);
+  const [authMode, setAuthMode] = useState(initialMode);
 
-  useEffect(() => { document.title = "RISOTO · 로그인"; }, []);
+  useEffect(() => {
+    document.title = `RISOTO · ${authMode === "signup" ? "회원가입" : "로그인"}`;
+  }, [authMode]);
 
-  const submit = async (event) => {
+  useEffect(() => {
+    if (!authMode) return undefined;
+    const closeWithEscape = (event) => {
+      if (event.key === "Escape") setAuthMode(null);
+    };
+    document.addEventListener("keydown", closeWithEscape);
+    return () => document.removeEventListener("keydown", closeWithEscape);
+  }, [authMode]);
+
+  const switchAuthMode = (mode) => {
+    setAuthMode(mode);
+    setError(null);
+    setSubmitting(false);
+    setPassword("");
+    setPasswordConfirmation("");
+    setShowPassword(false);
+  };
+
+  const submitLogin = async (event) => {
     event.preventDefault();
     setSubmitting(true); setError(null);
     try {
@@ -25,6 +45,24 @@ function LoginPage({ onAuthenticated }) {
     }
   };
 
+  const submitSignup = async (event) => {
+    event.preventDefault();
+    if (password !== passwordConfirmation) {
+      setError("비밀번호 확인이 일치하지 않습니다.");
+      return;
+    }
+    setSubmitting(true); setError(null);
+    try {
+      const response = await api.post("/auth/signup", { email: email.trim().toLowerCase(), password });
+      await onAuthenticated(response.data);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+      setSubmitting(false);
+    }
+  };
+
+  const isSignup = authMode === "signup";
+
   return <main className="login-page login-landing">
     <section className="login-story" aria-labelledby="login-story-title">
       <div className="login-brand"><img src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span>RISOTO</span><small>RISk Out Through Observation</small></div>
@@ -32,15 +70,25 @@ function LoginPage({ onAuthenticated }) {
         <h1 id="login-story-title">위험 신호를 먼저 발견하고,<br /><em>대응은 더 빠르게.</em></h1>
         <p>실시간 기업 데이터를 정제하고 위험을 판별해, 근거 기반 대응전략까지 하나의 흐름으로 관리합니다.</p>
       </div>
-      <button className="login-start" type="button" onClick={() => setShowLogin(true)}>지금 시작하기 <span aria-hidden="true">→</span></button>
+      <button className="login-start" type="button" onClick={() => switchAuthMode("login")}>지금 시작하기 <span aria-hidden="true">→</span></button>
     </section>
 
-    {showLogin && <section className="login-access login-access-modal" aria-labelledby="login-title">
-      <div className="login-card">
-        <div className="login-card-head"><span className="login-kicker">MEMBER ACCESS</span><button className="login-close" type="button" onClick={() => setShowLogin(false)} aria-label="로그인 창 닫기">×</button></div>
-        <h2 id="login-title">로그인</h2>
-        <p>등록한 기업의 위험 현황과 대응전략을 확인하세요.</p>
-        <form className="login-form" onSubmit={submit}>
+    {authMode && <section className="login-access login-access-modal" aria-labelledby={isSignup ? "signup-title" : "login-title"}>
+      <div className="login-card" role="dialog" aria-modal="true">
+        <div className="login-card-head"><span className="login-kicker">{isSignup ? "CREATE ACCOUNT" : "MEMBER ACCESS"}</span><button className="login-close" type="button" onClick={() => setAuthMode(null)} aria-label={`${isSignup ? "회원가입" : "로그인"} 창 닫기`}>×</button></div>
+        <h2 id={isSignup ? "signup-title" : "login-title"}>{isSignup ? "회원가입" : "로그인"}</h2>
+        <p>{isSignup ? "사용할 이메일과 8자 이상의 비밀번호를 입력하세요." : "등록한 기업의 위험 현황과 대응전략을 확인하세요."}</p>
+        {isSignup ? <form className="login-form" onSubmit={submitSignup}>
+          <label htmlFor="signup-email">이메일</label>
+          <input id="signup-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@company.com" autoComplete="username" required autoFocus />
+          <label htmlFor="signup-password">비밀번호</label>
+          <input id="signup-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="8자 이상 입력" autoComplete="new-password" minLength={8} required />
+          <label htmlFor="signup-password-confirmation">비밀번호 확인</label>
+          <input id="signup-password-confirmation" type="password" value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} placeholder="비밀번호를 다시 입력" autoComplete="new-password" minLength={8} required />
+          {error && <div className="login-error" role="alert">{error}</div>}
+          <button className="login-submit" type="submit" disabled={submitting}><span>{submitting ? "가입 중..." : "가입하고 나의 기업 등록"}</span></button>
+          <p className="auth-switch">이미 계정이 있나요? <button className="auth-switch-button" type="button" onClick={() => switchAuthMode("login")}>로그인</button></p>
+        </form> : <form className="login-form" onSubmit={submitLogin}>
           <label htmlFor="login-email">이메일</label>
           <input id="login-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@company.com" autoComplete="username" required autoFocus />
           <label htmlFor="login-password">비밀번호</label>
@@ -50,8 +98,8 @@ function LoginPage({ onAuthenticated }) {
           </div>
           {error && <div className="login-error" role="alert">{error}</div>}
           <button className="login-submit" type="submit" disabled={submitting}><span>{submitting ? "로그인 중..." : "로그인"}</span></button>
-        </form>
-        <p className="auth-switch">처음 이용하시나요? <Link to="/signup">회원가입</Link></p>
+          <p className="auth-switch">처음 이용하시나요? <button className="auth-switch-button" type="button" onClick={() => switchAuthMode("signup")}>회원가입</button></p>
+        </form>}
       </div>
       <p className="login-copyright">© 2026 RISOTO · Enterprise risk monitoring</p>
     </section>}

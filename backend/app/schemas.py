@@ -81,6 +81,7 @@ class AuthPasswordChangeRequest(BaseModel):
 class AuthUserRead(BaseModel):
     id: int
     email: str
+    role: Literal["general", "admin"]
 
 
 class AuthMeRead(BaseModel):
@@ -624,10 +625,12 @@ class RiskDetectionStatusRead(BaseModel):
 
 
 class ModelRuntimeStatusRead(BaseModel):
-    """로컬 텍스트 모델과 위험 판정 런타임의 연결 상태를 노출한다."""
+    """광고·관련성·감성·위험 판정 런타임의 독립 연결 상태를 노출한다."""
 
     article_filter_version: str
     article_filter_ai_enabled: bool
+    advertising_model_name: str | None = None
+    advertising_model_available: bool
     relevance_model_name: str | None = None
     relevance_model_available: bool
     sentiment_model_name: str | None = None
@@ -635,6 +638,23 @@ class ModelRuntimeStatusRead(BaseModel):
     external_lightgbm_model_name: str | None = None
     external_lightgbm_model_available: bool
     external_lightgbm_message: str
+
+
+class ExistingDataReanalysisRead(BaseModel):
+    """기존 저장 데이터에 네 운영 분석 단계를 다시 적용한 결과."""
+
+    status: Literal["idle", "running", "completed", "failed"]
+    message: str = ""
+    filter_evaluated: int = 0
+    filter_accepted: int = 0
+    filter_rejected: int = 0
+    filter_review_required: int = 0
+    article_matches_added: int = 0
+    article_matches_removed: int = 0
+    sentiment_queued: int = 0
+    sentiment_analyzed: int = 0
+    feature_windows: int = 0
+    risk_scored_windows: int = 0
 
 
 class NotificationItemRead(BaseModel):
@@ -802,3 +822,71 @@ class DashboardOverview(BaseModel):
     companies: list[DashboardCompanyRead]
     recent_risks: list[RiskEventRead]
     recent_incidents: list[CollectionIncidentRead] = Field(default_factory=list)
+
+
+class AdminMemberRead(BaseModel):
+    """관리자 회원 목록에 표시할 일반 회원의 운영 정보."""
+
+    id: int
+    email: str
+    role: Literal["general", "admin"]
+    is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None
+    main_company_name: str | None
+    competitor_count: int
+    competitor_names: list[str]
+
+
+class AdminMemberPage(BaseModel):
+    items: list[AdminMemberRead]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminPasswordResetRequest(BaseModel):
+    """관리자가 일반 회원의 비밀번호를 재설정하는 요청."""
+
+    new_password: str = Field(min_length=8, max_length=128)
+    new_password_confirmation: str = Field(min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_password_confirmation(self):
+        if self.new_password != self.new_password_confirmation:
+            raise ValueError("새 비밀번호와 비밀번호 확인이 일치하지 않습니다.")
+        return self
+
+
+class AdminCollectionCompanyRead(BaseModel):
+    id: int
+    name: str
+    owner_email: str
+    company_role: Literal["main", "competitor"]
+    monitoring_status: str
+    article_count: int
+    risk_count: int
+    last_collected_at: datetime | None
+
+
+class AdminCollectionDailyRead(BaseModel):
+    day: date
+    collected_count: int
+    risk_count: int
+
+
+class AdminCollectionProviderRead(BaseModel):
+    source: str
+    status: str
+
+
+class AdminCollectionOverviewRead(BaseModel):
+    days: int
+    total_companies: int
+    active_companies: int
+    collected_count: int
+    risk_count: int
+    daily: list[AdminCollectionDailyRead]
+    companies: list[AdminCollectionCompanyRead]
+    providers: list[AdminCollectionProviderRead]
+    incidents: list[CollectionIncidentRead]

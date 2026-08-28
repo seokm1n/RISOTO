@@ -21,6 +21,9 @@ from app.services.klue_nli import KlueNliClassifier, get_klue_nli_classifier
 from app.services.fine_tuned_text import predict_filter, predict_relevance, predict_topical_relevance
 
 
+_PRECOMPUTED_UNSET = object()
+
+
 # 비교 전에 외부 기사 본문을 정리하고 토큰화하는 전처리 규칙이다.
 TAG_RE = re.compile(r"<[^>]+>")
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]{2,}")
@@ -370,6 +373,8 @@ def classify_article(
     semantic_scorer: LocalSemanticScorer | None = None,
     nli_classifier: KlueNliClassifier | None = None,
     config: FilterConfig | None = None,
+    precomputed_relevance: dict | None | object = _PRECOMPUTED_UNSET,
+    precomputed_topical_relevance: dict | None | object = _PRECOMPUTED_UNSET,
 ) -> FilterDecision:
     """데이터베이스를 변경하지 않고 원문 기사 하나의 중복·광고·관련성을 판정한다."""
 
@@ -413,7 +418,9 @@ def classify_article(
     nli_labels: dict[str, float] | None = None
     nli_error: str | None = None
     local_relevance = (
-        predict_relevance(text)
+        precomputed_relevance
+        if precomputed_relevance is not _PRECOMPUTED_UNSET
+        else predict_relevance(str(getattr(company, "name", "")), text)
         if text and config.ai_enabled and nli_classifier is None
         else None
     )
@@ -490,7 +497,9 @@ def classify_article(
     # 학습에 쓴 9개 실제 기업 밖에서는 일반화가 검증되지 않았다 (영문·가상 기업 입력에서 90%+ 확신으로
     # "무관"을 오판하는 과신 현상을 테스트에서 확인함) -- 그래서 학습된 기업일 때만 적용한다.
     topical_relevance = (
-        predict_topical_relevance(text)
+        precomputed_topical_relevance
+        if precomputed_topical_relevance is not _PRECOMPUTED_UNSET
+        else predict_topical_relevance(text)
         if text and str(getattr(company, "name", "")) in TOPICAL_RELEVANCE_TRAINED_COMPANIES
         else None
     )
@@ -535,6 +544,10 @@ def classify_article(
         "nli_label_scores": nli_labels,
         "classifier_model": config.classifier_model_name if ai_used else None,
         "fine_tuned_model_version": fine_tuned.get("version") if fine_tuned else None,
+        "target_company": str(getattr(company, "name", "")) or None,
+        "relevance_input_schema": (
+            local_relevance.get("input_schema") if local_relevance else None
+        ),
         "classifier_fallback_error": nli_error,
         "semantic_model": config.semantic_model_name if ai_used else None,
         "semantic_fallback_error": scorer.last_error if scorer and not ai_used else None,

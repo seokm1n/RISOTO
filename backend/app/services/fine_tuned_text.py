@@ -20,7 +20,19 @@ _sentiment_cache: tuple[int, object, object, object] | None = None
 _risk_type_cache: tuple[int, object, object, object] | None = None
 _relevance_sequence_cache: tuple[str, object, object, object] | None = None
 _sentiment_sequence_cache: tuple[str, object, object, object] | None = None
-_topical_relevance_cache: tuple[int, object, object, object] | None = None
+_topical_relevance_cache: tuple[str, object, object, object] | None = None
+
+RELEVANCE_INPUT_SCHEMA = "company-title-content-v1"
+RELEVANCE_MAX_LENGTH = 128
+
+
+def format_relevance_input(company_name: str, text: str) -> str:
+    """Format the target company and article using the classifier's serving schema."""
+    company_name = " ".join(company_name.split())
+    text = " ".join(text.split())
+    if not company_name or not text:
+        return ""
+    return f"기업명: {company_name} 제목 및 내용: {text}"
 
 
 def _configured_path(value: str) -> Path | None:
@@ -82,32 +94,48 @@ def _predict_local_sequence(
     return cache, rows
 
 
-def predict_relevance(text: str) -> dict | None:
-    """Return relevance probabilities from the shared local normal/filter model."""
+def predict_relevance_batch(items: list[tuple[str, str]]) -> list[dict | None]:
+    """Batch normal/filter inference using the company-aware serving schema."""
     global _relevance_sequence_cache
     path = _configured_path(get_settings().pretrained_relevance_model_path)
-    if path is None or not text.strip():
-        return None
+    model_inputs = [
+        format_relevance_input(company_name, text) if company_name.strip() else text.strip()
+        for company_name, text in items
+    ]
+    if path is None:
+        return [None] * len(items)
+    valid_indices = [index for index, value in enumerate(model_inputs) if value]
+    if not valid_indices:
+        return [None] * len(items)
     try:
         with _lock:
             _relevance_sequence_cache, rows = _predict_local_sequence(
                 path,
-                [text],
+                [model_inputs[index] for index in valid_indices],
                 _relevance_sequence_cache,
+                max_length=RELEVANCE_MAX_LENGTH,
             )
-        labels = rows[0]
-        if "normal" not in labels or "filter" not in labels:
-            return None
-        return {
-            "version": f"local:{path.name}",
-            "relevant": labels["normal"],
-            "irrelevant": labels["filter"],
-        }
+        output: list[dict | None] = [None] * len(items)
+        for index, labels in zip(valid_indices, rows):
+            if "normal" in labels and "filter" in labels:
+                output[index] = {
+                    "version": f"local:{path.name}",
+                    "relevant": labels["normal"],
+                    "irrelevant": labels["filter"],
+                    "input_schema": RELEVANCE_INPUT_SCHEMA,
+                }
+        return output
     except Exception:
-        return None
+        return [None] * len(items)
 
 
-def predict_topical_relevance(text: str) -> dict | None:
+def predict_relevance(company_name: str, text: str | None = None) -> dict | None:
+    """Return one normal/filter result while keeping the legacy one-argument API."""
+    item = (company_name, text) if text is not None else ("", company_name)
+    return predict_relevance_batch([item])[0]
+
+
+def predict_topical_relevance_batch(texts: list[str]) -> list[dict | None]:
     """Return relevant/irrelevant probabilities from the promoted company-topicality classifier.
 
     This answers a different question than predict_relevance(): not "is this spam/an ad"
@@ -116,33 +144,30 @@ def predict_topical_relevance(text: str) -> dict | None:
     """
     global _topical_relevance_cache
     version = _active("topical_relevance")
-    if version is None or not Path(version.artifact_path).is_dir() or not text.strip():
-        return None
+    if version is None or not Path(version.artifact_path).is_dir():
+        return [None] * len(texts)
+    valid_indices = [index for index, text in enumerate(texts) if text.strip()]
+    if not valid_indices:
+        return [None] * len(texts)
     try:
-        if _topical_relevance_cache is None or _topical_relevance_cache[0] != version.id:
-            with _lock:
-                if _topical_relevance_cache is None or _topical_relevance_cache[0] != version.id:
-                    import torch
-                    from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
-                    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                    model = AutoModelForSequenceClassification.from_pretrained(version.artifact_path)
-                    model.to(device).eval()
-                    tokenizer = AutoTokenizer.from_pretrained(version.artifact_path)
-                    _topical_relevance_cache = (version.id, model, tokenizer, device)
-        _, model, tokenizer, device = _topical_relevance_cache
-        import torch
-
-        encoded = tokenizer(text, truncation=True, max_length=384, return_tensors="pt")
-        with torch.no_grad():
-            logits = model(
-                input_ids=encoded["input_ids"].to(device),
-                attention_mask=encoded["attention_mask"].to(device),
-            ).logits
-        probabilities = torch.softmax(logits, dim=-1)[0].cpu().tolist()
-        return _label_probabilities(model, probabilities)
+        with _lock:
+            _topical_relevance_cache, rows = _predict_local_sequence(
+                Path(version.artifact_path),
+                [texts[index] for index in valid_indices],
+                _topical_relevance_cache,
+            )
+        output: list[dict | None] = [None] * len(texts)
+        for index, labels in zip(valid_indices, rows):
+            if {"relevant", "irrelevant"}.issubset(labels):
+                output[index] = labels
+        return output
     except Exception:
-        return None
+        return [None] * len(texts)
+
+
+def predict_topical_relevance(text: str) -> dict | None:
+    """Return one company-topicality result."""
+    return predict_topical_relevance_batch([text])[0]
 
 
 def _active(task: str) -> ModelVersion | None:

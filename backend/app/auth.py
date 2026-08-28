@@ -99,3 +99,13 @@ def require_auth(
         session=auth_session,
         csrf_token=raw_csrf_token,
     )
+
+
+def require_admin(auth: CurrentAuth = Depends(require_auth)) -> CurrentAuth:
+    """인증된 사용자 중 관리자 역할만 통과시킨다."""
+    if auth.user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+    return auth

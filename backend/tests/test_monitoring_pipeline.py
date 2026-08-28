@@ -208,9 +208,9 @@ class CuratedArticleConcurrencyTests(unittest.TestCase):
 
 
 class QueryBuildingTests(unittest.TestCase):
-    """기업명 결합 검색과 키워드 단독 검색이 함께 생성되는지 검증한다."""
+    """기업명 결합 검색과 안전한 키워드 단독 검색 범위를 검증한다."""
 
-    def test_keyword_only_queries_are_included(self):
+    def test_risk_queries_require_company_name(self):
         company = SimpleNamespace(name="예시기업")
         keywords = [
             SimpleNamespace(keyword_type="product", value="예시 서비스"),
@@ -226,7 +226,6 @@ class QueryBuildingTests(unittest.TestCase):
                 '"예시기업" 예시 서비스',
                 "예시 서비스",
                 '"예시기업" 개인정보 유출',
-                "개인정보 유출",
             ],
         )
 
@@ -242,7 +241,7 @@ class QueryBuildingTests(unittest.TestCase):
         self.assertFalse(any("경쟁사" in query for query in queries))
         self.assertEqual(query_kind_for("예시", company, keywords), "alias")
         self.assertEqual(query_kind_for('"예시기업" 예시몰', company, keywords), "product")
-        self.assertEqual(query_kind_for("정보 유출", company, keywords), "risk")
+        self.assertEqual(query_kind_for('"예시기업" 정보 유출', company, keywords), "risk")
 
     def test_internal_collection_does_not_drop_late_risk_keywords(self):
         company = SimpleNamespace(name="예시기업")
@@ -253,7 +252,8 @@ class QueryBuildingTests(unittest.TestCase):
 
         queries = build_queries(company, keywords)
 
-        self.assertIn("개인정보 유출", queries)
+        self.assertIn('"예시기업" 개인정보 유출', queries)
+        self.assertNotIn("개인정보 유출", queries)
         self.assertGreater(len(queries), 10)
 
     def test_completed_window_is_the_interval_that_just_ended(self):
@@ -447,7 +447,7 @@ class RealtimeSourceTests(unittest.TestCase):
 
         self.assertEqual(
             _realtime_sources(settings),
-            ["naver_api_hub", "kakao_daum", "tavily", "youtube_comment"],
+            ["naver_api_hub", "kakao_daum", "youtube_comment"],
         )
 
 

@@ -117,11 +117,11 @@ function ResponseDraftContent({ draft }) {
   const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
   const isCompetitorImpact = draft.generation_kind === "competitor_impact";
   return <div className="response-draft">
-    <div className="response-draft-head"><div><span className="eyebrow">RESPONSE DRAFT · REVIEW REQUIRED</span><strong>{content.risk_summary}</strong></div><span className={`draft-kind ${isCompetitorImpact ? "competitor" : "main"}`}>{isCompetitorImpact ? "경쟁사 → 메인 기업 영향" : "메인 기업 직접 대응"}</span></div>
+    <div className="response-draft-head"><div><span className="eyebrow">RESPONSE DRAFT · REVIEW REQUIRED</span><strong>{content.risk_summary}</strong></div><span className={`draft-kind ${isCompetitorImpact ? "competitor" : "main"}`}>{isCompetitorImpact ? "경쟁사 → 나의 기업 영향" : "나의 기업 직접 대응"}</span></div>
     {scenarios.length ? <div className="response-scenario-list">{scenarios.map((scenario, index) => <article className="response-scenario" key={`${scenario.title ?? "scenario"}-${index}`}>
       <header><span>경우 {String(index + 1).padStart(2, "0")}</span><h4>{scenario.title || `${index + 1}번째 대응안`}</h4></header>
       {scenario.assumption && <p><strong>전제</strong>{scenario.assumption}</p>}
-      {scenario.possible_impact && <p><strong>메인 기업 예상 영향</strong>{scenario.possible_impact}</p>}
+      {scenario.possible_impact && <p><strong>나의 기업 예상 영향</strong>{scenario.possible_impact}</p>}
       {scenario.transmission_path && <p><strong>영향 전파 경로</strong>{scenario.transmission_path}</p>}
       {scenario.rationale && <p><strong>선택 근거</strong>{scenario.rationale}</p>}
       {scenario.early_indicators?.length > 0 && <div className="early-indicators"><strong>조기 관찰 지표</strong><ul>{scenario.early_indicators.map((indicator) => <li key={indicator}>{indicator}</li>)}</ul></div>}

@@ -60,8 +60,10 @@ class Settings(BaseSettings):
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
     article_filter_allow_model_download: bool = True
+    # 기존 환경 변수명은 유지하지만 이 normal/filter 모델은 광고·스팸 판정에 사용한다.
     pretrained_relevance_model_path: str = "/app/local_models/klue_roberta_spam_finetuned_v2"
     external_lightgbm_model_path: str = ""
+    import_exported_models: bool = True
     article_filter_duplicate_threshold: float = 0.92
     article_filter_advertising_reject_threshold: float = 0.85
     article_filter_advertising_review_threshold: float = 0.55
