@@ -1,11 +1,13 @@
 # response_engine 연결 안내
 
 기존 `services/response_generation.py`를 대체하는 대응방안 생성 엔진입니다.
-**라우터는 아직 바꾸지 않았습니다** — 검토 후 아래 한 줄만 바꾸면 전환됩니다.
+**아직 연결하지 않았습니다** — 저장소 어디에서도 `response_engine`을 임포트하지 않습니다.
 
 ## 전환 방법
 
-`app/routers/governance.py`
+**호출 지점이 두 곳입니다. 둘을 같이 바꿔야 합니다.**
+
+`app/routers/governance.py` (담당자가 버튼으로 생성하는 수동 경로)
 
 ```python
 # 기존
@@ -14,8 +16,43 @@ from app.services.response_generation import generate_response_draft
 from app.services.response_engine import generate_response_draft
 ```
 
-반환 타입(`ResponseDraft`)과 저장 컬럼은 같습니다. `schema_version`만 2 → 3으로 달라지므로,
-프런트가 v2 구조를 기대하고 있다면 이 값으로 분기하거나 프런트를 함께 바꿔야 합니다.
+`app/services/risk_analysis.py` (위험 이벤트 발생 시 자동으로 큐에 넣는 경로, 함수 안 지연 임포트)
+
+```python
+# 기존
+from app.services.response_generation import enqueue_response_draft
+# 전환
+from app.services.response_engine import enqueue_response_draft
+```
+
+한쪽만 바꾸면 **같은 `response_drafts` 테이블에 v2와 v3 초안이 섞입니다.** 수동 생성은
+새 형식, 자동 생성은 옛 형식이 되어 프런트가 두 구조를 동시에 감당해야 하므로, 전환은
+한 번에 하는 편이 낫습니다.
+
+반환 타입(`ResponseDraft`)과 저장 컬럼은 같습니다. `schema_version`만 2 → 3으로 달라집니다.
+
+## 프런트 대응 (전환과 함께 가야 함)
+
+`frontend/src/features/realtime/RealtimePage.jsx`의 `ResponseDraftContent` 한 컴포넌트가
+초안 내용을 그리는 유일한 지점입니다. 조회·생성·승인 API 호출은 `content`를 들여다보지
+않으므로(`ResponseDraftRead.content`가 `dict`) 손대지 않아도 됩니다.
+
+다만 **v2 키를 v3가 하나도 물려받지 않습니다.** 분기만 추가하는 수준이 아니라 렌더러를
+새로 써야 합니다.
+
+| v2가 읽는 것 | v3에서의 위치 |
+|---|---|
+| `content.risk_summary` | `content.scenarios[i].report.summary_points[]` (배열) |
+| `content.scenarios[i].title` | `content.scenarios[i].stance` / `.tradeoff` |
+| `scenario.recommended_actions` | `scenarios[i].report.strategies[]` + `.checklist[]` |
+| `content.uncertainty` | `scenarios[i].verification` (규칙별 통과·스킵 결과) |
+
+`ActionGroups`는 `{immediate, within_24h, within_7d}` 형태를 전제하는데, v3의 `checklist[]`는
+`{task, owner, deadline_hours}` 평면 목록이라 그대로 못 씁니다.
+
+동종 기업 초안(`content_kind: "peer_recommendation"`)은 **또 다른 구조**입니다. `scenarios`가
+아예 없고 `content.recommendation`(`headline`, `recommendations[]`, `avoid[]`)과
+`content.impact`를 읽어야 하며, `status: "영향없음_종료"`면 `recommendation`이 `null`입니다.
 
 ## content 구조 (schema_version=3)
 
