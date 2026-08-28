@@ -48,11 +48,6 @@ class TierDecision:
     def policy(self) -> dict[str, str]:
         return TIER_POLICY[self.tier]
 
-    @property
-    def regenerate_count(self) -> int:
-        """T3는 3회 독립 생성 후 다수 의견 채택(self-consistency)."""
-        return 3 if self.tier == "T3_긴급" else 1
-
 
 def _prob_band(p: float | None) -> tuple[str, list[str]]:
     if p is None:
