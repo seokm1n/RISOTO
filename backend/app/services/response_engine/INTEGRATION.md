@@ -33,7 +33,7 @@ from app.services.response_engine import enqueue_response_draft
 
 ## 프런트 대응 (전환과 함께 가야 함)
 
-`frontend/src/features/realtime/RealtimePage.jsx`의 `ResponseDraftContent` 한 컴포넌트가
+`frontend/src/features/realtime/RealtimePanels.jsx`의 `ResponseDraftContent` 한 컴포넌트가
 초안 내용을 그리는 유일한 지점입니다. 조회·생성·승인 API 호출은 `content`를 들여다보지
 않으므로(`ResponseDraftRead.content`가 `dict`) 손대지 않아도 됩니다.
 
@@ -86,13 +86,24 @@ from app.services.response_engine import enqueue_response_draft
 ## 의존성
 
 - `numpy` — RAG 벡터 검색 (이미 requirements에 있음)
-- `pypdf` — **색인 구축 스크립트에만** 필요. 런타임에는 불필요하므로 requirements에
-  넣지 않아도 됩니다. 색인을 다시 만들 때만 설치하세요.
+- `pypdf`, `python-docx` — **색인 구축 스크립트에만** 필요. 런타임에는 불필요하므로
+  requirements에 넣지 않아도 됩니다. 색인을 다시 만들 때만 설치하세요.
 
 ## RAG 색인
 
-`rag/index/`에 2,705청크(약 21MB)가 들어 있습니다. 자료를 추가하면 재색인이 필요합니다.
-색인 구축 스크립트는 아직 이 저장소에 옮기지 않았습니다.
+`rag/index/`에 22개 문서 2,764청크(약 21MB)가 들어 있습니다. 자료를 추가하면 재색인합니다.
+
+```
+cd backend
+pip install pypdf python-docx
+python -m scripts.build_rag_index --dry-run   # 청크 구성만 확인
+python -m scripts.build_rag_index             # 임베딩까지 (약 95만 토큰)
+```
+
+원문(`sources/*`)은 용량 때문에 저장소에서 제외돼 있습니다. 출처 목록은
+`sources/README.md`에 있습니다. 어느 문서가 어느 유형의 근거인지는
+`principles_data.json`의 `sources`가 정하고, `file` 키로 파일명을 고정합니다 —
+파일명 유사도에 맡기면 제목이 겹치는 자료끼리 뒤바뀝니다.
 
 색인이 없어도 동작합니다 — 정적 원칙만 프롬프트에 들어가고 보충이 빠질 뿐입니다.
 
