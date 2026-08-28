@@ -1,0 +1,80 @@
+{
+  "company_name": "쿠팡",
+  "main_company_name": "11번가",
+  "alert_id": "CPNG-20260825-01",
+  "role": "peer",
+  "risk_type": "T6",
+  "risk_type_label": "정산·거래조건",
+  "impact_direction": "반사이익",
+  "impact_level": "중간",
+  "impact_channels": [
+    "고객_유입_기회",
+    "규제_조사_확대"
+  ],
+  "reason": "쿠팡의 판매자 정산 지연과 수수료 불만이 현실화되면 일부 입점 판매자가 대체 판매 채널을 찾으면서 11번가로 유입될 가능성이 있다. 동시에 전자상거래 플랫폼의 정산 관행 전반에 대한 점검이 확대될 수 있어, 11번가도 판매자 정산 안정성과 거래조건 운영에 대해 함께 검증받을 가능성이 있다.",
+  "watch_points": [
+    "쿠팡 이탈 판매자의 11번가 신규 입점 및 판매상품 확대 추이",
+    "11번가 판매자 정산 주기 준수율과 정산 관련 문의·민원 증가 여부",
+    "공정위·금감원·중기부 등에서 오픈마켓 정산 관행 전반 점검에 나서는지 여부",
+    "11번가의 판매자 수수료·정산 정책에 대한 셀러 커뮤니티 반응 변화"
+  ],
+  "confidence": 0.89,
+  "needs_review": false,
+  "proceed": true,
+  "status": "추천대기",
+  "cases": [
+    {
+      "case_id": "WEB-T6-1",
+      "title": "티몬·위메프 정산 지연 사태",
+      "summary_what": "티몬과 위메프에서 판매대금 정산·환불 지연이 발생했고, 연합뉴스는 정산 지연이 보름 넘게 이어지며 최소 1천억원이 넘을 수 있다고 전했다. 판매자들은 정산금을 받지 못해 피해를 호소했고, 소비자원은 관련 집단분쟁조정 신청자를 모집했다.",
+      "lesson": "정산 지연이 장기화되면 판매자 이탈과 소비자 피해, 분쟁조정·회생절차까지 연쇄 확산될 수 있으므로 정산 재원과 일정 공개가 가장 우선이다.",
+      "provenance": "web_search",
+      "urls": [
+        "https://www.yna.co.kr/amp/view/AKR20240724060851030",
+        "https://www.kca.go.kr/kca/sub.do?menukey=5083&mode=view&no=1003711421",
+        "https://www.khan.co.kr/article/202407301453001"
+      ]
+    },
+    {
+      "case_id": "WEB-T6-2",
+      "title": "발란 정산 지연 사태",
+      "summary_what": "온라인 명품 플랫폼 발란에서 입점사 대상 정산 지연이 발생했다. 연합뉴스는 발란 대표가 입점사들에 사죄 공지를 보내고, 유통업계에서 이번 흐름이 티메프 사태 초기와 흡사하다는 평가가 나왔다고 전했다.",
+      "lesson": "초기 해명이 ‘오류’ 수준에 머물고 구체적 정산 일정이 제시되지 않으면 판매자 불안이 급속히 커지고 형사 리스크로까지 번질 수 있다.",
+      "provenance": "web_search",
+      "urls": [
+        "https://www.yna.co.kr/view/AKR20250328067751030",
+        "https://www.newsis.com/view/NISX20260403_0003577478"
+      ]
+    },
+    {
+      "case_id": "WEB-T6-3",
+      "title": "배달의민족 중개수수료 인상 반발",
+      "summary_what": "배달의민족이 다음 달부터 배달 중개 수수료를 9.8%로 3%포인트 인상한다고 밝히자 외식업주와 자영업자들의 반발이 커졌다. 이는 입점 사업자 관점에서 거래조건 악화·수수료 인상 논란이 집단 반발로 번진 사례다.",
+      "lesson": "수수료 인상은 단순 가격정책이 아니라 입점업체 생존 문제로 받아들여지므로, 인상 전 사전협의와 영향 완화책의 신뢰성이 핵심이다.",
+      "provenance": "web_search",
+      "urls": [
+        "https://www.yna.co.kr/view/AKR20240710059700030",
+        "https://www.yna.co.kr/view/AKR20240712150951030",
+        "https://news.bizwatch.co.kr/article/consumer/2024/07/15/0015"
+      ]
+    }
+  ],
+  "evidence_summary": {
+    "cases": 3,
+    "no_case_mode": false
+  },
+  "missing_input_fields": [
+    "spread_stage",
+    "days_since_last_alert"
+  ],
+  "usage": {
+    "input_tokens": 22748,
+    "output_tokens": 1654,
+    "calls": 2
+  },
+  "versions": {
+    "impact": "impact-v0.1",
+    "model": "gpt-5.4",
+    "upstream_model": "lgbm_v1"
+  }
+}

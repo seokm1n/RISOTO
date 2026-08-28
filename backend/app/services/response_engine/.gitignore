@@ -1,0 +1,4 @@
+# RAG 원본 PDF는 커밋하지 않는다(158MB). 팀 구글드라이브에 보관하고,
+# 재색인이 필요할 때만 sources/로 내려받는다. 색인(rag/index/)은 커밋한다.
+sources/*
+!sources/README.md
