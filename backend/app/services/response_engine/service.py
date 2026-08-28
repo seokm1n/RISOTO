@@ -26,7 +26,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Company, ResponseDraft, RiskEvent, RiskEventArticle, NewsArticle
 
-from . import classify, evidence, generate, tier, verify
+from . import classify, evidence, generate, impact, recommend, tier, verify
 from ._llm import response_model
 from .case_search import TeamCaseRetriever
 from .principles import PROMPT_VERSION
@@ -37,6 +37,10 @@ from .schema import AlertPayload
 SCHEMA_VERSION = 3
 MAIN_RESPONSE = "main_response"
 COMPETITOR_IMPACT = "competitor_impact"
+
+# 동종 경로의 검증 실패 시 피드백 재생성 횟수. 메인 경로(_build_content의 시나리오별
+# 1회 재생성)와 같은 정책이고, 최악 비용을 호출 2회로 묶어 둔다.
+MAX_FEEDBACK_RETRIES = 1
 
 logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="response-engine")
@@ -149,9 +153,12 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             payload.main_company_name = target_company.name
             payload.main_company_industry = _industry_name(db, target_company)
 
-        content, allowed_urls, model_name = _build_content(
-            db, payload, event, generation_kind, target_company
-        )
+        if generation_kind == COMPETITOR_IMPACT:
+            content, allowed_urls, model_name = _build_peer_content(db, payload)
+        else:
+            content, allowed_urls, model_name = _build_content(
+                db, payload, event, generation_kind, target_company
+            )
 
         draft = ResponseDraft(
             risk_event_id=risk_event_id,
@@ -285,6 +292,132 @@ def _build_content(db, payload, event, generation_kind, target_company):
             for r in ev.regulations
         ],
         "principle_version": PROMPT_VERSION,
+        "usage": usage,
+    }
+    return content, allowed_urls, response_model()
+
+
+def _build_peer_content(db, payload):
+    """동종 기업 경로: 영향 판단 -> (영향 있을 때만) 사례·법령 수집 -> 추천 생성 -> 검증.
+
+    _build_content의 짝이지만 분류·등급·시나리오 단계가 없다 - 동종 기업 추천은
+    '심플하게'가 요구사항이라 그 단계들이 성립하지 않는다(recommend.py docstring 참고).
+    영향_없음이면 사례 검색·추천 생성을 아예 호출하지 않는 것이 이 경로의 비용 통제
+    지점이다(impact.analyze의 proceed 게이트).
+    """
+    usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
+
+    def _add(u):
+        for k in usage:
+            usage[k] += (u or {}).get(k, 0)
+
+    # 1) 영향 판단 - 유형(13개 중 하나)과 방향·경로를 LLM 한 호출에서 함께 확정한다.
+    analysis = impact.analyze(payload)
+    _add(analysis.pop("usage", None))
+    rt = get_type(analysis["risk_type"])
+
+    # 내부 peer dict는 recommend.py의 프롬프트·검증 함수가 읽는 키 이름 그대로 둔다
+    # (독립 작업본의 PeerImpactResult 계약 유지 - 여기 이름을 바꾸면 build_system_prompt의
+    # peer.get("company_name") 폴백이 조용히 엉뚱한 회사명을 만든다).
+    peer = {
+        "company_name": payload.company_name,            # 사안 발생 동종 기업
+        "main_company_name": payload.main_company_name,  # 우리 기업
+        "alert_id": payload.alert_id,
+        "risk_type": analysis["risk_type"],
+        "risk_type_label": rt.label,
+        "impact_direction": analysis["impact_direction"],
+        "impact_level": analysis["impact_level"],
+        "impact_channels": analysis["impact_channels"],
+        "reason": analysis["reason"],
+        "watch_points": analysis["watch_points"],
+        "confidence": analysis["confidence"],
+        "needs_review": analysis["needs_review"],
+        "missing_input_fields": payload.missing_fields(),
+        "cases": [],
+        "regulations": [],
+    }
+    impact_block = {
+        k: peer[k]
+        for k in (
+            "impact_direction", "impact_level", "impact_channels",
+            "reason", "watch_points", "confidence", "needs_review",
+        )
+    }
+    base_content = {
+        "engine": "response_engine",
+        "content_kind": "peer_recommendation",
+        "generation_kind": COMPETITOR_IMPACT,
+        "peer_company_name": peer["company_name"],
+        "main_company_name": peer["main_company_name"],
+        "risk_type": peer["risk_type"],
+        "risk_type_label": peer["risk_type_label"],
+        "detection_type": rt.parent,
+        "impact": impact_block,
+        "recommender_version": recommend.RECOMMENDER_VERSION,
+        "impact_version": impact.IMPACT_VERSION,
+    }
+
+    if not analysis["proceed"]:
+        content = {
+            **base_content,
+            "status": "영향없음_종료",
+            "recommendation": None,
+            "cases": [],
+            "regulations": [],
+            "verification": None,
+            "usage": usage,
+        }
+        return content, set(), response_model()
+
+    # 2) 근거 수집 - 사례는 우리 기업 관점으로(검수 DB 우선 + 부족분 검색), 법령은
+    #    verified 조문만. 채널 조건부 주입 여부는 recommend.build_user_prompt가 판단한다.
+    retriever = TeamCaseRetriever(company_name=payload.main_company_name or "", db=db)
+    query_text = " ".join(m.text for m in payload.mentions[:3])[:300]
+    cases = retriever.search(analysis["risk_type"], query_text, top_k=3)
+    _add(retriever.last_usage)
+    regs = KoreanRegulationMapper().lookup(analysis["risk_type"])
+
+    peer["cases"] = [
+        {
+            "case_id": c.case_id, "title": c.title, "summary_what": c.summary_what,
+            "lesson": c.lesson, "provenance": c.provenance,
+        }
+        for c in cases
+    ]
+    peer["regulations"] = [
+        {"law_name": r.law_name, "article": r.article, "requirement": r.requirement}
+        for r in regs
+    ]
+
+    # 3) 추천 생성 -> 검증 -> 실패 시 위반 항목을 지정해 1회 재생성 (메인 경로와 동일 정책).
+    rec, gen_usage = recommend.recommend(peer)
+    _add(gen_usage)
+    violations = recommend.verify_recommendation(rec, peer)
+    for _ in range(MAX_FEEDBACK_RETRIES):
+        if not violations:
+            break
+        retried, retry_usage = recommend.regenerate_with_feedback(peer, rec, violations)
+        _add(retry_usage)
+        rec = retried
+        violations = recommend.verify_recommendation(rec, peer)
+
+    allowed_urls = {u for c in cases for u in (c.source_urls or [])}
+    allowed_urls |= {m.url for m in payload.mentions if m.url}
+
+    content = {
+        **base_content,
+        "status": "검증실패" if violations else "생성완료",
+        "recommendation": rec,
+        "cases": [
+            {
+                "case_id": c.case_id, "title": c.title, "summary_what": c.summary_what,
+                "lesson": c.lesson, "provenance": c.provenance,
+                "source_urls": list(c.source_urls or []),
+            }
+            for c in cases
+        ],
+        "regulations": peer["regulations"],
+        "verification": {"passed": not violations, "violations": violations},
         "usage": usage,
     }
     return content, allowed_urls, response_model()
