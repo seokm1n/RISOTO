@@ -25,7 +25,7 @@ from typing import Protocol
 from .risk_types import Stakeholder
 
 # 근거 기반 데이터가 붙은 뒤의 버전. 자료 없는 4개 유형은 여전히 draft 텍스트를 쓴다.
-PROMPT_VERSION = "principles-v2.1-hierarchical"
+PROMPT_VERSION = "principles-v2.5-hierarchical"
 
 # 유형 코드 -> 대응 원칙. 임의 초안이다.
 # 근거 자료가 없는 세부 유형의 폴백 초안. principles_data.json에서 grounded=false인

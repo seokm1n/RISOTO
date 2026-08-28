@@ -53,7 +53,7 @@ TARGET = 900
 OVERLAP = 150
 MIN_CHUNK = 200
 
-SUFFIXES = (".pdf", ".docx")
+SUFFIXES = (".pdf", ".docx", ".hwpx")
 
 
 def _load_pypdf():
@@ -98,8 +98,36 @@ def read_docx(path: Path) -> list[str]:
     return ["\n\n".join(parts)]
 
 
+def read_hwpx(path: Path) -> list[str]:
+    """한글 hwpx. ZIP 안의 Contents/sectionN.xml에 본문이 들어 있다.
+
+    별도 라이브러리가 필요 없다 - 표준 zipfile로 열어 <hp:t> 요소만 이어붙이면 된다.
+    구형 .hwp(바이너리)는 이 방법이 통하지 않으니 hwpx로 저장한 파일이어야 한다.
+    """
+    import zipfile
+    from xml.sax.saxutils import unescape
+
+    with zipfile.ZipFile(path) as z:
+        sections = sorted(n for n in z.namelist() if re.search(r"section\d+\.xml$", n))
+        if not sections:
+            return []
+        out = []
+        for name in sections:
+            xml = z.read(name).decode("utf-8", "replace")
+            # 문단 경계를 살려야 청크가 문장 중간에서 끊기지 않는다.
+            xml = re.sub(r"</hp:p>", "\n", xml)
+            text = " ".join(unescape(t) for t in re.findall(r"<hp:t>([^<]*)</hp:t>", xml))
+            out.append(re.sub(r"[ \t]{2,}", " ", text))
+    return out
+
+
 def read_pages(path: Path) -> list[str]:
-    return read_docx(path) if path.suffix.lower() == ".docx" else read_pdf(path)
+    suffix = path.suffix.lower()
+    if suffix == ".docx":
+        return read_docx(path)
+    if suffix == ".hwpx":
+        return read_hwpx(path)
+    return read_pdf(path)
 
 
 def doc_type_map() -> tuple[dict[str, list[str]], dict[str, str], dict[str, str], dict[str, str]]:
