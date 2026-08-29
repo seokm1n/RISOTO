@@ -25,8 +25,8 @@ import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "요약", path: "/main" },
   { id: "collection", label: "수집 현황", path: "/collection" },
-  { id: "companies", label: "기업 목록", path: "/companies" },
   { id: "statistics", label: "분석 통계", path: "/companies/overview" },
+  { id: "companies", label: "기업 목록", path: "/companies" },
 ];
 
 const ADMIN_NAV_ITEMS = [
@@ -185,7 +185,7 @@ export default function WorkspaceApp({ session, onLogout }) {
       <Route path="*" element={<Navigate to="/admin/members" replace />} />
     </> : <>
       <Route path="/" element={<Navigate to="/main" replace />} />
-      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} onEditCompany={() => goTo("/companies")} />} />
+      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} />} />
       <Route path="/account" element={<MyPage session={session} />} />
       <Route path="/collection" element={<CollectionPage onOpenCompany={openAnalysisStatistics} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />

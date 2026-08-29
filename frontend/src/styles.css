@@ -201,7 +201,6 @@ button { cursor: pointer; }
 .home-trend-graphs { display: grid; align-content: center; min-width: 0; padding: 26px 22px 22px; border-right: 2px solid rgba(48,43,41,.14); }
 .statistics-trend-graphs { margin: 24px 0; padding: 26px 28px 22px; border: 1px solid rgba(48,43,41,.12); background: rgba(248,245,236,.72); }
 .statistics-trend-graphs .home-line-graph { width: 100%; }
-.analysis-statistics-workspace .workspace-head p { font-size: .92rem; }
 .analysis-statistics-workspace .monitor-toolbar label { font-size: .84rem; }
 .analysis-statistics-workspace .monitor-toolbar select { font-size: .86rem; }
 .analysis-statistics-workspace .collection-countdown span,
@@ -243,6 +242,94 @@ button { cursor: pointer; }
 .analysis-statistics-workspace .draft-review input,
 .analysis-statistics-workspace .draft-review button { font-size: .8rem; }
 .analysis-statistics-workspace .draft-review span { font-size: .74rem; }
+
+/* 분석 통계는 요약 화면의 사프란 카드·둥근 형태·강조 라벨 체계를 공유한다. */
+.analysis-statistics-workspace { max-width: none; padding-top: 28px; }
+.analysis-statistics-workspace .workspace-head { align-items: center; margin-bottom: 18px; }
+.analysis-statistics-workspace .workspace-head h1 { margin: 8px 0; color: #2e1f14; font-size: clamp(2rem, 2.9vw, 2.8rem); font-weight: 600; letter-spacing: -.045em; }
+.analysis-statistics-workspace .monitor-toolbar,
+.analysis-statistics-workspace .statistics-trend-graphs,
+.analysis-statistics-workspace .feature-window-summary,
+.analysis-statistics-workspace .panel {
+  border: 1px solid rgba(180, 96, 42, .16);
+  border-radius: 16px;
+  background: linear-gradient(165deg, #fbf3e5 0%, #f8ecd9 100%);
+  box-shadow: 0 8px 20px rgba(140, 76, 32, .06);
+}
+.analysis-statistics-workspace .monitor-toolbar { align-items: center; margin-bottom: 18px; padding: 16px 18px; }
+.analysis-statistics-workspace .eyebrow,
+.analysis-statistics-workspace .analysis-field-label,
+.analysis-statistics-workspace .window-metrics span {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(180, 96, 42, .13);
+  color: #7a3f14;
+  font-size: .72rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .03em;
+}
+.analysis-statistics-workspace .monitor-toolbar label { gap: 8px; color: #4a3626; font-weight: 800; }
+.analysis-statistics-workspace .monitor-toolbar select,
+.analysis-statistics-workspace .source-filter select {
+  border: 1px solid rgba(180, 96, 42, .2);
+  border-radius: 10px;
+  outline: 0;
+  background: #fffaf1;
+  color: #2e1f14;
+  font-weight: 700;
+}
+.analysis-statistics-workspace .monitor-toolbar select:focus-visible,
+.analysis-statistics-workspace .source-filter select:focus-visible { border-color: #b45a28; box-shadow: 0 0 0 3px rgba(180, 90, 40, .15); }
+.analysis-statistics-workspace .collection-countdown { border: 1px solid rgba(63, 118, 83, .2); border-radius: 12px; background: rgba(229, 239, 230, .84); }
+.analysis-statistics-workspace .state-badge,
+.analysis-statistics-workspace .monitor-control,
+.analysis-statistics-workspace .quality-pill,
+.analysis-statistics-workspace .sentiment-pill,
+.analysis-statistics-workspace .filter-pill,
+.analysis-statistics-workspace .severity,
+.analysis-statistics-workspace .risk-type-list span { border-radius: 999px; }
+.analysis-statistics-workspace .monitor-control { min-height: 40px; padding-inline: 14px; }
+.analysis-statistics-workspace .statistics-trend-graphs { margin: 18px 0; padding: 22px 24px; }
+.analysis-statistics-workspace .home-line-graph figcaption span { padding: 4px 9px; border-radius: 999px; }
+.analysis-statistics-workspace .home-line-graph figcaption .collection { background: rgba(95, 140, 107, .13); }
+.analysis-statistics-workspace .home-line-graph figcaption .risk { background: rgba(192, 57, 43, .09); }
+.analysis-statistics-workspace .feature-window-summary { padding: 18px 20px; }
+.analysis-statistics-workspace .feature-window-head > div:first-child strong { color: #2e1f14; font-weight: 800; }
+.analysis-statistics-workspace .window-metrics { gap: 10px; margin-top: 15px; border-top: 0; }
+.analysis-statistics-workspace .window-metrics div {
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid rgba(180, 96, 42, .12);
+  border-radius: 12px;
+  background: #fffaf1;
+}
+.analysis-statistics-workspace .window-metrics div:first-child { padding-left: 12px; }
+.analysis-statistics-workspace .window-metrics div:last-child { border-right: 1px solid rgba(180, 96, 42, .12); }
+.analysis-statistics-workspace .window-metrics strong { color: #2e1f14; font-weight: 800; text-align: center; }
+.analysis-statistics-workspace .live-grid { gap: 16px; }
+.analysis-statistics-workspace .panel { padding: 18px 22px; }
+.analysis-statistics-workspace .panel-title { margin-bottom: 10px; padding-bottom: 10px; border-bottom-color: rgba(180, 96, 42, .2); }
+.analysis-statistics-workspace .panel-title h2 { margin-top: 8px; color: #2e1f14; font-size: 1.2rem; font-weight: 800; }
+.analysis-statistics-workspace .source-filter { margin: 0 0 10px; color: #4a3626; }
+.analysis-statistics-workspace .article-row,
+.analysis-statistics-workspace .risk-list.selectable button { border-bottom-color: rgba(154, 84, 36, .16); }
+.analysis-statistics-workspace .article-row strong,
+.analysis-statistics-workspace .risk-list strong { color: #2e1f14; font-size: .88rem; font-weight: 800; }
+.analysis-statistics-workspace .article-row small,
+.analysis-statistics-workspace .risk-list small { color: #5c4432; font-size: .74rem; }
+.analysis-statistics-workspace .risk-list.selectable button { margin: 3px 0; border-radius: 10px; }
+.analysis-statistics-workspace .risk-list.selectable button.selected { background: rgba(180, 96, 42, .13); }
+.analysis-statistics-workspace .pagination button,
+.analysis-statistics-workspace .secondary-button,
+.analysis-statistics-workspace .draft-review input,
+.analysis-statistics-workspace .draft-review button { border-radius: 10px; }
+.analysis-statistics-workspace .evidence-list,
+.analysis-statistics-workspace .response-draft { border-radius: 12px; background: #fffaf1; }
+.analysis-statistics-workspace .response-scenario { border-radius: 10px; }
 .home-line-graph { min-width: 0; margin: 0; }
 .home-line-graph figcaption { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 8px; color: #746d68; font-size: .71rem; font-weight: 800; }
 .home-line-graph figcaption span { display: inline-flex; align-items: baseline; gap: 6px; }
@@ -274,6 +361,96 @@ button { cursor: pointer; }
 .home-empty { display: grid; gap: 13px; justify-items: center; }
 .home-empty p { margin: 0; }
 .home-empty button { border: 0; border-bottom: 1px solid currentColor; background: transparent; padding: 4px 0; color: #b65432; font-size: .72rem; font-weight: 800; }
+
+/* 메인 화면: 좌(요약·추세·경쟁사 비교) / 우(기사·위험 판정) 3분할 대시보드.
+   와이드하게 펼치고 여백을 줄여 스크롤 없이 한 화면에 담는다. 박스는 배경보다
+   또렷한 리소토 톤(사프란 오렌지)으로 띄워서 카드 경계가 보이도록 한다. */
+.workspace.main-workspace { display: flex; flex-direction: column; max-width: none; height: calc(100svh - 58px); min-height: 0; padding: 22px 5vw 26px; }
+.main-workspace .workspace-head { flex: 0 0 auto; align-items: center; margin-bottom: 18px; }
+.main-workspace-heading { width: 100%; }
+.main-workspace-subhead { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 24px; }
+.main-workspace .workspace-head .eyebrow { color: #8a4310; font-weight: 800; }
+.main-workspace .workspace-head h1 { margin: 8px 0; font-weight: 600; font-size: clamp(2rem, 2.9vw, 2.8rem); }
+.main-company-name { color: #2e1f14; text-decoration-color: rgba(180,90,40,.4); }
+.main-live-collecting { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; color: var(--success-strong); font-size: .78rem; font-weight: 800; letter-spacing: .02em; }
+.main-live-spinner { width: 13px; height: 13px; border: 2px solid rgba(63, 118, 83, .25); border-top-color: var(--success-strong); border-radius: 50%; animation: monitor-spin .75s linear infinite; }
+.main-live-collecting.stopped { color: #94351e; }
+.main-live-collecting.stopped .main-live-spinner { width: 9px; height: 9px; border: 0; background: #c95431; box-shadow: 0 0 0 5px rgba(201, 84, 49, .13); animation: none; }
+.main-dashboard-grid { flex: 1; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; min-height: 0; }
+.main-dashboard-grid .panel {
+  padding: 18px 22px;
+  border: 1px solid rgba(180, 96, 42, .16);
+  border-radius: 16px;
+  background: linear-gradient(165deg, #fbf3e5 0%, #f8ecd9 100%);
+  box-shadow: 0 8px 20px rgba(140, 76, 32, .06);
+}
+.main-dashboard-grid .eyebrow { color: #8a4310; font-size: .76rem; font-weight: 800; letter-spacing: .03em; }
+.main-dashboard-grid .panel-title { flex: 0 0 auto; margin-bottom: 8px; padding-bottom: 8px; border-bottom-color: rgba(180, 96, 42, .2); }
+.main-dashboard-grid .panel-title h2 { color: #2e1f14; font-size: 1.2rem; font-weight: 800; }
+.main-left-panel { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.metric-grid.main-summary-metrics { flex: 0 0 auto; grid-template-columns: repeat(4, 1fr); align-items: stretch; gap: 10px; margin-bottom: 0; }
+.main-metric-link, .main-metric-tile { display: flex; width: 100%; height: 100%; border: 0; background: none; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.main-metric-link:hover .metric, .main-metric-tile:hover { filter: brightness(1.04); }
+.main-metric-link .metric { flex: 1; }
+.main-summary-metrics .metric { min-height: 0; display: grid; align-content: start; gap: 6px; padding: 10px 12px; border: 1px solid rgba(180, 96, 42, .12); border-radius: 12px; background: #fffaf1; }
+.main-summary-metrics .metric span, .main-metric-tile-label { display: inline-block; width: fit-content; padding: 2px 8px; border-radius: 999px; background: rgba(180, 96, 42, .12); color: #7a3f14; font-size: .68rem; font-weight: 800; line-height: 1; letter-spacing: .03em; }
+.main-summary-metrics .metric strong { display: block; color: #2e1f14; font-size: 1.6rem; font-weight: 800; text-align: center; }
+.main-metric-tile { flex-direction: column; min-height: 0; padding: 10px 12px; border: 1px solid rgba(180, 96, 42, .12); border-radius: 12px; background: #fffaf1; }
+.main-metric-tile-label { margin-bottom: 8px; }
+.main-charts-row { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: 0; }
+.main-chart-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 0; }
+.main-right-column { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.main-articles-panel { flex: 1.2; display: flex; flex-direction: column; min-height: 0; }
+.main-articles-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.main-articles-title-link { flex: 1; min-width: 0; color: inherit; text-decoration: none; }
+.main-articles-panel-head .panel-title { flex: 1; min-width: 0; }
+.main-articles-title-link:hover .panel-title h2 { color: #b65432; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.main-articles-title-link:focus-visible { border-radius: 6px; outline: 3px solid rgba(180, 90, 40, .18); outline-offset: 3px; }
+.main-live-clock { flex: 0 0 auto; color: #8a4310; font-size: .76rem; font-weight: 800; letter-spacing: .03em; font-style: normal; }
+.main-article-list { flex: 1; display: grid; gap: 4px; max-height: none; overflow-y: auto; }
+.main-article-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 11px; padding: 9px 2px; color: inherit; text-decoration: none; border-bottom: 1px solid rgba(154, 84, 36, .16); }
+.main-article-row:last-child { border-bottom: 0; }
+.main-article-row strong { display: block; overflow: hidden; color: #2e1f14; font-size: .88rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.main-article-row p { margin: 4px 0 0; color: #4a3626; font-size: .78rem; line-height: 1.5; }
+.main-risk-panel-link { flex: 1; display: flex; flex-direction: column; min-height: 0; width: 100%; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.main-risk-panel-link.panel { padding: 16px 22px; }
+.main-risk-panel-link:hover { filter: brightness(1.03); }
+.main-risk-panel-link .panel-title { margin-bottom: 8px; padding-bottom: 8px; }
+.main-risk-notice-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+.main-risk-notice { display: grid; align-content: start; gap: 7px; }
+.main-risk-notice p { margin: 0; color: #2e1f14; font-size: .9rem; font-weight: 800; line-height: 1.5; }
+.main-risk-notice small { color: #5c4432; font-size: .74rem; line-height: 1.5; }
+
+/* 위험 판정 추이(막대)와 경쟁사 비교(선) — 좌우로 나란히, 리소토 톤(사프란 골드 vs 짙은 브라운) 유지 */
+.main-trend-chart-wrap { flex: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.main-trend-legend { display: flex; gap: 14px; }
+.main-trend-legend-item { display: inline-flex; align-items: center; gap: 6px; color: #3c2a1c; font-size: .74rem; font-weight: 800; }
+.main-trend-legend-item i { width: 9px; height: 9px; border-radius: 50%; }
+.main-trend-legend-item.main i { background: #d9860f; }
+.main-trend-legend-item.competitor i { background: #6b4226; }
+.main-chart-canvas { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.main-trend-svg { display: block; width: 100%; height: 100%; min-height: 0; min-width: 0; }
+.main-chart-canvas .panel-empty { margin: auto; }
+.main-trend-grid-line { stroke: rgba(140, 76, 32, .22); stroke-width: 1px; }
+.main-trend-axis-label { fill: #5c3d1f; font: 800 12px/1 var(--font-soft); }
+.main-trend-line-main { fill: none; stroke: #d9860f; stroke-width: 3px; stroke-linecap: round; stroke-linejoin: round; }
+.main-trend-line-competitor { fill: none; stroke: #6b4226; stroke-width: 2.5px; stroke-dasharray: 6 4; stroke-linecap: round; stroke-linejoin: round; }
+.main-trend-dot-main { fill: #d9860f; }
+.main-trend-dot-risk { fill: #c0392b; stroke: #fbf1e3; stroke-width: 2px; }
+.main-trend-label, .main-trend-label-competitor { fill: #6b4226; font: 800 12px/1 var(--font-soft); }
+.main-risk-bar { fill: rgba(140, 76, 32, .18); }
+.main-risk-bar-active { fill: #c0392b; }
+.main-trend-bar-label { fill: #8e321b; font: 800 12px/1 var(--font-soft); }
+
+.sentiment-ratio { display: grid; gap: 6px; }
+.sentiment-ratio-track { display: flex; overflow: hidden; height: 10px; border-radius: 999px; }
+.sentiment-ratio-track .positive { background: var(--success); }
+.sentiment-ratio-track .neutral { background: #c9b48a; }
+.sentiment-ratio-track .negative { background: #c0392b; }
+.sentiment-ratio-legend { display: flex; flex-wrap: wrap; gap: 7px; font-size: .68rem; font-weight: 800; }
+.sentiment-ratio-legend .positive { color: var(--success-strong); }
+.sentiment-ratio-legend .neutral { color: #6b4423; }
+.sentiment-ratio-legend .negative { color: #8e321b; }
 
 /* 관리자용 기업 등록·수정 작업 전환 */
 .company-admin-page { min-height: calc(100svh - 58px); }
@@ -313,8 +490,8 @@ button { cursor: pointer; }
 .collection-summary-grid .bulk-monitor-controls .monitor-control { min-height: 42px; font-size: .82rem; }
 .permission-note { display: inline-flex; width: fit-content; margin-top: auto; padding: 9px 11px; background: #f2e8e2; color: #7a5d51; font-size: .76rem; font-weight: 700; }
 .collection-company-section { margin-top: 54px; }
-.collection-company-section .section-title h2 { font-size: 2.8rem; }
-.collection-company-section .section-title .eyebrow { font-size: .82rem; }
+.collection-company-section .panel-title h2 { font-size: 1.85rem; }
+.collection-company-section .panel-title .eyebrow { font-size: .74rem; }
 .collection-stream-groups { display: grid; gap: 34px; max-width: 1320px; margin: auto; }
 .collection-stream-group > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid rgba(48,43,41,.16); }
 .collection-stream-group > header h3 { margin: 0; color: #403633; font: 400 1.7rem/1.1 var(--font-soft); letter-spacing: -.035em; }
@@ -338,6 +515,46 @@ button { cursor: pointer; }
 .collection-row-actions .collection-toggle.start { border-color: var(--success); background: var(--success); color: white; }
 .collection-row-actions .collection-toggle.start:hover:not(:disabled), .collection-row-actions .collection-toggle.start:focus-visible { border-color: var(--success-strong); background: var(--success-strong); color: white; outline: 3px solid var(--success-ring); outline-offset: 2px; }
 .collection-incidents-panel { margin-top: 18px; }
+
+/* 수집 현황도 요약 화면과 같은 사프란 카드 체계를 사용한다. */
+.collection-workspace .workspace-head { margin-bottom: 18px; }
+.collection-workspace .panel,
+.collection-workspace .collection-company-row,
+.collection-workspace .collection-group-empty,
+.collection-workspace .empty-state {
+  border: 1px solid rgba(180, 96, 42, .16);
+  border-radius: 16px;
+  background: linear-gradient(165deg, #fbf3e5 0%, #f8ecd9 100%);
+  box-shadow: 0 8px 20px rgba(140, 76, 32, .06);
+}
+.collection-workspace .panel-title { border-bottom-color: rgba(180, 96, 42, .2); }
+.collection-workspace .panel-title h2,
+.collection-workspace .collection-stream-group > header h3 { color: #2e1f14; font-weight: 800; }
+.collection-workspace .eyebrow { color: #8a4310; font-weight: 800; }
+.collection-workspace .collection-activity,
+.collection-workspace .health-state,
+.collection-workspace .permission-note { border-radius: 12px; }
+.collection-workspace .collection-activity-track { border-radius: 999px; }
+.collection-workspace .collection-company-row dl { overflow: visible; gap: 14px; border: 0; border-radius: 0; background: transparent; }
+.collection-workspace .collection-company-row dl div { align-content: start; gap: 7px; padding: 0; background: transparent; }
+.collection-workspace .collection-company-row dt {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(180, 96, 42, .13);
+  color: #7a3f14;
+  font-size: .68rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .03em;
+}
+.collection-workspace .collection-company-row dd { color: #302825; font-size: 1rem; font-weight: 800; }
+.collection-workspace .collection-row-actions button,
+.collection-workspace .monitor-control { border-radius: 10px; }
+.collection-workspace .collection-company-row > div:first-child strong { color: #2e1f14; font-weight: 800; }
+.collection-workspace .collection-company-row > div:first-child small { color: #5c4432; }
 
 /* 모델 운영 관리 */
 .admin-only-badge { padding: 8px 10px; background: #f0e6d2; color: #805c27; font-size: .62rem; font-weight: 900; letter-spacing: .12em; }
@@ -498,11 +715,12 @@ button { cursor: pointer; }
 .company-role-section { min-width: 0; }
 .company-role-section-title { margin-bottom: 18px; }
 .company-role-section-title h3 { margin: 10px 0 0; font: 400 clamp(1.65rem, 2.5vw, 2.35rem)/1 var(--font-soft); letter-spacing: -.05em; }
-.company-role-section.main { padding-bottom: 34px; border-bottom: 1px solid rgba(48,43,41,.14); }
-.company-role-section.main .company-card { border-left: 4px solid var(--success); }
+.company-register-button { display: inline-flex; min-width: 156px; min-height: 46px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 22px; border: 0; background: #493a34; padding: 0 16px; color: #fff; font-size: .76rem; font-weight: 800; }
+.company-register-button b { font-size: 1.15rem; }
+.company-register-button:hover, .company-register-button:focus-visible { background: #b65432; outline: 3px solid rgba(182,84,50,.2); outline-offset: 3px; }
 /* 등록 기업 및 모니터링 상태 카드 */
 .company-list { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 1320px; margin: auto; }
-.company-card { display: grid; grid-template-columns: minmax(190px, .85fr) minmax(205px, .8fr) minmax(175px, .7fr) minmax(260px, 1.25fr); align-items: center; gap: 20px; padding: 24px 27px; background: rgba(248, 245, 236, 0.72); color: #403633; font-size: 0.85rem; }
+.company-card { display: grid; grid-template-columns: minmax(230px, .9fr) minmax(175px, .65fr) minmax(320px, 1.35fr); align-items: center; gap: 20px; padding: 24px 27px; background: rgba(248, 245, 236, 0.72); color: #403633; font-size: 0.85rem; }
 .registered-section .company-list { gap: 14px; }
 .editable-company-card { position: relative; padding-right: 82px; }
 .company-card-head { min-width: 0; }
@@ -511,8 +729,12 @@ button { cursor: pointer; }
 .company-card-keywords { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 14px 22px !important; margin-top: 0 !important; }
 .company-card-keywords > div { min-width: 0; }
 .company-card-keywords p { overflow: hidden; margin-bottom: 0; text-overflow: ellipsis; white-space: nowrap; }
-.company-card .company-collection-summary { align-self: center; }
 .company-card h3 { margin: 11px 0 4px; font: 400 1.55rem/1.2 var(--font-soft); }
+.company-card-status-line { display: flex; min-width: 0; align-items: flex-start; gap: 13px; margin-top: 11px; }
+.company-card-status-line > div { min-width: 0; }
+.company-card-status-line .status-dot { flex: 0 0 auto; margin-top: 9px; }
+.company-card-status-line h3 { margin: 0 0 4px; }
+.company-card-status-line p { margin: 0; color: #403633; font-size: .85rem; }
 .company-name-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; transition: color 160ms ease, text-decoration-color 160ms ease; }
 .company-name-link:hover { color: #b65432; text-decoration-color: currentColor; }
 .company-name-link:focus-visible { outline: 2px solid #b65432; outline-offset: 4px; }
@@ -527,18 +749,53 @@ button { cursor: pointer; }
 .company-edit-icon:focus-visible { border-color: #b65432; outline: 3px solid rgba(182,84,50,.18); outline-offset: 2px; }
 .company-card > div > div > p { color: #403633; font-size: 0.85rem; }
 .status-dot { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: #b7a66d; box-shadow: 0 0 0 5px rgba(183, 166, 109, .14); }
-.status-dot.active { background: var(--success); box-shadow: 0 0 0 5px var(--success-ring); }
-.status-dot.paused, .status-dot.archived, .status-dot.error { background: #d63f2f; box-shadow: 0 0 0 5px rgba(214, 63, 47, .15); }
+.status-dot.active, .status-dot.backfilling, .status-dot.warming, .status-dot.running { background: var(--success); box-shadow: 0 0 0 5px var(--success-ring); }
+.status-dot.paused, .status-dot.archived, .status-dot.error, .status-dot.stopped { background: #d63f2f; box-shadow: 0 0 0 5px rgba(214, 63, 47, .15); }
 .mini-label { font: 700 0.65rem/1 var(--font-soft); letter-spacing: 0.13em; color: #625a56; }
-.company-collection-summary { display: grid; gap: 7px; color: #403633; font-size: 0.85rem; }
-.company-collection-summary strong { font-size: .95rem; }
-.company-collection-summary strong.running { color: #245f43; }
-.company-collection-summary strong.stopped { color: #9b3f2b; }
-.company-collection-summary span { line-height: 1.45; }
 .company-card-keywords p { color: #403633 !important; font-size: 0.85rem !important; }
 .company-finance-summary { color: #403633; font-size: 0.85rem; }
 .company-finance-summary strong { color: #302825; font-size: 1rem; }
 .empty-state { max-width: 1320px; margin: auto; padding: 42px; border: 1px dashed #bdb9ae; text-align: center; color: #7f7873; }
+
+/* 기업 목록의 구분 섹션과 등록 기업 카드도 요약 화면과 같은 색상·모서리·그림자를 공유한다. */
+.company-admin-page .company-role-section,
+.company-admin-page .company-card,
+.company-admin-page .empty-state {
+  border: 1px solid rgba(180, 96, 42, .16);
+  border-radius: 16px;
+  background: linear-gradient(165deg, #fbf3e5 0%, #f8ecd9 100%);
+  box-shadow: 0 8px 20px rgba(140, 76, 32, .06);
+}
+.company-admin-page .company-role-section { padding: 24px; }
+.company-admin-page .company-role-section-title {
+  max-width: none;
+  margin: 0 0 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(180, 96, 42, .2);
+}
+.company-admin-page .company-role-section-title h3,
+.company-admin-page .company-card h3 { color: #2e1f14; font-weight: 800; }
+.company-admin-page .company-register-button { border-radius: 10px; }
+.company-admin-page .company-role-section-title .eyebrow,
+.company-admin-page .company-role-badge,
+.company-admin-page .company-finance-summary span,
+.company-admin-page .mini-label {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(180, 96, 42, .13);
+  color: #7a3f14;
+  font-size: .68rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .03em;
+}
+.company-admin-page .company-finance-summary { display: grid; gap: 12px; }
+.company-admin-page .company-finance-summary > div { display: grid; gap: 7px; }
+.company-admin-page .company-finance-summary strong { display: block; }
+.company-admin-page .company-edit-icon { border-radius: 10px; }
 
 /* 경쟁사 플로팅 수정 패널 */
 .secondary-button { min-height: 42px; border: 1px solid #9eaaa4; background: transparent; padding: 9px 14px; color: #544a46; font-size: .72rem; font-weight: 800; }
@@ -551,6 +808,7 @@ button { cursor: pointer; }
 .company-edit-close { width: 42px; height: 42px; flex: 0 0 auto; border: 1px solid #b9b3aa; background: #f8f5ec; color: #4f4541; font-size: 1.65rem; line-height: 1; }
 .company-edit-close:hover, .company-edit-close:focus-visible { border-color: #b65432; color: #b65432; outline: 3px solid rgba(182,84,50,.16); outline-offset: 2px; }
 .company-edit-dialog .edit-card { margin-top: 24px; box-shadow: none; }
+.company-registration-form > .submit-button { width: 220px; margin-left: auto; }
 .edit-card { padding: clamp(28px, 4vw, 52px); background: #f8f5ec; box-shadow: 0 24px 70px rgba(48,42,39,.08); }
 .edit-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px; margin-top: 30px; }
 .edit-field-wide { grid-column: 1 / -1; }
@@ -576,6 +834,9 @@ button { cursor: pointer; }
 .workspace-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-bottom: 38px; }
 .workspace-head h1 { margin: 11px 0 9px; font: 400 clamp(2.5rem, 5vw, 4.4rem)/1 var(--font-soft); letter-spacing: -.06em; }
 .workspace-head p { margin: 0; color: #746d68; font-size: .9rem; }
+.analysis-statistics-workspace .workspace-head p,
+.main-workspace .workspace-head p,
+.collection-workspace .workspace-head p { color: #4a3f38; font-family: var(--font-soft); font-size: .95rem; font-weight: 600; }
 .live-indicator { color: var(--success-strong); font: 700 .68rem/1 var(--font-soft); letter-spacing: .14em; }
 .live-indicator i { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 5px var(--success-ring); }
 .monitor-toolbar { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 20px; padding: 18px; background: rgba(248,245,236,.7); border: 1px solid rgba(48,43,41,.12); }
@@ -720,7 +981,7 @@ button { cursor: pointer; }
   .collection-company-row { grid-template-columns: minmax(190px, .8fr) minmax(380px, 1.2fr); }
   .collection-row-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .company-card { grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); }
-  .company-card .company-collection-summary { grid-column: 1 / -1; }
+  .company-card-keywords { grid-column: 1 / -1; }
   .home-company-header { align-items: flex-start; flex-direction: column; gap: 13px; }
   .home-company-header > .eyebrow { flex-basis: auto; }
   .home-section-body { grid-template-columns: 1fr; }
@@ -754,9 +1015,12 @@ button { cursor: pointer; }
   .sequence { gap: 14px; font-size: 0.64rem; }
   .registered-section { padding: 55px 24px 80px; }
   .home-section-title { align-items: end; }
+  .company-role-section-title { align-items: stretch; flex-direction: column; }
+  .company-admin-page .company-role-section { padding: 20px 18px; }
+  .company-register-button { width: 100%; justify-content: center; }
+  .company-registration-form > .submit-button { width: 100%; }
   .company-card { grid-template-columns: 1fr; gap: 20px; padding: 21px; }
-  .company-card-keywords { grid-template-columns: 1fr !important; }
-  .company-card .company-collection-summary { grid-column: auto; }
+  .company-card-keywords { grid-column: auto; grid-template-columns: 1fr !important; }
   .home-company-header { padding: 20px 18px; }
   .home-company-meta { gap: 8px 14px; }
   .home-company-selector { min-width: 160px; }
