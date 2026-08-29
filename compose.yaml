@@ -2,6 +2,7 @@ name: risoto
 
 services:
   db:
+    profiles: ["local-db"]
     build:
       context: ./docker/postgres
       args:
@@ -43,6 +44,7 @@ services:
       APP_NAME: RISOTO API
       APP_ENV: development
       DATABASE_URL: ${DATABASE_URL}
+      RUN_DB_MIGRATIONS: ${RUN_DB_MIGRATIONS:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       NAVER_API_HUB_CLIENT_ID: ${NAVER_API_HUB_CLIENT_ID:-}
       NAVER_API_HUB_CLIENT_SECRET: ${NAVER_API_HUB_CLIENT_SECRET:-}
@@ -62,12 +64,13 @@ services:
       REALTIME_OVERLAP_MINUTES: ${REALTIME_OVERLAP_MINUTES:-60}
       BASELINE_MIN_ARTICLES: ${BASELINE_MIN_ARTICLES:-20}
       BASELINE_MIN_DAYS: ${BASELINE_MIN_DAYS:-3}
-      ARTICLE_FILTER_VERSION: ${ARTICLE_FILTER_VERSION:-hybrid-klue-roberta-v2}
+      ARTICLE_FILTER_VERSION: ${ARTICLE_FILTER_VERSION:-hybrid-klue-roberta-v3-exported-models}
       ARTICLE_FILTER_AI_ENABLED: ${ARTICLE_FILTER_AI_ENABLED:-true}
       ARTICLE_FILTER_CLASSIFIER_MODEL: ${ARTICLE_FILTER_CLASSIFIER_MODEL:-Huffon/klue-roberta-base-nli}
       ARTICLE_FILTER_SEMANTIC_MODEL: ${ARTICLE_FILTER_SEMANTIC_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
       ARTICLE_FILTER_ALLOW_MODEL_DOWNLOAD: ${ARTICLE_FILTER_ALLOW_MODEL_DOWNLOAD:-true}
-      PRETRAINED_RELEVANCE_MODEL_PATH: ${PRETRAINED_RELEVANCE_MODEL_PATH:-/app/local_models/klue_roberta_spam_finetuned}
+      PRETRAINED_RELEVANCE_MODEL_PATH: ${PRETRAINED_RELEVANCE_MODEL_PATH:-/app/local_models/klue_roberta_spam_finetuned_v2}
+      EXTERNAL_LIGHTGBM_MODEL_PATH: ${EXTERNAL_LIGHTGBM_MODEL_PATH:-/app/local_models/LightGBM 모델 라벨링(정답) 데이터/lightgbm_risk_model_auto_v3.txt}
       ARTICLE_FILTER_DUPLICATE_THRESHOLD: ${ARTICLE_FILTER_DUPLICATE_THRESHOLD:-0.92}
       ARTICLE_FILTER_ADVERTISING_REJECT_THRESHOLD: ${ARTICLE_FILTER_ADVERTISING_REJECT_THRESHOLD:-0.85}
       ARTICLE_FILTER_ADVERTISING_REVIEW_THRESHOLD: ${ARTICLE_FILTER_ADVERTISING_REVIEW_THRESHOLD:-0.55}
@@ -87,6 +90,7 @@ services:
       MODEL_DRIFT_RECENT_HOURS: ${MODEL_DRIFT_RECENT_HOURS:-24}
       MODEL_DRIFT_BASELINE_DAYS: ${MODEL_DRIFT_BASELINE_DAYS:-7}
       MODEL_ARTIFACT_DIR: /app/model_artifacts
+      IMPORT_EXPORTED_MODELS: ${IMPORT_EXPORTED_MODELS:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       RESPONSE_MODEL_NAME: ${RESPONSE_MODEL_NAME:-gpt-5.6-luna}
       RESPONSE_GENERATION_PROVIDER: ${RESPONSE_GENERATION_PROVIDER:-openai}
@@ -95,17 +99,15 @@ services:
       LLM_LABELING_MODEL_NAME: ${LLM_LABELING_MODEL_NAME:-gpt-5.6-luna}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     command: >-
-      sh -c "alembic upgrade head
+      sh -c "if [ \"$${RUN_DB_MIGRATIONS}\" = \"true\" ]; then alembic upgrade head; fi
       && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - ../../exports/local_models/local_models:/app/local_models:ro
       - huggingface_cache:/root/.cache/huggingface
-      - model_artifacts:/app/model_artifacts
-    depends_on:
-      db:
-        condition: service_healthy
+      - ../../exports/model_artifacts:/app/model_artifacts:ro
     healthcheck:
       test:
         - CMD
@@ -162,11 +164,9 @@ services:
       ARTICLE_FILTER_ALLOW_MODEL_DOWNLOAD: ${ARTICLE_FILTER_ALLOW_MODEL_DOWNLOAD:-true}
     volumes:
       - ./backend:/app
+      - ../../exports/local_models/local_models:/app/local_models:ro
       - huggingface_cache:/root/.cache/huggingface
-      - model_artifacts:/app/model_artifacts
-    depends_on:
-      db:
-        condition: service_healthy
+      - ../../exports/model_artifacts:/app/model_artifacts:ro
     gpus: all
     shm_size: "8gb"
 

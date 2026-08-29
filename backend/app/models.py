@@ -42,10 +42,16 @@ class User(TimestampMixin, Base):
     """로그인 자격 증명과 계정 상태를 저장한다."""
 
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('general', 'admin')", name="ck_users_role"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="general", server_default="general"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -154,7 +160,7 @@ class Company(TimestampMixin, Base):
     )
     backfill_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
     monitoring_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="backfilling"
+        String(20), nullable=False, default="active"
     )
     analysis_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     analysis_error: Mapped[str | None] = mapped_column(Text)

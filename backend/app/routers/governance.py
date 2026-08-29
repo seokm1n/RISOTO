@@ -1,11 +1,13 @@
-"""Model promotion and human-approved response draft APIs."""
+"""Model status, quality monitoring and human-approved response draft APIs."""
 
 from datetime import datetime, timezone
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import CurrentAuth, require_auth
+from app.auth import CurrentAuth, require_admin, require_auth
+from app.config import get_settings
 from app.database import get_db
 from app.models import (
     Company,
@@ -17,6 +19,7 @@ from app.models import (
 from app.schemas import (
     LlmLabelingStatusRead,
     ModelOperationCheckRead,
+    ModelRuntimeStatusRead,
     ModelTrainingReadinessRead,
     ModelVersionRead,
     RiskDetectionStatusRead,
@@ -28,7 +31,6 @@ from app.services.model_operations import (
     build_training_readiness,
     ensure_daily_model_check,
 )
-from app.services.model_governance import evaluate_model_promotion
 from app.services.response_generation import generate_response_draft
 from app.services.risk_analysis import resolve_production_risk_detector
 
@@ -40,7 +42,7 @@ router = APIRouter(tags=["governance"])
 def list_model_versions(
     task: str | None = None,
     db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
+    _auth: CurrentAuth = Depends(require_admin),
 ) -> list[ModelVersion]:
     query = select(ModelVersion)
     if task:
@@ -51,7 +53,7 @@ def list_model_versions(
 @router.get("/risk-detection-status", response_model=RiskDetectionStatusRead)
 def get_risk_detection_status(
     db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
+    _auth: CurrentAuth = Depends(require_admin),
 ) -> RiskDetectionStatusRead:
     """Report final-risk availability without training or promoting a model."""
     runtime = resolve_production_risk_detector(db)
@@ -104,10 +106,63 @@ def get_risk_detection_status(
     )
 
 
+@router.get("/model-runtime-status", response_model=ModelRuntimeStatusRead)
+def get_model_runtime_status(
+    db: Session = Depends(get_db),
+    _auth: CurrentAuth = Depends(require_admin),
+) -> ModelRuntimeStatusRead:
+    """Expose the four independently operated model stages."""
+    settings = get_settings()
+    advertising_path = Path(settings.pretrained_relevance_model_path).expanduser()
+    sentiment_path = Path(settings.pretrained_sentiment_model_path).expanduser()
+    relevance_model = db.scalar(
+        select(ModelVersion)
+        .where(
+            ModelVersion.task == "topical_relevance",
+            ModelVersion.status == "production",
+        )
+        .order_by(ModelVersion.promoted_at.desc().nullslast(), ModelVersion.id.desc())
+        .limit(1)
+    )
+    relevance_path = (
+        Path(relevance_model.artifact_path).expanduser()
+        if relevance_model is not None
+        else None
+    )
+    lightgbm_path = Path(settings.external_lightgbm_model_path).expanduser()
+    lightgbm_available = lightgbm_path.is_file()
+    risk_runtime = resolve_production_risk_detector(db)
+    return ModelRuntimeStatusRead(
+        article_filter_version=settings.article_filter_version,
+        article_filter_ai_enabled=settings.article_filter_ai_enabled,
+        advertising_model_name=advertising_path.name if advertising_path.name else None,
+        advertising_model_available=advertising_path.is_dir(),
+        relevance_model_name=(
+            relevance_model.version
+            if relevance_model is not None
+            else None
+        ),
+        relevance_model_available=(
+            relevance_path is not None and relevance_path.is_dir()
+        ),
+        sentiment_model_name=sentiment_path.name if sentiment_path.name else None,
+        sentiment_model_available=sentiment_path.is_dir(),
+        external_lightgbm_model_name=lightgbm_path.name if lightgbm_path.name else None,
+        external_lightgbm_model_available=lightgbm_available,
+        external_lightgbm_message=(
+            "exports LightGBM과 호환 Isolation Forest가 운영 판정에 연결되었습니다."
+            if risk_runtime.available
+            else "LightGBM 파일은 찾았지만 운영 레지스트리 연결을 확인해야 합니다."
+            if lightgbm_available
+            else "외부 LightGBM 파일을 찾지 못했습니다."
+        ),
+    )
+
+
 @router.get("/model-training-readiness", response_model=ModelTrainingReadinessRead)
 def model_training_readiness(
     db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
+    _auth: CurrentAuth = Depends(require_admin),
 ) -> dict:
     """Expose candidate-training gates without launching a GPU job."""
     return build_training_readiness(db)
@@ -116,7 +171,7 @@ def model_training_readiness(
 @router.get("/model-monitoring", response_model=ModelOperationCheckRead)
 def latest_model_monitoring_check(
     db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
+    _auth: CurrentAuth = Depends(require_admin),
 ) -> ModelOperationCheck:
     """Return today's persisted quality, label-distribution and drift check."""
     return ensure_daily_model_check(db)
@@ -125,7 +180,7 @@ def latest_model_monitoring_check(
 @router.post("/model-monitoring/check", response_model=ModelOperationCheckRead)
 def rerun_model_monitoring_check(
     db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
+    _auth: CurrentAuth = Depends(require_admin),
 ) -> ModelOperationCheck:
     """Recompute today's report after an operator changes labels or collection state."""
     return ensure_daily_model_check(db, force=True)
@@ -134,7 +189,7 @@ def rerun_model_monitoring_check(
 @router.get("/llm-labeling/status", response_model=LlmLabelingStatusRead)
 def get_llm_labeling_status(
     db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
+    _auth: CurrentAuth = Depends(require_admin),
 ) -> dict:
     """Report automatic LLM labeling throughput and this month's human audit agreement."""
     return llm_labeling_status(db)
@@ -143,48 +198,11 @@ def get_llm_labeling_status(
 @router.post("/llm-labeling/run", response_model=LlmLabelingStatusRead)
 def trigger_llm_labeling_backlog(
     db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
+    _auth: CurrentAuth = Depends(require_admin),
 ) -> dict:
     """Manually catch up any articles the automatic per-company trigger missed."""
     run_llm_labeling_backlog(db)
     return llm_labeling_status(db)
-
-
-@router.post("/model-versions/{model_id}/promote", response_model=ModelVersionRead)
-def promote_model(
-    model_id: int,
-    db: Session = Depends(get_db),
-    _auth: CurrentAuth = Depends(require_auth),
-) -> ModelVersion:
-    model = db.get(ModelVersion, model_id)
-    if model is None:
-        raise HTTPException(status_code=404, detail="모델 버전을 찾을 수 없습니다.")
-    eligibility = evaluate_model_promotion(db, model)
-    if not eligibility.allowed:
-        raise HTTPException(status_code=409, detail=eligibility.blocker)
-    current = list(
-        db.scalars(
-            select(ModelVersion).where(
-                ModelVersion.task == model.task,
-                ModelVersion.status == "production",
-                ModelVersion.id != model.id,
-            )
-        )
-    )
-    now = datetime.now(timezone.utc)
-    for item in current:
-        item.status = "retired"
-        item.retired_at = now
-    if eligibility.target_model_state is not None:
-        thresholds = dict(model.thresholds or {})
-        thresholds["model_state"] = eligibility.target_model_state
-        model.thresholds = thresholds
-    model.status = "production"
-    model.promoted_at = now
-    model.retired_at = None
-    db.commit()
-    db.refresh(model)
-    return model
 
 
 @router.post("/risk-events/{risk_event_id}/response-drafts", response_model=ResponseDraftRead)

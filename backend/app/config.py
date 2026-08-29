@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # NLI 기반 감성 분석 모델 설정
     sentiment_model_name: str = "Huffon/klue-roberta-base-nli"
     sentiment_allow_model_download: bool = True
-    pretrained_sentiment_model_path: str = ""
+    pretrained_sentiment_model_path: str = "/app/local_models/klue_roberta_domain_finetuned"
 
     # 실시간 수집 일정과 이상 탐지 기준선 최소 조건
     realtime_interval_seconds: int = 900
@@ -53,14 +53,17 @@ class Settings(BaseSettings):
     baseline_min_days: int = 3
 
     # 기사 중복·광고·관련성 하이브리드 필터 설정
-    article_filter_version: str = "hybrid-klue-roberta-v2"
+    article_filter_version: str = "hybrid-klue-roberta-v3-company-context"
     article_filter_ai_enabled: bool = True
     article_filter_classifier_model: str = "Huffon/klue-roberta-base-nli"
     article_filter_semantic_model: str = (
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
     article_filter_allow_model_download: bool = True
-    pretrained_relevance_model_path: str = ""
+    # 기존 환경 변수명은 유지하지만 이 normal/filter 모델은 광고·스팸 판정에 사용한다.
+    pretrained_relevance_model_path: str = "/app/local_models/klue_roberta_spam_finetuned_v2"
+    external_lightgbm_model_path: str = ""
+    import_exported_models: bool = True
     article_filter_duplicate_threshold: float = 0.92
     article_filter_advertising_reject_threshold: float = 0.85
     article_filter_advertising_review_threshold: float = 0.55

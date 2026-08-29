@@ -1,8 +1,11 @@
 """외부 기사 수집부터 필터링·감성 분석·이상 탐지까지 전체 흐름을 조정한다."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import logging
+from pathlib import Path
+from threading import Lock
 
 from sqlalchemy import or_, select, text
 
@@ -21,9 +24,11 @@ from app.models import (
 )
 from app.services.article_filtering import (
     FilterConfig,
+    TOPICAL_RELEVANCE_TRAINED_COMPANIES,
     classify_article,
     content_hash,
     get_semantic_scorer,
+    normalized_content,
     normalize_url,
 )
 from app.services.collection_health import (
@@ -41,14 +46,25 @@ from app.services.news_collectors import (
     YouTubeCommentCollector,
 )
 from app.services.llm_labeling import enqueue_llm_labeling_for_company
+from app.services.fine_tuned_text import (
+    predict_relevance_batch,
+    predict_topical_relevance_batch,
+)
 from app.services.sentiment import analyze_company_articles
-from app.services.risk_analysis import backfill_historical_windows, build_feature_window
+from app.services.risk_analysis import (
+    backfill_historical_windows,
+    build_feature_window,
+    reanalyze_historical_windows,
+)
 from app.services.story_clustering import assign_story_cluster
 from app.services.model_operations import SEOUL, ensure_daily_model_check
 
 
 logger = logging.getLogger(__name__)
 _last_model_operation_check_date = None
+_reanalysis_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="model-reanalysis")
+_reanalysis_lock = Lock()
+_reanalysis_statuses: dict[int, dict[str, int | str]] = {}
 
 SOURCE_ALIASES = {
     "naver": "naver_api_hub",
@@ -250,8 +266,6 @@ def _realtime_sources(settings: Settings) -> list[str]:
         sources.append("naver_api_hub")
     if settings.kakao_rest_api_key:
         sources.append("kakao_daum")
-    if not sources and settings.tavily_api_key:
-        sources.append("tavily")
     if settings.youtube_api_key:
         sources.append("youtube_comment")
     return sources
@@ -308,8 +322,10 @@ def build_queries(
     for keyword in keywords:
         if keyword.keyword_type in {"alias", "product", "risk"}:
             candidates.append(f'"{company.name}" {keyword.value}')
-            # 기업명이 제목·요약에 없는 제품·브랜드·사건 기사도 후보로 수집한다.
-            candidates.append(keyword.value)
+            # 고유 별칭·제품·브랜드는 기업명이 없는 기사도 찾되, 일반적인 위험 표현은
+            # 다른 기업의 기사가 대량 유입되지 않도록 반드시 기업명과 함께 검색한다.
+            if keyword.keyword_type in {"alias", "product"}:
+                candidates.append(keyword.value)
     seen: set[str] = set()
     result: list[str] = []
     for item in candidates:
@@ -394,6 +410,12 @@ def run_collection(
     settings = get_settings()
     requested_to = requested_to or datetime.now(timezone.utc)
     sources = _canonical_sources(sources or ["naver_api_hub", "tavily"])
+    # Tavily는 플랜 사용량과 무관하게 정기 실시간 수집 및 장애 재시도에서 제외한다.
+    # 과거 백필과 사용자가 직접 선택한 수동 수집에서는 계속 사용할 수 있다.
+    if job_type == "realtime":
+        sources = [source for source in sources if source != "tavily"]
+        if not sources:
+            sources = _realtime_sources(settings) or ["naver_api_hub"]
     if scheduled_for is None and job_type == "realtime":
         scheduled_for = completed_window_start(
             requested_to,
@@ -702,6 +724,266 @@ def run_collection(
     return job
 
 
+def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
+    """Run the four production analysis stages over already stored user data."""
+    settings = get_settings()
+    filter_config = _article_filter_config(settings)
+    semantic_scorer = get_semantic_scorer(filter_config)
+    counters = {
+        "filter_evaluated": 0,
+        "filter_accepted": 0,
+        "filter_rejected": 0,
+        "filter_review_required": 0,
+        "article_matches_added": 0,
+        "article_matches_removed": 0,
+        "sentiment_queued": 0,
+        "sentiment_analyzed": 0,
+        "feature_windows": 0,
+        "risk_scored_windows": 0,
+    }
+    with SessionLocal() as db:
+        company_ids = list(
+            db.scalars(
+                select(Company.id)
+                .where(Company.user_id == user_id)
+                .order_by(Company.id)
+            )
+        )
+
+    for company_id in company_ids:
+        with SessionLocal() as db:
+            company = db.get(Company, company_id)
+            if company is None:
+                continue
+            keywords = list(
+                db.scalars(
+                    select(CompanyKeyword)
+                    .where(CompanyKeyword.company_id == company_id)
+                    .order_by(CompanyKeyword.id)
+                )
+            )
+            hit_rows = list(
+                db.execute(
+                    select(RawNewsArticle, ArticleQueryHit)
+                    .join(
+                        ArticleQueryHit,
+                        ArticleQueryHit.raw_article_id == RawNewsArticle.id,
+                    )
+                    .where(ArticleQueryHit.company_id == company_id)
+                    .order_by(
+                        RawNewsArticle.id,
+                        ArticleQueryHit.last_seen_at.desc(),
+                        ArticleQueryHit.id.desc(),
+                    )
+                )
+            )
+            latest_hits: dict[int, tuple[RawNewsArticle, ArticleQueryHit]] = {}
+            for raw, hit in hit_rows:
+                latest_hits.setdefault(raw.id, (raw, hit))
+
+            rows_to_evaluate = list(latest_hits.values())
+            article_texts = [normalized_content(raw) for raw, _hit in rows_to_evaluate]
+            relevance_predictions = predict_relevance_batch(
+                [(company.name, text) for text in article_texts]
+            )
+            topical_predictions = (
+                predict_topical_relevance_batch(article_texts)
+                if company.name in TOPICAL_RELEVANCE_TRAINED_COMPANIES
+                else [None] * len(article_texts)
+            )
+
+            accepted_articles: dict[int, ArticleQueryHit] = {}
+            processed_article_ids: set[int] = set()
+            for (raw, hit), relevance_prediction, topical_prediction in zip(
+                rows_to_evaluate,
+                relevance_predictions,
+                topical_predictions,
+            ):
+                decision = classify_article(
+                    company,
+                    keywords,
+                    raw,
+                    raw,
+                    candidate_articles=_raw_candidates(db, raw),
+                    semantic_scorer=semantic_scorer,
+                    config=filter_config,
+                    precomputed_relevance=relevance_prediction,
+                    precomputed_topical_relevance=topical_prediction,
+                )
+                article = _curated_for_raw(db, decision.duplicate_of_raw_id)
+                if (
+                    decision.reason == "duplicate"
+                    and article is not None
+                    and decision.relevance_score
+                    >= filter_config.relevance_accept_threshold
+                    and decision.advertising_score
+                    < filter_config.advertising_review_threshold
+                ):
+                    decision.decision = "accepted"
+                    decision.details["duplicate_merged"] = True
+                if decision.decision == "accepted" and article is None:
+                    article, _created = _get_or_create_curated_article(
+                        db,
+                        raw,
+                        raw,
+                        raw.normalized_url,
+                    )
+                    if not _created:
+                        _reuse_existing_curated_article(decision, raw, article)
+
+                result = db.scalar(
+                    select(ArticleFilterResult).where(
+                        ArticleFilterResult.raw_article_id == raw.id,
+                        ArticleFilterResult.company_id == company_id,
+                        ArticleFilterResult.filter_version == filter_config.version,
+                    )
+                )
+                if result is None:
+                    result = ArticleFilterResult(
+                        raw_article_id=raw.id,
+                        company_id=company_id,
+                        decision=decision.decision,
+                        reason=decision.reason,
+                        classifier_kind=decision.classifier_kind,
+                        filter_version=decision.filter_version,
+                    )
+                    db.add(result)
+                if result.curated_article_id is not None:
+                    processed_article_ids.add(result.curated_article_id)
+                result.decision = decision.decision
+                result.reason = decision.reason
+                result.duplicate_of_raw_id = decision.duplicate_of_raw_id
+                result.curated_article_id = (
+                    article.id
+                    if article is not None and decision.decision == "accepted"
+                    else None
+                )
+                result.relevance_score = decision.relevance_score
+                result.advertising_score = decision.advertising_score
+                result.confidence = decision.confidence
+                result.classifier_kind = decision.classifier_kind
+                result.details = {
+                    **decision.details,
+                    "duplicate_score": decision.duplicate_score,
+                    "matched_keyword": hit.matched_keyword,
+                    "reanalyzed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                result.filtered_at = datetime.now(timezone.utc)
+                counters["filter_evaluated"] += 1
+                counters[f"filter_{decision.decision}"] += 1
+                if article is not None:
+                    processed_article_ids.add(article.id)
+                    if decision.decision == "accepted":
+                        accepted_articles[article.id] = hit
+                        assign_story_cluster(db, article, settings)
+
+            current_matches = {
+                match.article_id: match
+                for match in db.scalars(
+                    select(CompanyArticleMatch).where(
+                        CompanyArticleMatch.company_id == company_id
+                    )
+                )
+            }
+            for article_id, hit in accepted_articles.items():
+                if article_id not in current_matches:
+                    db.add(
+                        CompanyArticleMatch(
+                            company_id=company_id,
+                            article_id=article_id,
+                            job_id=hit.job_id,
+                            matched_keyword=hit.matched_keyword,
+                        )
+                    )
+                    counters["article_matches_added"] += 1
+            for article_id in processed_article_ids - set(accepted_articles):
+                match = current_matches.get(article_id)
+                if match is not None:
+                    db.delete(match)
+                    counters["article_matches_removed"] += 1
+            db.commit()
+
+    sentiment_path = Path(settings.pretrained_sentiment_model_path).expanduser()
+    target_sentiment_model = (
+        f"local:{sentiment_path.name}" if sentiment_path.is_dir() else None
+    )
+    if target_sentiment_model is not None and company_ids:
+        with SessionLocal() as db:
+            article_ids = list(
+                db.scalars(
+                    select(CompanyArticleMatch.article_id)
+                    .where(CompanyArticleMatch.company_id.in_(company_ids))
+                    .distinct()
+                )
+            )
+            articles = list(
+                db.scalars(
+                    select(NewsArticle).where(NewsArticle.id.in_(article_ids))
+                )
+            )
+            for article in articles:
+                if article.sentiment_model != target_sentiment_model:
+                    article.sentiment_label = None
+                    article.sentiment_score = None
+                    article.sentiment_confidence = None
+                    article.positive_probability = None
+                    article.neutral_probability = None
+                    article.negative_probability = None
+                    article.sentiment_model = None
+                    article.analyzed_at = None
+                    counters["sentiment_queued"] += 1
+            db.commit()
+        for company_id in company_ids:
+            while True:
+                analyzed = analyze_company_articles(company_id, batch_limit=100)
+                counters["sentiment_analyzed"] += analyzed
+                if analyzed < 100:
+                    break
+
+    risk_counts = reanalyze_historical_windows(user_id=user_id)
+    counters.update(risk_counts)
+    return {"status": "completed", **counters}
+
+
+def existing_data_reanalysis_status(user_id: int) -> dict[str, int | str]:
+    """Return process-local progress for the current user's background run."""
+    with _reanalysis_lock:
+        return dict(
+            _reanalysis_statuses.get(
+                user_id,
+                {"status": "idle", "message": "실행 대기 중입니다."},
+            )
+        )
+
+
+def start_existing_data_reanalysis(user_id: int) -> dict[str, int | str]:
+    """Start one non-blocking historical reanalysis per user."""
+    with _reanalysis_lock:
+        current = _reanalysis_statuses.get(user_id)
+        if current is not None and current.get("status") == "running":
+            return dict(current)
+        _reanalysis_statuses[user_id] = {
+            "status": "running",
+            "message": "기존 데이터를 백그라운드에서 재평가하고 있습니다.",
+        }
+
+    def run() -> None:
+        try:
+            result = reanalyze_existing_data(user_id)
+            result["message"] = "기존 데이터 재평가가 완료되었습니다."
+        except Exception as exc:
+            logger.exception("Existing-data reanalysis failed for user %s", user_id)
+            result = {
+                "status": "failed",
+                "message": f"기존 데이터 재평가 실패: {exc}"[:500],
+            }
+        with _reanalysis_lock:
+            _reanalysis_statuses[user_id] = result
+
+    _reanalysis_executor.submit(run)
+    return existing_data_reanalysis_status(user_id)
+
+
 def initialize_company_monitoring(
     company_id: int,
     is_new: bool,
@@ -710,19 +992,23 @@ def initialize_company_monitoring(
     """신규 기업 또는 추가 키워드의 백필을 수행하고 실시간 모니터링을 시작한다."""
     try:
         settings = get_settings()
+        monitoring_paused = False
         with SessionLocal() as db:
             company = db.get(Company, company_id)
             if company is None:
                 return
+            monitoring_paused = company.monitoring_status == "paused"
             started_at = company.monitoring_started_at or datetime.now(timezone.utc)
             company.monitoring_started_at = started_at
             if is_new:
-                company.monitoring_status = "backfilling"
-                company.analysis_status = "pending"
+                company.analysis_status = "warming"
                 company.next_collection_at = started_at + timedelta(
                     seconds=settings.realtime_interval_seconds
                 )
             db.commit()
+
+        if monitoring_paused:
+            return
 
         if is_new:
             run_collection(

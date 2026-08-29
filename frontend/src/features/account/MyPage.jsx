@@ -83,13 +83,13 @@ export default function MyPage({ session }) {
             <small>로그인에 사용하는 이메일 계정입니다.</small>
           </div>
           <div>
-            <dt>메인기업</dt>
+            <dt>나의 기업</dt>
             <dd>
               {companyLoading && "불러오는 중..."}
               {!companyLoading && companyError && "확인할 수 없음"}
-              {!companyLoading && !companyError && (mainCompany?.name ?? "등록된 메인기업 없음")}
+              {!companyLoading && !companyError && (mainCompany?.name ?? "등록된 나의 기업 없음")}
             </dd>
-            <small>{companyError ?? "마이페이지에서는 메인기업을 변경할 수 없습니다."}</small>
+            <small>{companyError ?? "마이페이지에서는 나의 기업을 변경할 수 없습니다."}</small>
           </div>
         </dl>
       </article>

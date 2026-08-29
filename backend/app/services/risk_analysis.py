@@ -341,6 +341,110 @@ def artifact_sha256(path: Path) -> str | None:
     return digest.hexdigest()
 
 
+def import_exported_models(db: Session, settings: Settings) -> None:
+    """Register the exported topical-relevance and final-risk artifacts.
+
+    The files are outputs of this project's training code. Importing them at
+    startup keeps the read-only exports folder and the model registry in sync
+    without retraining any model.
+    """
+    if not settings.import_exported_models:
+        return
+    import_dir = Path(settings.model_artifact_dir)
+    if not import_dir.is_dir():
+        return
+    if_path = import_dir / "iforest-20260826T034154Z.joblib"
+    risk_path = import_dir / "risk-lgbm-20260826T034203Z.joblib"
+    topical_path = import_dir / "topical-relevance-csv-20260826T043300Z"
+    if_hash = artifact_sha256(if_path)
+    risk_hash = artifact_sha256(risk_path)
+    topical_hash = artifact_sha256(topical_path / "model.safetensors")
+    existing = {
+        (model.task, model.version): model
+        for model in db.scalars(select(ModelVersion)).all()
+    }
+    now = datetime.now(timezone.utc)
+
+    def register(
+        *,
+        task: str,
+        version: str,
+        artifact_path: Path,
+        artifact_hash: str,
+        label_schema: dict,
+        thresholds: dict | None = None,
+        dependencies: dict | None = None,
+    ) -> ModelVersion:
+        for current in db.scalars(
+            select(ModelVersion).where(
+                ModelVersion.task == task,
+                ModelVersion.status == "production",
+                ModelVersion.version != version,
+            )
+        ):
+            current.status = "retired"
+            current.retired_at = now
+        model = existing.get((task, version))
+        if model is None:
+            model = ModelVersion(
+                task=task,
+                version=version,
+                status="production",
+                artifact_path=str(artifact_path),
+                training_data_hash=artifact_hash,
+                label_schema=label_schema,
+                metrics={"source": "exports"},
+                thresholds=thresholds or {},
+                training_counts={},
+                dependencies=dependencies or {},
+                promoted_at=now,
+            )
+            db.add(model)
+            existing[(task, version)] = model
+        else:
+            model.artifact_path = str(artifact_path)
+            model.training_data_hash = artifact_hash
+            model.status = "production"
+            model.thresholds = thresholds or model.thresholds or {}
+            model.dependencies = dependencies or {}
+            model.promoted_at = model.promoted_at or now
+            model.retired_at = None
+        return model
+
+    if topical_hash is not None and topical_path.is_dir():
+        register(
+            task="topical_relevance",
+            version="topical-relevance-csv-20260826T043300Z",
+            artifact_path=topical_path,
+            artifact_hash=topical_hash,
+            label_schema={"relevance": ["irrelevant", "relevant"]},
+        )
+    if if_hash is not None and risk_hash is not None:
+        register(
+            task="isolation_forest",
+            version="iforest-20260826T034154Z",
+            artifact_path=if_path,
+            artifact_hash=if_hash,
+            label_schema={"target": "unsupervised_non_confirmed_risk_window"},
+        )
+        register(
+            task="risk_detector",
+            version="lightgbm_auto_v3",
+            artifact_path=risk_path,
+            artifact_hash=risk_hash,
+            label_schema={"target": "confirmed_risk_event"},
+            thresholds={
+                "global": settings.risk_default_threshold,
+                "model_state": "production",
+            },
+            dependencies={
+                REQUIRED_IF_VERSION_KEY: "iforest-20260826T034154Z",
+                REQUIRED_IF_HASH_KEY: if_hash,
+            },
+        )
+    db.flush()
+
+
 def _artifact_payload(
     model: ModelVersion,
     *,
@@ -648,6 +752,7 @@ def update_risk_events(
             event
             for event in open_events
             if event.last_seen_at >= window.window_start - merge_gap
+            and event.opened_at <= window.window_end + merge_gap
         ),
         None,
     )
@@ -771,7 +876,7 @@ def update_daily_summary(db: Session, company_id: int, at: datetime) -> None:
 
 
 def update_company_readiness(db: Session, company: Company, settings: Settings) -> None:
-    """Move a prepared company only to pending approval; never auto-activate it."""
+    """Update model readiness without blocking or changing collection controls."""
     article_count = db.scalar(
         select(func.count(CompanyArticleMatch.article_id)).where(
             CompanyArticleMatch.company_id == company.id
@@ -792,8 +897,6 @@ def update_company_readiness(db: Session, company: Company, settings: Settings) 
         company.baseline_ready_at = company.baseline_ready_at or datetime.now(timezone.utc)
     elif company.analysis_status != "error":
         company.analysis_status = "warming"
-    if company.monitoring_status == "backfilling":
-        company.monitoring_status = "warming"
 
 
 def build_feature_window(
@@ -805,6 +908,9 @@ def build_feature_window(
     *,
     use_type_nli: bool = True,
     allow_scoring: bool = True,
+    force_scoring: bool = False,
+    update_events: bool = True,
+    generate_response_drafts: bool = True,
 ) -> CompanyFeatureWindow:
     """Upsert, score and summarize one company window without scoring outages."""
     settings = get_settings()
@@ -940,9 +1046,10 @@ def build_feature_window(
         window.feature_values = features
         db.flush()
         draft_request = None
-        if allow_scoring and company.monitoring_status == "active":
+        if allow_scoring and (force_scoring or company.monitoring_status == "active"):
             score_window(db, window, settings)
-            draft_request = update_risk_events(db, window, settings)
+            if update_events:
+                draft_request = update_risk_events(db, window, settings)
         else:
             window.anomaly_score = None
             window.anomaly_percentile = None
@@ -956,7 +1063,7 @@ def build_feature_window(
         update_company_readiness(db, company, settings)
         db.commit()
         db.refresh(window)
-        if draft_request is not None and draft_request[1]:
+        if generate_response_drafts and draft_request is not None and draft_request[1]:
             from app.services.response_generation import enqueue_response_draft
 
             enqueue_response_draft(draft_request[0], force=True)
@@ -1022,3 +1129,102 @@ def backfill_historical_windows(company_id: int | None = None) -> dict[str, int]
         )
         built += 1
     return {"clustered_articles": clustered, "feature_windows": built}
+
+
+def reanalyze_historical_windows(
+    *,
+    user_id: int | None = None,
+    company_id: int | None = None,
+) -> dict[str, int]:
+    """Rebuild and score all stored windows after production models are connected.
+
+    Existing collection-quality metadata is preserved. Risk events are created
+    only for windows that had never received a final-risk score, which keeps a
+    repeated operator run idempotent.
+    """
+    settings = get_settings()
+    with SessionLocal() as db:
+        detector = resolve_production_risk_detector(db)
+        if not detector.available:
+            raise ValueError("운영 LightGBM과 호환 Isolation Forest를 먼저 연결해야 합니다.")
+        company_query = select(Company.id)
+        if user_id is not None:
+            company_query = company_query.where(Company.user_id == user_id)
+        if company_id is not None:
+            company_query = company_query.where(Company.id == company_id)
+        company_ids = list(db.scalars(company_query.order_by(Company.id)))
+        if not company_ids:
+            return {"feature_windows": 0, "risk_scored_windows": 0}
+
+        existing = {
+            (window.company_id, window.window_start): {
+                "data_quality": window.data_quality,
+                "successful_sources": list(window.successful_sources or []),
+                "failed_sources": list(window.failed_sources or []),
+                "needs_event_update": window.risk_probability is None,
+            }
+            for window in db.scalars(
+                select(CompanyFeatureWindow).where(
+                    CompanyFeatureWindow.company_id.in_(company_ids)
+                )
+            )
+        }
+        article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+        article_rows = list(
+            db.execute(
+                select(CompanyArticleMatch.company_id, article_time)
+                .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+                .where(CompanyArticleMatch.company_id.in_(company_ids))
+            )
+        )
+
+    window_keys = set(existing)
+    for row_company_id, timestamp in article_rows:
+        if timestamp is not None:
+            window_keys.add(
+                (
+                    row_company_id,
+                    floor_window(timestamp, settings.collection_window_minutes),
+                )
+            )
+
+    built = 0
+    scored = 0
+    for row_company_id, window_start in sorted(
+        window_keys, key=lambda item: (item[0], item[1])
+    ):
+        state = existing.get((row_company_id, window_start))
+        with SessionLocal() as db:
+            sources = list(
+                db.scalars(
+                    select(NewsArticle.source)
+                    .join(
+                        CompanyArticleMatch,
+                        CompanyArticleMatch.article_id == NewsArticle.id,
+                    )
+                    .where(
+                        CompanyArticleMatch.company_id == row_company_id,
+                        func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+                        >= window_start,
+                        func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+                        < window_start
+                        + timedelta(minutes=settings.collection_window_minutes),
+                    )
+                    .distinct()
+                )
+            )
+        window = build_feature_window(
+            row_company_id,
+            window_start,
+            state["data_quality"] if state else "complete",
+            state["successful_sources"] if state else sources,
+            state["failed_sources"] if state else [],
+            use_type_nli=False,
+            allow_scoring=True,
+            force_scoring=True,
+            update_events=bool(state is None or state["needs_event_update"]),
+            generate_response_drafts=False,
+        )
+        built += 1
+        scored += int(window.risk_probability is not None)
+    return {"feature_windows": built, "risk_scored_windows": scored}

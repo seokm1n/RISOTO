@@ -177,7 +177,7 @@ def _unlabeled_query(company_id: int | None, limit: int):
                 )
             )
         )
-        .order_by(ArticleFilterResult.filtered_at.desc())
+        .order_by(ArticleFilterResult.filtered_at.desc(), ArticleFilterResult.id.desc())
         .limit(limit)
     )
     if company_id is not None:
@@ -259,7 +259,7 @@ def run_llm_labeling_backlog(db: Session, limit: int | None = None) -> dict:
     return label_articles(db, company_id=None, limit=limit or settings.llm_labeling_batch_size)
 
 
-def audit_sample_candidates(db: Session, user_id: int, limit: int) -> list:
+def audit_sample_candidates(db: Session, user_id: int | None, limit: int) -> list:
     """Blind random sample of LLM-labeled articles a human hasn't cross-checked yet."""
     latest_ids = _latest_filter_result_ids()
     llm_label = aliased(ArticleLabel)
@@ -279,7 +279,7 @@ def audit_sample_candidates(db: Session, user_id: int, limit: int) -> list:
         .join(RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id)
         .join(Company, Company.id == ArticleFilterResult.company_id)
         .where(
-            Company.user_id == user_id,
+            *(([Company.user_id == user_id]) if user_id is not None else []),
             ~exists(
                 select(human_label.id).where(
                     human_label.company_id == ArticleFilterResult.company_id,

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 
 import { api, setCsrfToken } from "./api";
-import WorkspaceApp from "./app/WorkspaceApp";
+import WorkspaceApp from "./features/app/WorkspaceApp";
 import LoginPage from "./features/auth/LoginPage";
+import SignupPage from "./features/auth/SignupPage";
 import { MainCompanyOnboardingPage } from "./features/companies/CompanyPages";
 
 function AuthLoading() {
@@ -59,12 +60,12 @@ export default function App() {
   if (!auth) {
     return <Routes>
       <Route path="/login" element={<LoginPage onAuthenticated={completeAuthentication} />} />
-      <Route path="/signup" element={<LoginPage onAuthenticated={completeAuthentication} />} />
+      <Route path="/signup" element={<SignupPage onAuthenticated={completeAuthentication} />} />
       <Route path="*" element={<Navigate to="/login" replace state={{ from: location }} />} />
     </Routes>;
   }
 
-  if (!auth.has_main_company) {
+  if (auth.user.role !== "admin" && !auth.has_main_company) {
     return <Routes>
       <Route path="/onboarding/main-company" element={<MainCompanyOnboardingPage onCreated={refreshAuth} />} />
       <Route path="*" element={<Navigate to="/onboarding/main-company" replace />} />
@@ -74,11 +75,11 @@ export default function App() {
   const requestedPath = location.state?.from?.pathname;
   const requestedLocation = requestedPath && !["/login", "/signup", "/onboarding/main-company"].includes(requestedPath)
     ? `${requestedPath}${location.state?.from?.search ?? ""}${location.state?.from?.hash ?? ""}`
-    : "/main";
+    : auth.user.role === "admin" ? "/admin/members" : "/main";
 
   return <Routes>
     <Route path="/login" element={<Navigate to={requestedLocation} replace />} />
-    <Route path="/signup" element={<Navigate to="/main" replace />} />
+    <Route path="/signup" element={<Navigate to="/collection" replace />} />
     <Route path="/onboarding/main-company" element={<Navigate to="/main" replace />} />
     <Route path="*" element={<WorkspaceApp session={auth} onLogout={logout} />} />
   </Routes>;
