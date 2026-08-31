@@ -1,40 +1,6 @@
 name: risoto
 
 services:
-  db:
-    profiles: ["local-db"]
-    build:
-      context: ./docker/postgres
-      args:
-        POSTGRES_VERSION: ${POSTGRES_VERSION:-18.4-bookworm}
-        PG_MAJOR: ${PG_MAJOR:-18}
-        PGVECTOR_VERSION: ${PGVECTOR_VERSION:-0.8.6}
-    image: risoto-postgres:${POSTGRES_VERSION:-18.4}-pgvector${PGVECTOR_VERSION:-0.8.6}
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-risoto}
-      POSTGRES_USER: ${POSTGRES_USER:-risoto_app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-      TZ: ${TZ:-Asia/Seoul}
-      PGTZ: ${TZ:-Asia/Seoul}
-    ports:
-      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
-    volumes:
-      # PostgreSQL 18+ stores clusters below a major-version directory.
-      - postgres_data:/var/lib/postgresql
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
-          && psql -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc
-          "SELECT 1 FROM pg_extension WHERE extname = 'vector'" | grep -q 1
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
-
   backend:
     build:
       context: ./backend
@@ -171,8 +137,6 @@ services:
     shm_size: "8gb"
 
 volumes:
-  postgres_data:
-    name: risoto_postgres_data
   frontend_node_modules:
     name: risoto_frontend_node_modules
   huggingface_cache:
