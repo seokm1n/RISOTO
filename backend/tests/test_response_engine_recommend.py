@@ -307,6 +307,7 @@ class PeerImpactViewFixtureTests(unittest.TestCase):
         ratio = _load("alert_peer_view_musinsa.json")["_provenance"]["peer_mention_ratio"]
         self.assertIn("basis", ratio)
         self.assertIn("window", ratio)
+        self.assertGreater(ratio["negative"], 0, "모집단이 0이면 비율 자체가 성립하지 않는다")
         self.assertAlmostEqual(ratio["ratio"],
                                ratio["mentions_peer"] / ratio["negative"], places=3)
 
@@ -369,8 +370,10 @@ class PeerContentGateTests(unittest.TestCase):
     def setUpClass(cls):
         try:
             from app.services.response_engine import service
-        except Exception as exc:  # pydantic ValidationError 등 - DB 설정 없는 환경
-            raise unittest.SkipTest(f"DATABASE_URL 환경이 없어 service를 불러올 수 없습니다: {exc}")
+        except Exception as exc:  # pydantic ValidationError, 드라이버 미설치 등
+            # 원인을 DATABASE_URL로 단정하지 않는다 - 실제로는 DB 드라이버(psycopg) 미설치로
+            # 걸리는 경우가 있고, 메시지가 원인을 가리키면 엉뚱한 곳을 고치게 된다.
+            raise unittest.SkipTest(f"service를 불러올 수 없어 건너뜁니다: {exc}")
         cls.service = service
 
     def _payload(self):
