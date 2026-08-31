@@ -15,21 +15,8 @@ RUN_DB_MIGRATIONS=false
 ```
 
 `DATABASE_URL`은 Docker의 백엔드·학습 컨테이너가 사용하고, `DATABASE_URL_HOST`는
-FastAPI를 Docker 밖의 Windows 가상환경에서 실행할 때 사용할 수 있습니다. 외부 DB를
-사용하는 기본 실행에서는 PostgreSQL 컨테이너가 시작되지 않습니다.
-
-격리된 로컬 PostgreSQL이 별도로 필요할 때만 `local-db` 프로필을 명시합니다.
-
-```powershell
-docker compose --profile local-db up --build -d db
-docker compose --profile local-db exec db psql -U risoto_app -d risoto -c `
-  "SELECT current_setting('server_version') AS postgres_version, extversion AS pgvector_version FROM pg_extension WHERE extname='vector';"
-```
-
-로컬 DB를 사용할 때는 `.env`의 `DATABASE_URL` 호스트를 `db:5432`로 바꾸고,
-Docker 밖에서 접속하는 `DATABASE_URL_HOST`에는 `localhost`와 `POSTGRES_HOST_PORT` 값을
-사용합니다. `docker compose down -v`는 `risoto_postgres_data` 볼륨과 모든 로컬 DB
-데이터를 삭제하므로 초기화가 명확히 필요한 경우에만 사용해야 합니다.
+FastAPI를 Docker 밖의 Windows 가상환경에서 실행할 때 사용할 수 있습니다. Docker
+Compose는 PostgreSQL을 생성하지 않으며 백엔드와 프론트엔드만 기본 실행합니다.
 
 ## FastAPI 백엔드
 
@@ -311,11 +298,11 @@ docker compose restart backend
 
 ### 3. 정답 데이터(라벨) 복원
 
-빈 DB이거나 아직 해당 라벨을 넣지 않은 상태에서 실행합니다. 이미 같은 `id`가 있으면
-충돌합니다.
+외부 PostgreSQL 관리자와 협의한 뒤, 빈 DB이거나 아직 해당 라벨을 넣지 않은 상태에서
+호스트의 `psql`로 복원합니다. 이미 같은 `id`가 있으면 충돌합니다.
 
 ```powershell
-Get-Content ground_truth_labels.sql -Raw | docker compose exec -T db psql -U risoto_app -d risoto
+psql "postgresql://<user>:<password>@<host>:<port>/<database>" -f ground_truth_labels.sql
 ```
 
 ## 위험 사건과 대응 초안
