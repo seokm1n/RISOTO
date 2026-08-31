@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.services.response_engine import recommend
+from app.services.response_engine.risk_types import CODES, get as get_type
 from app.services.response_engine.schema import AlertPayload
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -185,6 +186,36 @@ class RecommendGoldenFixtureTests(unittest.TestCase):
         peer = _load("example_output_peer.json")
         rec = _load("rec_run3.json")["recommendation"]
         self.assertEqual(recommend.verify_recommendation(rec, peer), [])
+
+    def test_fixture_codes_match_engine(self):
+        """픽스처의 유형 코드·사례 ID가 엔진이 실제로 낼 수 있는 값인가.
+
+        골든은 독립 작업본 산출이라 옛 체계(T코드)를 달고 있었다. 그대로 두면
+        KoreanRegulationMapper.lookup이 조용히 빈 목록을 반환해 [참고 법령] 블록이
+        통째로 빠진다 - 실제로 한 번 겪은 함정이라 코드로 잠근다(규칙 5·6과 같은
+        회귀 가드). 사례 ID 형식은 case_search가 만드는 f"WEB-{유형코드}-{순번}"이다.
+        """
+        for peer_name, rec_name in (
+            ("example_output_peer_downside.json", "rec_downside.json"),
+            ("example_output_peer.json", "rec_run3.json"),
+        ):
+            peer = _load(peer_name)
+            code = peer["risk_type"]
+            self.assertIn(code, CODES, peer_name)
+            self.assertEqual(peer["risk_type_label"], get_type(code).label, peer_name)
+
+            available = set()
+            for case in peer.get("cases", []):
+                self.assertTrue(
+                    case["case_id"].startswith(f"WEB-{code}-"),
+                    f"{peer_name}: {case['case_id']}는 유형 {code}의 사례 ID 형식이 아님",
+                )
+                available.add(case["case_id"])
+
+            # 골든 출력의 인용이 입력 사례 안에 있는가(규칙 2와 같은 불변식).
+            # 코드를 재매핑할 때 한쪽만 고치면 여기서 걸린다.
+            cited = set(_load(rec_name)["recommendation"]["cited_case_ids"])
+            self.assertTrue(cited <= available, f"{rec_name}: {cited - available}")
 
 
 class RecommendCallPlumbingTests(unittest.TestCase):
