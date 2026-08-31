@@ -1,0 +1,171 @@
+{
+  "alert_id": "CPNG-20251202-01-MUSINSA",
+  "company_id": "coupang",
+  "company_name": "쿠팡",
+  "industry": "유통",
+  "my_company": "무신사",
+  "main_company_industry": "유통",
+  "window_start": "2025-11-26",
+  "window_end": "2025-12-02",
+  "snapshot_at": "2025-12-02T09:00:00+09:00",
+  "model_version": "lightgbm_auto_v3",
+  "attribution": [
+    {
+      "feature": "negative_ratio",
+      "value": 0.8081180811808119,
+      "baseline": 0.5216,
+      "direction": "up"
+    },
+    {
+      "feature": "mention_count_zscore",
+      "value": 3.256480656072608,
+      "baseline": 0.0,
+      "direction": "up"
+    }
+  ],
+  "mention_count": 271,
+  "baseline_mean": 24.2,
+  "negative_ratio": 0.8081180811808119,
+  "negative_ratio_baseline": 0.5216,
+  "source_mix": {
+    "news": 0.2915129151291513,
+    "blog": 0.0,
+    "cafe": 0.040590405904059,
+    "web": 0.03690036900369,
+    "community": 0.6309963099630996
+  },
+  "n_unique_channels": 114,
+  "daily_series": [
+    {
+      "date": "2025-11-26",
+      "mention_count": 15
+    },
+    {
+      "date": "2025-11-27",
+      "mention_count": 12
+    },
+    {
+      "date": "2025-11-28",
+      "mention_count": 11
+    },
+    {
+      "date": "2025-11-29",
+      "mention_count": 101
+    },
+    {
+      "date": "2025-11-30",
+      "mention_count": 156
+    },
+    {
+      "date": "2025-12-01",
+      "mention_count": 174
+    },
+    {
+      "date": "2025-12-02",
+      "mention_count": 271
+    }
+  ],
+  "n_mentions_7d": 740,
+  "baseline_days": 124,
+  "is_warmup": false,
+  "mentions": [
+    {
+      "mention_id": "m_1",
+      "text": "59900원 이상 사야 쓸 수 있고, 할인 최대 6천원이지만 아무튼 40% 할인쿠폰임 개인정보 유출되더니 지네들 지능도 유출됐나",
+      "source": "ruliweb",
+      "url": "https://bbs.ruliweb.com/community/board/300143/read/73238138?search_type=subject&search_key=%EC%BF%A0%ED%8C%A1&orderby=time&page=197",
+      "published_at": "2025-11-30",
+      "sentiment": "negative",
+      "pick_reason": "window 내 부정·유출 키워드 멘션 중 (유출 직접 언급, engagement, 본문 길이) 상위"
+    },
+    {
+      "mention_id": "m_2",
+      "text": "“한국 소비자들은 데이터 유출 이슈에 상대적으로 민감도가 낮아 고객 이탈은 제한적일 것으로 본다” 고 밝혔다. 하.. 다른 사람들은 모르겠고 일단 나는 해지함",
+      "source": "ruliweb",
+      "url": "https://bbs.ruliweb.com/community/board/300143/read/73268490?search_type=subject&search_key=%EC%BF%A0%ED%8C%A1&orderby=time&page=184",
+      "published_at": "2025-12-02",
+      "sentiment": "negative",
+      "pick_reason": "window 내 부정·유출 키워드 멘션 중 (유출 직접 언급, engagement, 본문 길이) 상위"
+    },
+    {
+      "mention_id": "m_3",
+      "text": "단독]쿠팡 정보 유출 범인은 '중국인 前 직원'…현재 한국에 없어",
+      "source": "ruliweb",
+      "url": "https://bbs.ruliweb.com/community/board/300143/read/73233434?search_type=subject&search_key=%EC%BF%A0%ED%8C%A1&orderby=time&page=199",
+      "published_at": "2025-11-29",
+      "sentiment": "negative",
+      "pick_reason": "window 내 부정·유출 키워드 멘션 중 (유출 직접 언급, engagement, 본문 길이) 상위"
+    },
+    {
+      "mention_id": "m_4",
+      "text": "지들은 그 놈의 보안 보안 거리면서 단기직 계약직 안 가리고 알바들 핸드폰도 못 쓰게 하고 스마트워치도 안 되고 파지 상자에 바코드 붙어있으면 정보유출 된다 쓰레기통에서 송장 발견하면 처벌한다 그리 부려먹고 으름장을 놨으면서 그 ㅈㄹ을 하면서 키운 보안이 얼마나 대단하길래 3천만명이 털리냐 ㅅㅂ",
+      "source": "ruliweb",
+      "url": "https://bbs.ruliweb.com/community/board/300143/read/73266063?search_type=subject&search_key=%EC%BF%A0%ED%8C%A1&orderby=time&page=185",
+      "published_at": "2025-12-02",
+      "sentiment": "negative",
+      "pick_reason": "window 내 부정·유출 키워드 멘션 중 (유출 직접 언급, engagement, 본문 길이) 상위"
+    },
+    {
+      "mention_id": "m_5",
+      "text": "통신사 유출 가입자 식별번호 – 바꿀 수 있음 단말기 식별번호 – 바꿀 수 있음 유심 정보 – 바꿀 수 있음 쿠팡 이름, 이메일, 전화번호, 주소 사실상 대부분은 바꾸기 어려움. 쿠팡에서 유출된 정보들은 현대 사회에서 한 사람을 나타내는 지문 혹은 신원 같은 정보나 마찬가지임. 바꿀 수 없는 정보가 털려버린 것. 그리고 탈취한 사람이 조금만 악의를 가져도 쉽게 이용할 수 있는 정보임. 통신사가 잘했다는 건 아니지만 이번 쿠팡은 정말 심각한 수준",
+      "source": "ruliweb",
+      "url": "https://bbs.ruliweb.com/community/board/300143/read/73255130?search_type=subject&search_key=%EC%BF%A0%ED%8C%A1&orderby=time&page=190",
+      "published_at": "2025-12-01",
+      "sentiment": "negative",
+      "pick_reason": "window 내 부정·유출 키워드 멘션 중 (유출 직접 언급, engagement, 본문 길이) 상위"
+    },
+    {
+      "mention_id": "m_6",
+      "text": "미안 알자마자 신고는 했능데 얼마동안 유출 지속 되었는지는 몰라 그래도 신고는 했음 근데 님 주소랑 이름 다 털림 ㅅㄱ 그래도 카드는 지켰다 잘했지 그럼 문단속 알아서 잘하고 ㅅㄱㄹ .. 누가 인실좃 못 시키나",
+      "source": "ruliweb",
+      "url": "https://bbs.ruliweb.com/community/board/300143/read/73240916?search_type=subject&search_key=%EC%BF%A0%ED%8C%A1&orderby=time&page=195",
+      "published_at": "2025-11-30",
+      "sentiment": "negative",
+      "pick_reason": "window 내 부정·유출 키워드 멘션 중 (유출 직접 언급, engagement, 본문 길이) 상위"
+    }
+  ],
+  "_provenance": {
+    "sources": [
+      "data/upstream/daily_features_auto_labeled_v3.csv",
+      "data/upstream/mentions_classified_checkpoint_v3.csv"
+    ],
+    "alert_day_rule": "2025-12-01~17 is_risk_event_auto=True 중 멘션 수 최대일",
+    "mention_rule": "window 내 쿠팡 negative·normal 멘션 중 유출 키워드 포함, (유출 직접 언급 > engagement > 길이) 상위 6건, URL 중복 제거",
+    "crisis_probability": "미포함 - daily_features에 확률 컬럼 없음, 실값이 없으면 지어내지 않음",
+    "is_risk_event_auto_on_alert_day": "True",
+    "note": "관점 교체 픽스처 — alert_peer_downside.json의 쿠팡 알림 본체를 그대로 두고 우리 기업만 무신사(으)로 바꾼 것. tools/build_view_fixtures.py 산출.",
+    "view_swap": {
+      "base_fixture": "alert_peer_downside.json",
+      "changed_fields": [
+        "alert_id",
+        "my_company",
+        "main_company_industry"
+      ],
+      "my_company": "무신사"
+    },
+    "production_alignment": {
+      "source": "공유 DB 조회 (2026-08-31)",
+      "industry": "industries.name 실값. 계층 없음(parent_id 전부 NULL), 대분류 11개. companies의 '유통' 9행(쿠팡 중복 등록·test 행 포함, 실제 기업 7곳)이 전부 같은 값이고 네이버·카카오는 'IT·플랫폼'(4행). 즉 업종 필드는 동종사끼리 변별력이 0이며, 모델이 우리 기업에 대해 받는 정보는 사실상 회사 이름 하나다.",
+      "dropped": [
+        "main_services",
+        "main_company_services",
+        "role"
+      ],
+      "dropped_reason": "_payload_from_event가 채우지 않는 필드(role은 company_role로 대체). 손으로 넣으면 프로덕션에 없는 입력으로 실험하게 된다.",
+      "company_role": "companies.company_role CheckConstraint는 'main'|'competitor'. 실제 competitor 11행(사용자 2명) 등록됨.",
+      "kept_different": {
+        "mentions": "프로덕션 summary에는 HTML 태그·엔티티가 남고 사건과 무관한 기사가 섞인다. 흉내내면 재는 대상이 '게이트 판별력'에서 '입력 품질'로 바뀌므로 여기서는 게이트 자체를 잰다.",
+        "model_version": "프로덕션은 'risk-detector' 하드코딩(RiskEvent.model_version 컬럼이 있는데도 안 씀). 픽스처는 실제 출처를 유지한다.",
+        "escalation_tier/crisis_probability": "프로덕션은 채우지만 이 사건의 실값이 DB에 없어(2025-12 쿠팡 risk_event 부재) 생략한다."
+      }
+    },
+    "peer_mention_ratio": {
+      "window": "2025-12-01~2025-12-17",
+      "basis": "published_at 기준, sentiment_label=negative 중 (_text|content)+title에 '쿠팡'/'coupang' 포함",
+      "negative": 382,
+      "mentions_peer": 83,
+      "ratio": 0.217
+    }
+  },
+  "company_role": "competitor"
+}
