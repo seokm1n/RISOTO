@@ -78,6 +78,12 @@ class AuthPasswordChangeRequest(BaseModel):
         return self
 
 
+class AuthAccountDeleteRequest(BaseModel):
+    """회원 탈퇴 전 현재 비밀번호를 재확인한다."""
+
+    current_password: str = Field(min_length=8, max_length=128)
+
+
 class AuthUserRead(BaseModel):
     id: int
     email: str
@@ -330,6 +336,7 @@ class MonitoringSummary(BaseModel):
     monitoring_status: str
     analysis_status: str
     article_count: int
+    risk_event_count: int = 0
     analyzed_count: int
     anomaly_count: int
     last_collected_at: datetime | None

@@ -55,6 +55,11 @@ export default function App() {
     }
   }, [applyAuth, navigate]);
 
+  const completeAccountDeletion = useCallback(() => {
+    applyAuth(null);
+    navigate("/login", { replace: true });
+  }, [applyAuth, navigate]);
+
   if (auth === undefined) return <AuthLoading />;
 
   if (!auth) {
@@ -81,6 +86,6 @@ export default function App() {
     <Route path="/login" element={<Navigate to={requestedLocation} replace />} />
     <Route path="/signup" element={<Navigate to="/collection" replace />} />
     <Route path="/onboarding/main-company" element={<Navigate to="/main" replace />} />
-    <Route path="*" element={<WorkspaceApp session={auth} onLogout={logout} />} />
+    <Route path="*" element={<WorkspaceApp session={auth} onLogout={logout} onAccountDeleted={completeAccountDeletion} />} />
   </Routes>;
 }

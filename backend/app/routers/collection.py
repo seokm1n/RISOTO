@@ -24,6 +24,7 @@ from app.models import (
     StoryClusterArticle,
 )
 from app.presenters import risk_event_read
+from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.schemas import (
     ArticleFilterResultPage,
     ArticleFilterResultRead,
@@ -397,6 +398,12 @@ def get_monitoring_summary(
             CompanyArticleMatch.company_id == company_id
         )
     ) or 0
+    risk_event_count = db.scalar(
+        select(func.count()).select_from(RiskEvent).where(
+            RiskEvent.company_id == company_id,
+            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+        )
+    ) or 0
     analyzed_count = db.scalar(
         select(func.count())
         .select_from(CompanyArticleMatch)
@@ -432,6 +439,7 @@ def get_monitoring_summary(
         monitoring_status=company.monitoring_status,
         analysis_status=company.analysis_status,
         article_count=article_count,
+        risk_event_count=risk_event_count,
         analyzed_count=analyzed_count,
         anomaly_count=anomaly_count,
         last_collected_at=company.last_collected_at,
@@ -451,7 +459,8 @@ def get_monitoring_summary(
 @router.get("/companies/{company_id}/risk-events", response_model=list[RiskEventRead])
 def list_risk_events(
     company_id: int,
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=1000),
+    days: int | None = Query(default=None, ge=1, le=365),
     include_legacy: bool = False,
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
@@ -462,6 +471,10 @@ def list_risk_events(
         RiskEvent.company_id == company_id,
         RiskEvent.status != "dismissed",
     )
+    if isinstance(days, int):
+        local_cutoff = datetime.now(SEOUL).date() - timedelta(days=days - 1)
+        cutoff = datetime.combine(local_cutoff, datetime.min.time(), tzinfo=SEOUL).astimezone(timezone.utc)
+        query = query.where(RiskEvent.detected_at >= cutoff)
     if not include_legacy:
         query = query.where(RiskEvent.status != "legacy_candidate")
     events = list(db.scalars(query.order_by(RiskEvent.detected_at.desc()).limit(limit)))

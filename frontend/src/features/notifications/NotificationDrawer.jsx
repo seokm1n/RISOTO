@@ -2,7 +2,10 @@ import { useEffect } from "react";
 
 import { formatDate } from "../../shared/presentation";
 
-function NotificationDrawer({ open, onClose, notifications, error, readIds, onMarkAllRead, onRiskOpen }) {
+const EMPTY_READ_IDS = new Set();
+const NOOP = () => {};
+
+function NotificationDrawer({ open, onClose, notifications, error, readIds = EMPTY_READ_IDS, onMarkAllRead = NOOP, onRiskOpen = NOOP }) {
   const allowedItems = (notifications.items ?? []).filter((item) => item.type === "risk");
 
   useEffect(() => {
@@ -22,7 +25,7 @@ function NotificationDrawer({ open, onClose, notifications, error, readIds, onMa
       <div className="notification-drawer-tabs" aria-label="알림 유형"><span className="active">위험 <strong>{riskCount}</strong></span></div>
       <div className="notification-drawer-tools"><span>읽지 않음 {allowedItems.filter((item) => !readIds.has(item.id)).length}</span><button type="button" onClick={onMarkAllRead}>모두 읽음</button></div>
       {error && <div className="notification-load-error" role="status">알림을 갱신하지 못했습니다. 마지막 결과를 표시합니다.</div>}
-      <div className="notification-drawer-list">{allowedItems.length ? allowedItems.map((item) => <button className={`notification-drawer-item risk ${readIds.has(item.id) ? "read" : "unread"}`} type="button" onClick={() => onRiskOpen(item)} key={item.id}><span className="notification-type-mark" aria-hidden="true" /><div><span>위험 알림</span><strong>{item.title}</strong><p>{item.message}</p><small>{formatDate(item.created_at)}</small></div><b aria-hidden="true">→</b></button>) : <p className="notification-drawer-empty">현재 표시할 알림이 없습니다.</p>}</div>
+      <div className="notification-drawer-list">{allowedItems.length ? allowedItems.map((item) => <button className={`notification-drawer-item risk ${readIds.has(item.id) ? "read" : "unread"}`} type="button" onClick={() => onRiskOpen(item)} key={item.id}><span className="notification-type-mark" aria-hidden="true" /><div><span>위험 알림</span><strong>{item.title}</strong><strong className="notification-article-title risk-event-display-title">{item.message}</strong><small>{formatDate(item.created_at)}</small></div><b aria-hidden="true">→</b></button>) : <p className="notification-drawer-empty">현재 표시할 알림이 없습니다.</p>}</div>
     </aside>
   </div>;
 }

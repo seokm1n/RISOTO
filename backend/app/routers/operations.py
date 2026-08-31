@@ -1,6 +1,7 @@
 """Collection incident, health, feature-window and daily-summary APIs."""
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -26,6 +27,7 @@ from app.schemas import (
 
 
 router = APIRouter(tags=["operations"])
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 def _user_company(db: Session, company_id: int, user_id: int) -> Company:
@@ -195,7 +197,7 @@ def list_daily_summaries(
     auth: CurrentAuth = Depends(require_auth),
 ) -> list[CompanyDailySummary]:
     _user_company(db, company_id, auth.user_id)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+    cutoff = datetime.now(SEOUL).date() - timedelta(days=days - 1)
     return list(
         db.scalars(
             select(CompanyDailySummary)

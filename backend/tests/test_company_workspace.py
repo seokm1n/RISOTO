@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import engine
-from app.models import Company, Industry, User
+from app.models import ArticleFilterResult, Company, Industry, RawNewsArticle, User
 from app.routers.companies import (
     create_main_company,
     create_or_update_company,
@@ -114,6 +114,67 @@ class CompanyRoleDatabaseTests(unittest.TestCase):
         self.assertEqual(stored_competitor.annual_revenue_krw, 1_001_000_000)
         self.assertEqual(stored_competitor.monitoring_status, "active")
         self.assertEqual(competitor.readiness_status, "active")
+
+    def test_delete_competitor_preserves_raw_article_used_as_duplicate_target(self):
+        suffix = uuid4().hex
+        main = create_main_company(
+            self._payload(f"삭제 회귀 메인 {suffix}"),
+            BackgroundTasks(),
+            self.db,
+            self.auth,
+        )
+        competitor = create_or_update_company(
+            self._payload(f"삭제 회귀 경쟁사 {suffix}"),
+            BackgroundTasks(),
+            self.db,
+            self.auth,
+        )
+        canonical_url = f"https://example.com/{suffix}/canonical"
+        duplicate_url = f"https://example.com/{suffix}/duplicate"
+        canonical_raw = RawNewsArticle(
+            source="test",
+            title="중복 판정 기준 기사",
+            url=canonical_url,
+            normalized_url=canonical_url,
+            content_hash=f"canonical-{suffix}",
+            raw_payload={},
+        )
+        duplicate_raw = RawNewsArticle(
+            source="test",
+            title="중복으로 판정된 기사",
+            url=duplicate_url,
+            normalized_url=duplicate_url,
+            content_hash=f"duplicate-{suffix}",
+            raw_payload={},
+        )
+        self.db.add_all([canonical_raw, duplicate_raw])
+        self.db.flush()
+        duplicate_result = ArticleFilterResult(
+            raw_article_id=duplicate_raw.id,
+            company_id=main.id,
+            decision="rejected",
+            reason="duplicate",
+            duplicate_of_raw_id=canonical_raw.id,
+            relevance_score=0.9,
+            advertising_score=0.0,
+            confidence=1.0,
+            classifier_kind="test",
+            filter_version=f"delete-regression-{suffix}",
+            details={},
+        )
+        self.db.add(duplicate_result)
+        self.db.commit()
+        canonical_raw_id = canonical_raw.id
+        duplicate_result_id = duplicate_result.id
+
+        response = delete_company(competitor.id, self.db, self.auth)
+
+        self.assertEqual(response.status_code, 204)
+        self.assertIsNone(self.db.get(Company, competitor.id))
+        self.assertIsNotNone(self.db.get(RawNewsArticle, canonical_raw_id))
+        stored_result = self.db.get(ArticleFilterResult, duplicate_result_id)
+        self.assertIsNotNone(stored_result)
+        self.assertEqual(stored_result.duplicate_of_raw_id, canonical_raw_id)
 
 
 if __name__ == "__main__":

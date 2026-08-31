@@ -7,6 +7,7 @@ import {
   formatDate,
   formatNumber,
   formatPercent,
+  riskEventTitle,
   sentimentKind,
   sentimentText,
 } from "../../shared/presentation";
@@ -284,7 +285,7 @@ export default function MainPage({ onOpenCompany }) {
             {latestRisk ? <div className="main-risk-notice">
               <span className={`severity ${latestRisk.severity}`}>{latestRisk.severity === "critical" ? "긴급" : "주의"}</span>
               <p>{(latestRisk.risk_types ?? []).map((item) => RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type).join(", ") || "위험"} 유형의 위험 신호가 감지되어 대응 보고서를 {responseDrafts.length ? "작성했습니다" : "작성 중입니다"}.</p>
-              <small>{formatDate(latestRisk.detected_at)} · {latestRisk.summary || latestRisk.article_title}</small>
+              <small><span>{formatDate(latestRisk.detected_at)} · </span><strong className="risk-event-display-title">{riskEventTitle(latestRisk)}</strong></small>
             </div> : <p className="panel-empty">최근 감지된 위험이 없습니다.</p>}
           </div>
         </button>

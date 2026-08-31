@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
-import { Metric, PanelTitle } from "../../shared/components";
+import { Metric, PanelTitle, useAppConfirm } from "../../shared/components";
 import {
   DATA_QUALITY_LABELS,
   INCIDENT_STATUS_LABELS,
@@ -22,7 +22,6 @@ const MONITORING_LABELS = {
 function AdminHead({ kicker, title, description }) {
   return <div className="workspace-head admin-workspace-head">
     <div><span className="eyebrow">{kicker}</span><h1>{title}</h1><p>{description}</p></div>
-    <span className="admin-access-mark">ADMIN ONLY</span>
   </div>;
 }
 
@@ -83,15 +82,22 @@ function MembersAdminView() {
 
   useEffect(() => { load(); }, [load]);
 
-  return <section className="workspace admin-workspace">
-    <AdminHead kicker="MEMBER MANAGEMENT / 01" title="회원 관리" description="일반 회원의 가입 현황과 등록 기업을 확인하고, 필요한 경우 비밀번호를 재설정합니다." />
-    {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
-    <div className="metric-grid dashboard-metrics admin-metrics"><Metric label="일반 회원" value={data.total} /><Metric label="관리자 계정" value="1" small /><Metric label="회원당 기업 범위" value="개인별" small /></div>
-    <section className="panel admin-members-panel">
-      <div className="admin-panel-heading"><PanelTitle kicker="GENERAL MEMBERS ONLY" title="일반 회원 목록" /><button className="secondary-button" type="button" onClick={load} disabled={loading}>{loading ? "불러오는 중..." : "새로고침"}</button></div>
-      {loading ? <p className="panel-empty">회원 정보를 불러오는 중입니다.</p> : data.items.length ? <div className="admin-member-table-wrap"><table className="admin-member-table"><thead><tr><th>아이디</th><th>메인 기업</th><th>경쟁사 등록 수</th><th>경쟁사 목록</th><th>가입일</th><th>관리</th></tr></thead><tbody>{data.items.map((member) => <tr key={member.id}><td><strong>{member.email}</strong><small>{member.is_active ? "활성 회원" : "비활성 회원"}</small></td><td>{member.main_company_name || <span className="table-muted">미등록</span>}</td><td>{formatNumber(member.competitor_count)}개</td><td>{member.competitor_names.length ? member.competitor_names.join(", ") : <span className="table-muted">없음</span>}</td><td>{formatDate(member.created_at)}</td><td><button className="table-action-button" type="button" onClick={() => setResetTarget(member)}>비밀번호 재설정</button></td></tr>)}</tbody></table></div> : <p className="panel-empty">가입한 일반 회원이 없습니다.</p>}
-    </section>
-    <p className="admin-footnote">관리자 계정은 이 목록에 노출하지 않습니다. 회원 비밀번호는 해시로 저장되므로 기존 비밀번호를 조회하지 않고 새 비밀번호로만 재설정합니다.</p>
+  return <section className="workspace admin-workspace admin-members-workspace">
+    <div className="admin-members-shell">
+      <AdminHead kicker="MEMBER MANAGEMENT / 01" title="회원 관리" description="일반 회원의 가입 현황과 등록 기업을 확인하고, 필요한 경우 비밀번호를 재설정합니다." />
+      {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
+      <div className="metric-grid dashboard-metrics admin-metrics"><Metric label="일반 회원" value={data.total} /></div>
+      <section className="panel admin-members-panel">
+        <div className="admin-panel-heading">
+          <PanelTitle kicker="GENERAL MEMBERS ONLY" title="일반 회원 목록" />
+          <button className={`admin-refresh-button${loading ? " loading" : ""}`} type="button" onClick={load} disabled={loading} aria-label="회원 목록 새로고침" title={loading ? "회원 목록 불러오는 중" : "회원 목록 새로고침"}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0 1.2 5.2" /><path d="M20 4v7h-7" /></svg>
+          </button>
+        </div>
+        {loading ? <p className="panel-empty">회원 정보를 불러오는 중입니다.</p> : data.items.length ? <div className="admin-member-table-wrap"><table className="admin-member-table"><thead><tr><th>아이디</th><th>메인 기업</th><th>경쟁사 등록 수</th><th>경쟁사 목록</th><th>가입일</th><th>관리</th></tr></thead><tbody>{data.items.map((member) => <tr key={member.id}><td><strong>{member.email}</strong><small>{member.is_active ? "활성 회원" : "비활성 회원"}</small></td><td>{member.main_company_name || <span className="table-muted">미등록</span>}</td><td>{formatNumber(member.competitor_count)}개</td><td>{member.competitor_names.length ? member.competitor_names.join(", ") : <span className="table-muted">없음</span>}</td><td>{formatDate(member.created_at)}</td><td><button className="table-action-button" type="button" onClick={() => setResetTarget(member)}>비밀번호 재설정</button></td></tr>)}</tbody></table></div> : <p className="panel-empty">가입한 일반 회원이 없습니다.</p>}
+      </section>
+      <p className="admin-footnote">관리자 계정은 이 목록에 노출하지 않습니다. 회원 비밀번호는 해시로 저장되므로 기존 비밀번호를 조회하지 않고 새 비밀번호로만 재설정합니다.</p>
+    </div>
     {resetTarget && <MemberPasswordReset member={resetTarget} onClose={() => setResetTarget(null)} onComplete={(message) => { setResetTarget(null); setNotice({ type: "success", message }); }} />}
   </section>;
 }
@@ -112,6 +118,7 @@ function CollectionAdminView() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
   const [notice, setNotice] = useState(null);
+  const { confirm, confirmationDialog } = useAppConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,7 +134,14 @@ function CollectionAdminView() {
 
   const changeAll = async (action) => {
     const label = action === "pause" ? "정지" : "재개";
-    if (!window.confirm(`모든 회원의 수집을 ${label}할까요?`)) return;
+    const confirmed = await confirm({
+      kicker: "COLLECTION CONTROL",
+      title: `모든 회원의 수집을 ${label}할까요?`,
+      message: "모든 일반 회원이 등록한 기업에 적용됩니다.",
+      confirmLabel: label,
+      tone: action === "pause" ? "danger" : "default",
+    });
+    if (!confirmed) return;
     setBusy(action); setNotice(null);
     try {
       const response = await api.post(`/admin/collection/monitoring/${action}`);
@@ -150,6 +164,7 @@ function CollectionAdminView() {
       <section className="panel admin-company-overview"><PanelTitle kicker="ALL REGISTERED COMPANIES" title="기업별 수집 현황" /><div className="admin-company-table-wrap"><table className="admin-company-table"><thead><tr><th>기업</th><th>소유 회원</th><th>구분</th><th>상태</th><th>수집량</th><th>위험량</th><th>마지막 수집</th></tr></thead><tbody>{(data?.companies ?? []).map((company) => <tr key={company.id}><td><strong>{company.name}</strong></td><td>{company.owner_email}</td><td>{company.company_role === "main" ? "나의 기업" : "경쟁사"}</td><td><span className={`admin-status-pill ${company.monitoring_status}`}>{MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</span></td><td>{formatNumber(company.article_count)}건</td><td>{formatNumber(company.risk_count)}건</td><td>{formatDate(company.last_collected_at)}</td></tr>)}</tbody></table></div></section>
       <section className="panel admin-incidents-panel"><PanelTitle kicker="RECENT COLLECTION INCIDENTS" title="최근 수집 장애" /><AdminIncidentList incidents={data?.incidents} companies={data?.companies} /></section>
     </>}
+    {confirmationDialog}
   </section>;
 }
 

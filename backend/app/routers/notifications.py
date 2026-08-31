@@ -6,11 +6,29 @@ from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
 from app.database import get_db
-from app.models import Company, RiskEvent
+from app.models import Company, NewsArticle, RiskEvent, RiskEventArticle
 from app.schemas import NotificationItemRead, NotificationListRead
 
 
 router = APIRouter(tags=["notifications"])
+
+
+def _representative_article_title(db: Session, event: RiskEvent) -> str | None:
+    """Return the strongest evidence article title for a risk notification."""
+    title = db.scalar(
+        select(NewsArticle.title)
+        .join(RiskEventArticle, RiskEventArticle.article_id == NewsArticle.id)
+        .where(RiskEventArticle.risk_event_id == event.id)
+        .order_by(
+            RiskEventArticle.evidence_score.desc(),
+            NewsArticle.published_at.desc().nullslast(),
+            NewsArticle.id.desc(),
+        )
+        .limit(1)
+    )
+    if title or event.article_id is None:
+        return title
+    return db.scalar(select(NewsArticle.title).where(NewsArticle.id == event.article_id))
 
 
 @router.get("/notifications", response_model=NotificationListRead)
@@ -27,19 +45,20 @@ def list_notifications(
             RiskEvent.status.in_(("open", "monitoring")),
         )
     ).all()
-    risk_items = [
-        NotificationItemRead(
+    risk_items = []
+    for event, company in risk_rows:
+        article_title = _representative_article_title(db, event)
+        risk_items.append(NotificationItemRead(
             id=f"risk:{event.id}",
             type="risk",
             title=f"{company.name} 위험 이벤트",
-            message=event.summary
+            message=article_title
+            or event.summary
             or f"{event.severity} 수준의 위험 이벤트가 현재 열려 있습니다.",
             created_at=event.opened_at,
             company_id=company.id,
             risk_event_id=event.id,
-        )
-        for event, company in risk_rows
-    ]
+        ))
 
     items = sorted(
         risk_items,
