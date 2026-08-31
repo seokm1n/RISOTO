@@ -162,7 +162,7 @@ function RiskDetail({ risk, canReview = false }) {
 }
 
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
-export default function AnalysisStatisticsPage({ initialCompanyId, initialRiskEventId = null, canAdminister = false, onCompanyChange }) {
+export default function AnalysisStatisticsPage({ initialCompanyId, initialRiskEventId = null, canAdminister = false }) {
   const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
   const [data, setData] = useState(null); const [error, setError] = useState(null);
   const [articlePage, setArticlePage] = useState(1);
@@ -182,11 +182,11 @@ export default function AnalysisStatisticsPage({ initialCompanyId, initialRiskEv
       if (requestId !== refreshSequence.current) return;
       setCompanies(nextCompanies);
       const requestedCompany = nextCompanies.find((company) => String(company.id) === String(selectedId));
-      const id = requestedCompany?.id ?? nextCompanies[0]?.id;
+      const mainCompany = nextCompanies.find((company) => company.company_role === "main");
+      const id = requestedCompany?.id ?? mainCompany?.id ?? nextCompanies[0]?.id;
       if (!id) { setData(null); return; }
       if (String(id) !== String(selectedId)) {
         setSelectedId(String(id));
-        onCompanyChange?.(id, { replace: true });
       }
       const filterDecision = displayMode === FILTERED_DATA_MODE
         ? "rejected"
@@ -206,12 +206,14 @@ export default function AnalysisStatisticsPage({ initialCompanyId, initialRiskEv
       if (!filterDecision) setArticleSources(articles.data.sources);
       setData({ monitoring: monitoring.data, articles: articles.data, articleKind: filterDecision ? "filter_results" : "articles", articleDecision: filterDecision, risks: risks.data, filtering: filtering.data, windows: windows.data, dailySummaries: dailySummaries.data }); setError(null);
     } catch (requestError) { if (requestId === refreshSequence.current) setError(getErrorMessage(requestError)); }
-  }, [selectedId, articlePage, displayMode, onCompanyChange]);
+  }, [selectedId, articlePage, displayMode]);
   // 수집 주기보다 빠른 30초 간격으로 서버 현황을 다시 조회한다.
   useEffect(() => { refresh(); const timer = window.setInterval(refresh, 30000); return () => { window.clearInterval(timer); refreshSequence.current += 1; }; }, [refresh]);
   // 서버 요청 없이 카운트다운 표시만 매초 다시 계산하도록 현재 시각을 갱신한다.
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const selected = companies.find((company) => String(company.id) === String(selectedId));
+  const mainCompanies = companies.filter((company) => company.company_role === "main");
+  const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   // API에서 가져온 최근 위험 200건은 추가 요청 없이 화면에서 10건씩 나눠 보여 준다.
   const riskPageSize = 10;
   const visibleRisks = data?.risks.slice((riskPage - 1) * riskPageSize, riskPage * riskPageSize) ?? [];
@@ -267,7 +269,7 @@ export default function AnalysisStatisticsPage({ initialCompanyId, initialRiskEv
     finally { setChangingState(false); }
   };
   return <section className="workspace analysis-statistics-workspace"><div className="workspace-head"><div><p>기업별 수집량과 위험도 추세, 위험 근거와 대응 초안을 한곳에서 확인합니다.</p></div></div>
-    <div className="monitor-toolbar"><label><span className="analysis-field-label">분석 기업</span><select value={selectedId} onChange={(event) => { const nextCompanyId = event.target.value; setSelectedId(nextCompanyId); setArticlePage(1); setRiskPage(1); setSelectedRiskId(null); setDisplayMode(""); setArticleSources([]); onCompanyChange?.(nextCompanyId); }}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name} · {company.company_role === "main" ? "나의 기업" : "경쟁사"}</option>)}</select></label>{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}{selected && <><span className={`state-badge ${selected.monitoring_status}`}>{MONITORING_LABELS[selected.monitoring_status]}</span>{canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}</>}</div>
+    <div className="monitor-toolbar"><label><span className="analysis-field-label">분석 기업</span><select value={selectedId} onChange={(event) => { const nextCompanyId = event.target.value; setSelectedId(nextCompanyId); setArticlePage(1); setRiskPage(1); setSelectedRiskId(null); setDisplayMode(""); setArticleSources([]); }}>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="경쟁사">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label>{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}{selected && <><span className={`state-badge ${selected.monitoring_status}`}>{MONITORING_LABELS[selected.monitoring_status]}</span>{canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}</>}</div>
     {error && <div className="notice error">{error}</div>}
     {!selected ? <p className="empty-state">먼저 기업 등록 페이지에서 모니터링할 기업을 등록해 주세요.</p> : data && <>
       <DetailTrendGraph windows={dailyTrendPoints} label={selected.name} />

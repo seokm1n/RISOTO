@@ -241,6 +241,7 @@ export default function MainPage({ onOpenCompany }) {
   const goToDetail = (riskEventId) => mainId && onOpenCompany(mainId, riskEventId ?? null);
 
   return <section className="workspace main-workspace">
+    <div className="main-page-shell">
     <div className="workspace-head">
       <div className="main-workspace-heading"><span className="eyebrow">MY COMPANY</span><h1>{mainCompany ? <button className="company-name-link main-company-name" type="button" onClick={() => onOpenCompany(mainCompany.id)}>나의 기업 - {mainCompany.name}</button> : "나의 기업"}</h1><div className="main-workspace-subhead"><p className="main-lead">나의 기업의 수집 현황, 위험 신호와 대응 상태를 한 화면에서 확인합니다.</p>{mainCompany && <span className={`main-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} role="status" aria-live="polite"><i className="main-live-spinner" aria-hidden="true" />{mainCollectionRunning ? "실시간 수집중" : "수집 중지"}</span>}</div></div>
     </div>
@@ -289,5 +290,6 @@ export default function MainPage({ onOpenCompany }) {
         </button>
       </div>
     </div>}
+    </div>
   </section>;
 }
