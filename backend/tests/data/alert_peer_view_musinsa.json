@@ -145,7 +145,7 @@
     },
     "production_alignment": {
       "source": "공유 DB 조회 (2026-08-31)",
-      "industry": "industries.name 실값 — 이커머스 9개사 전부 '유통', 네이버·카카오만 'IT·플랫폼'. 계층 없음(parent_id 전부 NULL). 즉 업종 필드는 동종사끼리 변별력이 0이며, 모델이 우리 기업에 대해 받는 정보는 사실상 회사 이름 하나다.",
+      "industry": "industries.name 실값. 계층 없음(parent_id 전부 NULL), 대분류 11개. companies의 '유통' 9행(쿠팡 중복 등록·test 행 포함, 실제 기업 7곳)이 전부 같은 값이고 네이버·카카오는 'IT·플랫폼'(4행). 즉 업종 필드는 동종사끼리 변별력이 0이며, 모델이 우리 기업에 대해 받는 정보는 사실상 회사 이름 하나다.",
       "dropped": [
         "main_services",
         "main_company_services",

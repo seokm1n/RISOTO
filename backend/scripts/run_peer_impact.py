@@ -36,9 +36,6 @@ from app.services.response_engine._llm import response_model
 from app.services.response_engine.risk_types import get as get_type
 from app.services.response_engine.schema import AlertPayload
 
-# service._build_peer_content가 analyze 결과를 담는 peer dict와 같은 모양으로 낸다.
-# 이 모양이어야 run_peer_recommend.py와 tests/data의 골든이 그대로 읽는다.
-
 
 def _print_prompts(payload: AlertPayload) -> None:
     """LLM 호출 지점을 가로채 조립된 프롬프트만 출력한다(비용 0)."""
@@ -66,12 +63,20 @@ def _print_prompts(payload: AlertPayload) -> None:
 
 
 def _peer_dict(raw: dict, payload: AlertPayload, analysis: dict, model_name: str) -> dict:
-    """service._build_peer_content의 peer dict를 그대로 옮긴 것. 저쪽이 바뀌면 여기도."""
+    """service._build_peer_content의 peer dict를 그대로 옮긴 것. 저쪽이 바뀌면 여기도.
+
+    이 모양이어야 run_peer_recommend.py와 tests/data의 골든이 그대로 읽는다(recommend가
+    읽는 키 13개를 모두 포함한다). 골든에 있는 evidence_summary는 recommend가 읽지 않아
+    넣지 않는다.
+    """
     rt = get_type(analysis["risk_type"])
     return {
         "company_name": payload.company_name,
         "main_company_name": payload.main_company_name,
         "alert_id": payload.alert_id,
+        # 엔진 내부 역할 값(company.CompanyRole.PEER)이다. DB companies.company_role의
+        # 실값 'competitor'와는 층위가 다르다 - 입력 페이로드는 DB 값을, 이 산출은 엔진
+        # 값을 쓴다(resolve_role이 둘을 잇는다). 기존 골든도 여기서는 'peer'다.
         "role": "peer",
         "risk_type": analysis["risk_type"],
         "risk_type_label": rt.label,
@@ -137,6 +142,10 @@ def main() -> None:
                         help="조립된 프롬프트만 출력하고 끝낸다 (LLM 호출 없음)")
     parser.add_argument("--out-dir", help="판정 결과 JSON을 저장할 디렉터리")
     args = parser.parse_args()
+
+    if args.dry_run and args.out_dir:
+        # 조용히 무시하면 "저장했겠지" 하고 넘어간다. 실측 산출은 --dry-run이 아닐 때만 난다.
+        print("[알림] --dry-run에서는 저장할 판정 결과가 없어 --out-dir을 무시합니다.")
 
     if not args.dry_run:
         # app.config.Settings는 SettingsConfigDict에 env_file이 없어 **환경변수만** 읽는다
