@@ -25,7 +25,7 @@ import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "요약", path: "/main" },
   { id: "collection", label: "수집 현황", path: "/collection" },
-  { id: "statistics", label: "분석 통계", path: "/companies/overview" },
+  { id: "statistics", label: "분석 통계", path: "/companies/main" },
   { id: "companies", label: "기업 목록", path: "/companies" },
 ];
 
@@ -65,33 +65,29 @@ const pageFromPath = (pathname) => {
   return "collection";
 };
 
-function AnalysisStatisticsRoute({ canAdminister, onCompanyChange }) {
-  const { companyId } = useParams();
+function AnalysisStatisticsRoute({ canAdminister }) {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const normalizedCompanyId = companyId ? numericParam(companyId) : null;
+  const normalizedCompanyId = numericParam(location.state?.companyId);
   const riskEventId = numericParam(searchParams.get("riskEventId"));
 
-  if (companyId && !normalizedCompanyId) return <Navigate to="/companies/overview" replace />;
   return <AnalysisStatisticsPage
-    key={normalizedCompanyId ?? "overview"}
+    key={normalizedCompanyId ?? "main"}
     initialCompanyId={normalizedCompanyId}
     initialRiskEventId={riskEventId ? Number(riskEventId) : null}
     canAdminister={canAdminister}
-    onCompanyChange={onCompanyChange}
   />;
 }
 
-function MainCompanyOverviewRedirect() {
-  const [mainCompanyId, setMainCompanyId] = useState(undefined);
-  useEffect(() => {
-    let active = true;
-    api.get("/companies").then((response) => {
-      if (active) setMainCompanyId(response.data.find((company) => company.company_role === "main")?.id ?? null);
-    }).catch(() => active && setMainCompanyId(null));
-    return () => { active = false; };
-  }, []);
-  if (mainCompanyId === undefined) return <p className="empty-state">나의 기업을 불러오는 중입니다.</p>;
-  return <Navigate to={mainCompanyId ? `/companies/${mainCompanyId}` : "/companies"} replace />;
+function LegacyAnalysisStatisticsRedirect() {
+  const { companyId } = useParams();
+  const location = useLocation();
+  const normalizedCompanyId = numericParam(companyId);
+  return <Navigate
+    to={`/companies/main${location.search}`}
+    replace
+    state={normalizedCompanyId ? { companyId: normalizedCompanyId } : undefined}
+  />;
 }
 
 // 인증된 사용자에게 공통 관리 기능과 URL 기반 화면을 제공한다.
@@ -140,14 +136,12 @@ export default function WorkspaceApp({ session, onLogout }) {
   }, [location.pathname, location.search, navigate]);
 
   const openAnalysisStatistics = useCallback((companyId, riskEventId = null, options) => {
-    if (!companyId) { goTo("/companies/overview", options); return; }
     const riskQuery = riskEventId ? `?riskEventId=${encodeURIComponent(riskEventId)}` : "";
-    goTo(`/companies/${encodeURIComponent(companyId)}${riskQuery}`, options);
+    const navigationOptions = companyId
+      ? { ...options, state: { ...(options?.state ?? {}), companyId: String(companyId) } }
+      : options;
+    goTo(`/companies/main${riskQuery}`, navigationOptions);
   }, [goTo]);
-
-  const changeStatisticsCompany = useCallback((companyId, options) => {
-    openAnalysisStatistics(companyId, null, options);
-  }, [openAnalysisStatistics]);
 
   const logout = () => {
     if (managementDirty && page === "companies" && !window.confirm("저장하지 않은 변경사항을 버리고 로그아웃할까요?")) return;
@@ -191,8 +185,9 @@ export default function WorkspaceApp({ session, onLogout }) {
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
-      <Route path="/companies/overview" element={<MainCompanyOverviewRedirect />} />
-      <Route path="/companies/:companyId" element={<AnalysisStatisticsRoute canAdminister onCompanyChange={changeStatisticsCompany} />} />
+      <Route path="/companies/main" element={<AnalysisStatisticsRoute canAdminister />} />
+      <Route path="/companies/overview" element={<Navigate to="/companies/main" replace />} />
+      <Route path="/companies/:companyId" element={<LegacyAnalysisStatisticsRedirect />} />
       <Route path="/operations" element={<Navigate to="/main" replace />} />
       <Route path="/models" element={<Navigate to="/main" replace />} />
       <Route path="/reviews" element={<Navigate to="/main" replace />} />

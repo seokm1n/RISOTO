@@ -4,6 +4,7 @@
 /* 전역 색상과 브라우저 기본 요소 */
 :root {
   --font-soft: "NanumSquareRound", "Pretendard", "Noto Sans KR", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif;
+  --section-title-size: clamp(1.65rem, 2.5vw, 2.35rem);
   --success-strong: #3f7653;
   --success: #5f8c6b;
   --success-soft: #e5efe6;
@@ -366,7 +367,19 @@ button { cursor: pointer; }
    와이드하게 펼치고 여백을 줄여 스크롤 없이 한 화면에 담는다. 박스는 배경보다
    또렷한 리소토 톤(사프란 오렌지)으로 띄워서 카드 경계가 보이도록 한다. */
 .workspace.main-workspace { display: flex; flex-direction: column; max-width: none; height: calc(100svh - 58px); min-height: 0; padding: 22px 5vw 26px; }
+.main-page-shell {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 24px;
+  border: 1px solid rgba(180, 96, 42, .16);
+  border-radius: 16px;
+  background: linear-gradient(165deg, #fbf3e5 0%, #f8ecd9 100%);
+  box-shadow: 0 8px 20px rgba(140, 76, 32, .06);
+}
 .main-workspace .workspace-head { flex: 0 0 auto; align-items: center; margin-bottom: 18px; }
+.main-page-shell .workspace-head { padding-bottom: 16px; border-bottom: 1px solid rgba(180, 96, 42, .2); }
 .main-workspace-heading { width: 100%; }
 .main-workspace-subhead { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 24px; }
 .main-workspace .workspace-head .eyebrow { color: #8a4310; font-weight: 800; }
@@ -887,6 +900,16 @@ button { cursor: pointer; }
 .span-two { grid-column: span 2; }
 .panel-title { margin-bottom: 19px; padding-bottom: 17px; border-bottom: 1px solid rgba(48,43,41,.12); }
 .panel-title h2 { margin: 9px 0 0; font: 400 1.45rem/1 var(--font-soft); letter-spacing: -.04em; }
+.main-workspace .workspace-head h1,
+.main-workspace .panel-title h2,
+.collection-workspace .panel-title h2,
+.analysis-statistics-workspace .panel-title h2,
+.company-admin-page .company-role-section-title h3 {
+  margin: 10px 0 0;
+  color: #2e1f14;
+  font: 800 var(--section-title-size)/1 var(--font-soft);
+  letter-spacing: -.05em;
+}
 .source-filter { display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin: -6px 0 10px; color: #706965; font-size: .68rem; font-weight: 700; }
 .source-filter select { min-width: 170px; border: 1px solid #cbc8bd; background: #fffdf7; padding: 8px 10px; color: #302b29; }
 .panel-empty { margin: 20px 0; color: #807975; font-size: .82rem; }
