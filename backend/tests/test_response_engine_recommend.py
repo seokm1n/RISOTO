@@ -4,6 +4,8 @@
   - 부정적_파급: alert_peer_downside(2025-12 쿠팡 유출 실제 멘션) -> example_output_peer_downside
     (영향 판단 산출) -> rec_downside(추천 산출, 담당자 검수 완료)
   - 반사이익: example_output_peer(쿠팡 정산 이슈) -> rec_run3
+  - 관점 교체: alert_peer_view_musinsa(위 downside 알림의 우리 기업만 무신사로) ->
+    example_output_peer_noimpact(영향 판단 산출, 실측 대기)
 골든 비교는 바이트 동일성이 아니라 **규칙 준수 불변식**으로 한다 - 법령 소스가
 KoreanRegulationMapper로 바뀌며 프롬프트가 달라지는 것은 의도된 개선이기 때문이다.
 
@@ -268,6 +270,72 @@ class RecommendGoldenFixtureTests(unittest.TestCase):
             # 코드를 재매핑할 때 한쪽만 고치면 여기서 걸린다.
             cited = set(_load(rec_name)["recommendation"]["cited_case_ids"])
             self.assertTrue(cited <= available, f"{rec_name}: {cited - available}")
+
+
+class PeerImpactViewFixtureTests(unittest.TestCase):
+    """관점 교체 실험의 통제 조건과 영향_없음 골든(Phase 1-3·1-4).
+
+    영향 판단은 동종 경로의 비용 통제 지점이다 - `proceed`가 False면 사례 검색도 추천
+    생성도 부르지 않는다. 그런데 "같은 업계라는 이유만으로 영향 있음이 되지는 않는가",
+    즉 **게이트에 판별력이 있는가**는 지금까지 스텁으로만 확인했다(PeerContentGateTests).
+
+    실측 설계: 2025-12 쿠팡 유출 알림 하나를 고정하고 **우리 기업만** 갈아끼운다.
+    판정이 갈리면 그 원인은 우리 기업뿐이다. 아래 첫 테스트가 그 '고정'을 코드로 잠근다 -
+    누가 한쪽 픽스처만 손대면 대조 실험이 조용히 깨지므로 회귀 가드가 필요하다.
+    """
+
+    # 관점 교체가 바꾸기로 선언한 필드. 이 넷(+출처 기록) 말고 달라지면 통제 조건 위반이다.
+    SWAPPED = {"alert_id", "my_company", "main_company_industry",
+               "main_company_services", "_provenance"}
+
+    def test_view_fixture_changes_only_our_company(self):
+        base = _load("alert_peer_downside.json")
+        view = _load("alert_peer_view_musinsa.json")
+        self.assertEqual(set(base), set(view), "관점 교체 픽스처에 키가 늘거나 빠짐")
+        for key in set(base) - self.SWAPPED:
+            self.assertEqual(base[key], view[key],
+                             f"{key}가 본체와 다름 - 우리 기업 외 변인이 섞였다")
+        self.assertEqual(base["my_company"], "11번가")
+        self.assertEqual(view["my_company"], "무신사")
+
+    def test_view_fixture_records_measurement_basis(self):
+        """비율 수치는 산정 기준과 함께 있어야 한다.
+
+        같은 '90%'도 분자를 본문만 볼지 제목까지 볼지에 따라 달라진다(작업 로그에
+        75%와 90%가 함께 남은 이유). 수치만 있고 기준이 없으면 나중에 재현이 안 된다.
+        """
+        ratio = _load("alert_peer_view_musinsa.json")["_provenance"]["peer_mention_ratio"]
+        self.assertIn("basis", ratio)
+        self.assertIn("window", ratio)
+        self.assertAlmostEqual(ratio["ratio"],
+                               ratio["mentions_peer"] / ratio["negative"], places=3)
+
+    def test_noimpact_golden(self):
+        """영향_없음 실측 골든이 게이트 계약을 지키는가.
+
+        골든이 아직 없으면 건너뛴다 - 이 산출에는 LLM 호출이 필요한데 2026-08-31 현재
+        OpenAI 크레딧이 소진돼 있다. 파일이 놓이는 순간 이 테스트가 살아난다.
+        """
+        path = DATA_DIR / "example_output_peer_noimpact.json"
+        if not path.exists():
+            self.skipTest(
+                "영향_없음 골든 미생성(크레딧 대기). 생성 방법: cd backend && "
+                "python -m scripts.run_peer_impact "
+                "tests/data/alert_peer_view_musinsa.json --out-dir tests/data "
+                "-> 판정이 영향_없음인 산출을 example_output_peer_noimpact.json으로 저장"
+            )
+        peer = json.loads(path.read_text(encoding="utf-8"))
+        # 게이트 계약: 영향_없음이면 경로도 관찰 대상도 없고 다음 단계로 넘어가지 않는다.
+        self.assertEqual(peer["impact_direction"], "영향_없음")
+        self.assertFalse(peer["proceed"])
+        self.assertEqual(peer["impact_channels"], [])
+        self.assertEqual(peer["impact_level"], "없음")
+        self.assertEqual(peer["watch_points"], [])
+        self.assertEqual(peer["status"], "영향없음_종료")
+        self.assertEqual(peer["cases"], [])
+        # 픽스처 코드 가드(test_fixture_codes_match_engine과 같은 취지).
+        self.assertIn(peer["risk_type"], CODES)
+        self.assertEqual(peer["risk_type_label"], get_type(peer["risk_type"]).label)
 
 
 class RecommendCallPlumbingTests(unittest.TestCase):
