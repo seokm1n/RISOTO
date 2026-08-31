@@ -17,6 +17,8 @@ content 구조는 기존 v2 계약과 다르므로 SCHEMA_VERSION을 3으로 올
 from __future__ import annotations
 
 import logging
+import html
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
@@ -61,20 +63,49 @@ def _detection_scores(event: RiskEvent) -> dict[str, float] | str:
     return event.primary_type or "reputation_consumer"
 
 
+MAX_EVIDENCE_ARTICLES = 10
+
+# 수집기가 붙이는 강조 태그만 지운다. 실측상 <b>가 3,362건으로 거의 전부이고 나머지는
+# 오검출이었다. `<[^>]*>` 같은 일반 제거를 쓰면 안 되는데, 국내 기사 본문이 꺾쇠를
+# 제목 표기에 쓰기 때문이다 - <처음부터 끝까지 혼자서 보험>, <2026년 8월26일(수)>처럼
+# 지워지면 안 되는 것이 함께 사라진다. HTML을 남기는 것보다 나쁜 결과가 된다.
+_HTML_TAG = re.compile(r"</?(?:b|i|u|em|strong|span|p|br|div|a|img|font)\b[^>]*>", re.I)
+
+
+def clean_text(text: str | None) -> str:
+    """기사 요약에서 강조 태그와 HTML 엔티티를 걷어낸다.
+
+    순서가 중요하다. 태그를 먼저 지우고 엔티티를 푼다 - 반대로 하면 `&lt;b&gt;`가 실제
+    태그로 복원되어 다시 걸린다. 실측 엔티티는 &#39;(383건), &#34;(232건)가 대부분이다.
+    """
+    return re.sub(r"\s{2,}", " ", html.unescape(_HTML_TAG.sub("", text or ""))).strip()
+
+
 def _payload_from_event(db, event: RiskEvent, company: Company) -> AlertPayload:
-    """DB의 RiskEvent를 대응 엔진 입력으로 옮긴다."""
+    """DB의 RiskEvent를 대응 엔진 입력으로 옮긴다.
+
+    **정렬이 반드시 있어야 한다**: 한 이벤트에 기사가 수백 건 붙는다(실측 최대 661건).
+    ORDER BY 없이 LIMIT만 걸면 PostgreSQL이 순서를 보장하지 않아, 같은 이벤트를 다시
+    돌렸을 때 다른 기사 10건이 뽑히고 결론이 달라진다. 재현되지 않는 산출물은 비교도
+    검증도 할 수 없다. 근거 점수가 높은 것부터 가져오고, 동점은 id로 갈라 확정한다.
+    """
     articles = db.scalars(
         select(NewsArticle)
         .join(RiskEventArticle, RiskEventArticle.article_id == NewsArticle.id)
         .where(RiskEventArticle.risk_event_id == event.id)
-        .limit(10)
+        .order_by(
+            RiskEventArticle.evidence_score.desc().nullslast(),
+            NewsArticle.published_at.desc().nullslast(),
+            NewsArticle.id.desc(),
+        )
+        .limit(MAX_EVIDENCE_ARTICLES)
     ).all()
 
     mentions = [
         {
             "mention_id": str(a.id),
             "source": getattr(a, "source", None),
-            "text": (a.summary or a.title or "")[:600],
+            "text": clean_text(a.summary or a.title)[:600],
             "url": a.url,
             "published_at": a.published_at.isoformat() if a.published_at else None,
             "sentiment": a.sentiment_label,
@@ -88,11 +119,42 @@ def _payload_from_event(db, event: RiskEvent, company: Company) -> AlertPayload:
         "company_name": company.name,
         "industry": _industry_name(db, company),
         "crisis_probability": event.risk_probability,
-        "model_version": "risk-detector",
+        # 어느 탐지 모델이 낸 경보인지 대응 산출에서 추적할 수 있어야 한다. 컬럼에 실제
+        # 버전(lightgbm_auto_v3 등)이 들어 있는데 고정 문자열을 쓰고 있었다.
+        "model_version": event.model_version or "risk-detector",
         "escalation_tier": event.severity,
         "mentions": mentions,
         "company_role": getattr(company, "company_role", "main"),
     })
+
+
+def _no_evidence_content(event: RiskEvent, generation_kind: str, target_company: Company) -> dict:
+    """근거 기사가 없을 때 저장할 내용. LLM을 부르지 않는다.
+
+    프런트가 두 경로의 초안을 함께 그리므로 status와 generation_kind는 같은 자리에 둔다.
+    사람이 무엇을 해야 하는지가 유일하게 중요한 정보라 needs_review와 사유만 남긴다.
+    """
+    return {
+        "engine": "response_engine",
+        "status": "근거부족_보류",
+        "generation_kind": generation_kind,
+        "main_company_name": target_company.name,
+        "needs_review": True,
+        "review_reason": (
+            "이 위기 이벤트에 연결된 근거 기사가 없어 대응방안을 생성하지 않았습니다. "
+            "탐지 경보만 있고 원문이 없는 상태이므로, 수집 파이프라인에서 기사 연결이 "
+            "누락됐는지 먼저 확인해야 합니다."
+        ),
+        "detection": {
+            "risk_probability": event.risk_probability,
+            "severity": event.severity,
+            "model_version": event.model_version,
+        },
+        "scenarios": [],
+        "recommendation": None,
+        "evidence": [],
+        "usage": {"input_tokens": 0, "output_tokens": 0, "calls": 0},
+    }
 
 
 def _industry_name(db, company: Company) -> str | None:
@@ -153,7 +215,14 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             payload.main_company_name = target_company.name
             payload.main_company_industry = _industry_name(db, target_company)
 
-        if generation_kind == COMPETITOR_IMPACT:
+        if not payload.mentions:
+            # 근거 기사가 하나도 없는 이벤트가 실재한다(공유 DB 실측 123건, 최고 확률
+            # 0.94 critical 포함). 이대로 넘기면 원문 샘플이 "(원문 없음)"인 채로 모델이
+            # 유형·방향·확신도를 확정한다. 근거 없는 판정을 정상 산출물로 저장하는 것이
+            # 가장 나쁜 결과이므로, LLM을 부르지 않고 사람이 보게 남긴다.
+            content = _no_evidence_content(event, generation_kind, target_company)
+            allowed_urls, model_name = set(), response_model()
+        elif generation_kind == COMPETITOR_IMPACT:
             content, allowed_urls, model_name = _build_peer_content(db, payload)
         else:
             content, allowed_urls, model_name = _build_content(
