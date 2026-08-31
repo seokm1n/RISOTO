@@ -1,9 +1,9 @@
 {
-  "alert_id": "CPNG-20251202-01-MUSINSA",
+  "alert_id": "CPNG-20251202-01-11ST",
   "company_id": "coupang",
   "company_name": "쿠팡",
   "industry": "유통",
-  "my_company": "무신사",
+  "my_company": "11번가",
   "main_company_industry": "유통",
   "window_start": "2025-11-26",
   "window_end": "2025-12-02",
@@ -133,7 +133,7 @@
     "mention_rule": "window 내 쿠팡 negative·normal 멘션 중 유출 키워드 포함, (유출 직접 언급 > engagement > 길이) 상위 6건, URL 중복 제거",
     "crisis_probability": "미포함 - daily_features에 확률 컬럼 없음, 실값이 없으면 지어내지 않음",
     "is_risk_event_auto_on_alert_day": "True",
-    "note": "관점 교체 픽스처 — alert_peer_downside.json의 쿠팡 알림 본체를 그대로 두고 우리 기업만 무신사(으)로 바꾼 것. tools/build_view_fixtures.py 산출.",
+    "note": "관점 교체 픽스처 — alert_peer_downside.json의 쿠팡 알림 본체를 그대로 두고 우리 기업만 11번가(으)로 바꾼 것. tools/build_view_fixtures.py 산출.",
     "view_swap": {
       "base_fixture": "alert_peer_downside.json",
       "changed_fields": [
@@ -141,7 +141,7 @@
         "my_company",
         "main_company_industry"
       ],
-      "my_company": "무신사"
+      "my_company": "11번가"
     },
     "production_alignment": {
       "source": "공유 DB 조회 (2026-08-31)",
@@ -162,9 +162,9 @@
     "peer_mention_ratio": {
       "window": "2025-12-01~2025-12-17",
       "basis": "published_at 기준, sentiment_label=negative 중 (_text|content)+title에 '쿠팡'/'coupang' 포함",
-      "negative": 382,
-      "mentions_peer": 83,
-      "ratio": 0.217
+      "negative": 363,
+      "mentions_peer": 325,
+      "ratio": 0.895
     }
   },
   "company_role": "competitor"

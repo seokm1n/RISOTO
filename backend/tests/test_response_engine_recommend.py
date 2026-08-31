@@ -4,8 +4,8 @@
   - 부정적_파급: alert_peer_downside(2025-12 쿠팡 유출 실제 멘션) -> example_output_peer_downside
     (영향 판단 산출) -> rec_downside(추천 산출, 담당자 검수 완료)
   - 반사이익: example_output_peer(쿠팡 정산 이슈) -> rec_run3
-  - 관점 교체: alert_peer_view_musinsa(위 downside 알림의 우리 기업만 무신사로) ->
-    example_output_peer_noimpact(영향 판단 산출, 실측 대기)
+  - 관점 교체: alert_peer_view_musinsa / _11st(위 downside 알림의 우리 기업만 교체,
+    프로덕션 페이로드 모양으로 정렬) -> example_output_peer_noimpact(영향 판단 산출, 실측 대기)
 골든 비교는 바이트 동일성이 아니라 **규칙 준수 불변식**으로 한다 - 법령 소스가
 KoreanRegulationMapper로 바뀌며 프롬프트가 달라지는 것은 의도된 개선이기 때문이다.
 
@@ -279,37 +279,87 @@ class PeerImpactViewFixtureTests(unittest.TestCase):
     생성도 부르지 않는다. 그런데 "같은 업계라는 이유만으로 영향 있음이 되지는 않는가",
     즉 **게이트에 판별력이 있는가**는 지금까지 스텁으로만 확인했다(PeerContentGateTests).
 
-    실측 설계: 2025-12 쿠팡 유출 알림 하나를 고정하고 **우리 기업만** 갈아끼운다.
-    판정이 갈리면 그 원인은 우리 기업뿐이다. 아래 첫 테스트가 그 '고정'을 코드로 잠근다 -
-    누가 한쪽 픽스처만 손대면 대조 실험이 조용히 깨지므로 회귀 가드가 필요하다.
+    실측 설계: 2025-12 쿠팡 유출 알림 하나를 고정하고 **우리 기업만** 갈아끼운다. 공유 DB
+    실측(2026-08-31) 결과 프로덕션이 우리 기업에 대해 넘기는 것은 이름과 업종뿐이고,
+    이커머스 9개사의 업종이 전부 '유통'이라 **두 arm의 프롬프트 차이는 회사 이름 하나**로
+    좁혀진다. 판정이 갈리면 원인이 그것뿐이라는 뜻이다.
+
+    아래 테스트들이 그 '고정'을 코드로 잠근다 - 누가 한쪽 픽스처만 손대면 대조 실험이
+    조용히 깨지고, 그때는 판정이 갈려도 원인을 알 수 없게 된다.
     """
 
-    # 관점 교체가 바꾸기로 선언한 필드. 이 넷(+출처 기록) 말고 달라지면 통제 조건 위반이다.
-    SWAPPED = {"alert_id", "my_company", "main_company_industry",
-               "main_company_services", "_provenance"}
+    VIEWS = ("alert_peer_view_musinsa.json", "alert_peer_view_11st.json")
+    # 우리 기업이 누구냐에 따라 달라져야 하는 필드. 이것들 말고 달라지면 통제 조건 위반이다.
+    OUR_COMPANY_FIELDS = {"alert_id", "my_company", "main_company_industry", "_provenance"}
+    # 프로덕션 _payload_from_event가 채우지 않는 필드. 픽스처가 들고 있으면 실제로는
+    # 존재하지 않는 입력으로 실험하게 된다.
+    NOT_IN_PRODUCTION = ("main_services", "main_company_services")
 
-    def test_view_fixture_changes_only_our_company(self):
+    def test_arms_differ_only_in_our_company(self):
+        a, b = (_load(name) for name in self.VIEWS)
+        self.assertEqual(set(a), set(b), "두 arm의 키 구성이 다르다")
+        for key in set(a) - self.OUR_COMPANY_FIELDS:
+            self.assertEqual(a[key], b[key],
+                             f"{key}가 arm마다 다름 - 우리 기업 외 변인이 섞였다")
+        self.assertNotEqual(a["my_company"], b["my_company"])
+
+    def test_arms_keep_the_real_data_alert_body(self):
+        """알림 본체가 검수 완료된 실데이터 골든에서 온 그대로인가.
+
+        본체가 손을 타면 이 실험의 근거가 '원경님 실데이터'에서 '누군가 고친 값'으로
+        바뀐다. 출처 사슬을 코드로 붙들어 둔다.
+        """
         base = _load("alert_peer_downside.json")
-        view = _load("alert_peer_view_musinsa.json")
-        self.assertEqual(set(base), set(view), "관점 교체 픽스처에 키가 늘거나 빠짐")
-        for key in set(base) - self.SWAPPED:
-            self.assertEqual(base[key], view[key],
-                             f"{key}가 본체와 다름 - 우리 기업 외 변인이 섞였다")
-        self.assertEqual(base["my_company"], "11번가")
-        self.assertEqual(view["my_company"], "무신사")
+        for name in self.VIEWS:
+            view = _load(name)
+            self.assertEqual(view["mentions"], base["mentions"], name)
+            for key in ("company_name", "window_start", "window_end", "mention_count",
+                        "negative_ratio", "daily_series", "source_mix", "attribution"):
+                self.assertEqual(view[key], base[key], f"{name}: {key}")
 
-    def test_view_fixture_records_measurement_basis(self):
+    def test_arms_match_production_payload_shape(self):
+        """프로덕션이 실제로 만드는 페이로드 모양인가 (공유 DB 실측 기준).
+
+        업종은 industries.name 한 값이고(계층 없음, 이커머스는 전부 '유통'), services
+        계열은 _payload_from_event가 아예 채우지 않으며, 역할 값은 'main'|'competitor'다.
+        손으로 쓴 기업 소개를 넣으면 게이트의 판별력이 아니라 그 문구의 설득력을 재게 된다.
+        """
+        for name in self.VIEWS:
+            view = _load(name)
+            for field in self.NOT_IN_PRODUCTION:
+                self.assertNotIn(field, view,
+                                 f"{name}: {field}는 프로덕션이 채우지 않는 필드다")
+            self.assertEqual(view["company_role"], "competitor", name)
+            for field in ("industry", "main_company_industry"):
+                self.assertIn(view[field], ("유통", "IT·플랫폼"), f"{name}: {field}")
+
+    def test_arms_record_measurement_basis(self):
         """비율 수치는 산정 기준과 함께 있어야 한다.
 
-        같은 '90%'도 분자를 본문만 볼지 제목까지 볼지에 따라 달라진다(작업 로그에
-        75%와 90%가 함께 남은 이유). 수치만 있고 기준이 없으면 나중에 재현이 안 된다.
+        같은 '90%'도 분자를 본문만 볼지 제목까지 볼지에 따라 달라진다(작업 로그에 75%와
+        90%가 함께 남은 이유). 수치만 있고 기준이 없으면 나중에 재현이 안 된다.
         """
-        ratio = _load("alert_peer_view_musinsa.json")["_provenance"]["peer_mention_ratio"]
-        self.assertIn("basis", ratio)
-        self.assertIn("window", ratio)
-        self.assertGreater(ratio["negative"], 0, "모집단이 0이면 비율 자체가 성립하지 않는다")
-        self.assertAlmostEqual(ratio["ratio"],
-                               ratio["mentions_peer"] / ratio["negative"], places=3)
+        for name in self.VIEWS:
+            ratio = _load(name)["_provenance"]["peer_mention_ratio"]
+            self.assertIn("basis", ratio)
+            self.assertIn("window", ratio)
+            self.assertGreater(ratio["negative"], 0,
+                               "모집단이 0이면 비율 자체가 성립하지 않는다")
+            self.assertAlmostEqual(ratio["ratio"],
+                                   ratio["mentions_peer"] / ratio["negative"], places=3)
+
+    def test_arms_span_the_connection_gap(self):
+        """두 arm이 실제로 대비되는가.
+
+        무신사(22%)와 11번가(90%)를 고른 이유가 '연결 강도의 양 끝'이기 때문이다. 픽스처를
+        갈아끼우다 비슷한 두 회사가 되면 판정이 같게 나와도 그것이 '게이트가 못 가른다'인지
+        '애초에 가를 것이 없었다'인지 구분할 수 없다.
+        """
+        ratios = {}
+        for name in self.VIEWS:
+            view = _load(name)
+            ratios[view["my_company"]] = view["_provenance"]["peer_mention_ratio"]["ratio"]
+        self.assertGreaterEqual(max(ratios.values()) - min(ratios.values()), 0.5, ratios)
 
     def test_noimpact_golden(self):
         """영향_없음 실측 골든이 게이트 계약을 지키는가.
@@ -334,6 +384,8 @@ class PeerImpactViewFixtureTests(unittest.TestCase):
         self.assertEqual(peer["watch_points"], [])
         self.assertEqual(peer["status"], "영향없음_종료")
         self.assertEqual(peer["cases"], [])
+        # 어느 모델이 낸 판정인지 남아 있어야 나중에 산출끼리 비교가 된다.
+        self.assertTrue(peer["versions"]["model"], "versions.model이 비어 있다")
         # 픽스처 코드 가드(test_fixture_codes_match_engine과 같은 취지).
         self.assertIn(peer["risk_type"], CODES)
         self.assertEqual(peer["risk_type_label"], get_type(peer["risk_type"]).label)
