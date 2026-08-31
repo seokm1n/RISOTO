@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.services.response_engine import recommend
+from app.services.response_engine.impact import IMPACT_CHANNELS
 from app.services.response_engine.risk_types import CODES, get as get_type
 from app.services.response_engine.schema import AlertPayload
 
@@ -172,6 +173,57 @@ class RecommendPromptAssemblyTests(unittest.TestCase):
             _peer(missing_input_fields=["spread_stage", "days_since_last_alert"]))
         self.assertIn("확산 단계", prompt)
         self.assertNotIn("spread_stage", prompt)
+
+    def test_all_impact_channels_render(self):
+        """impact가 낼 수 있는 6개 채널이 모두 프롬프트에 실리는가.
+
+        골든 2건이 다루는 채널은 4개뿐이라 공급망_협력사_공유·투자자_주가_동조는
+        한 번도 지나간 적이 없다. 채널은 권고를 매다는 축(검증 규칙 1)이라 조립
+        단계에서 빠지면 그 경로의 권고가 통째로 생기지 않는다.
+        """
+        for channel in IMPACT_CHANNELS:
+            prompt = recommend.build_user_prompt(_peer(impact_channels=[channel]))
+            self.assertIn("[영향 경로", prompt, channel)
+            self.assertIn(channel, prompt, channel)
+
+    def test_no_channel_switches_to_observation_only(self):
+        """경로가 하나도 없으면 권고 대신 관찰만 제안하도록 지시가 바뀌는가.
+
+        impact가 채널을 못 찾은 채 proceed를 냈을 때의 안전망이다. 권고는 채널에
+        매달려야 하므로(규칙 1), 매달 곳이 없으면 만들지 말라고 해야 한다.
+        """
+        prompt = recommend.build_user_prompt(_peer(impact_channels=[]))
+        self.assertIn("식별된 경로 없음", prompt)
+        self.assertIn("관찰만 제안", prompt)
+
+
+class RecommendChannelRuleTests(unittest.TestCase):
+    """미검증 채널까지 포함해 규칙 1(채널 앵커)이 6종 전부에서 작동하는가."""
+
+    def test_rule1_accepts_every_channel(self):
+        """앞 단계가 식별한 채널이면 어느 것이든 통과해야 한다."""
+        for channel in IMPACT_CHANNELS:
+            rec = _clean_rec()
+            rec["recommendations"][0]["channel"] = channel
+            peer = _peer(impact_channels=[channel])
+            self.assertEqual(recommend.verify_recommendation(rec, peer), [], channel)
+
+    def test_rule1_rejects_every_unlisted_channel(self):
+        """앞 단계가 식별하지 않은 채널이면 어느 것이든 걸러야 한다.
+
+        규칙 1을 채널 하나(투자자_주가_동조)로만 확인해 왔는데, 다른 채널에서도
+        같은 판정이 나오는지는 확인된 적이 없었다.
+        """
+        for channel in IMPACT_CHANNELS:
+            others = [c for c in IMPACT_CHANNELS if c != channel]
+            rec = _clean_rec()
+            rec["recommendations"][0]["channel"] = channel
+            violations = recommend.verify_recommendation(
+                rec, _peer(impact_channels=others))
+            self.assertTrue(
+                any("영향 경로에 없는 채널" in v and channel in v for v in violations),
+                f"{channel}이 경로 밖인데 걸리지 않음: {violations}",
+            )
 
 
 class RecommendGoldenFixtureTests(unittest.TestCase):
