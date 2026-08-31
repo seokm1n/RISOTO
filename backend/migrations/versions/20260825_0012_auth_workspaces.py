@@ -112,7 +112,7 @@ def upgrade() -> None:
             "INSERT INTO users (email, password_hash, is_active) "
             "VALUES (:email, :password_hash, true) RETURNING id"
         ),
-        {"email": "test@test.com", "password_hash": TEST_PASSWORD_HASH},
+        {"email": "test@company.com", "password_hash": TEST_PASSWORD_HASH},
     ).scalar_one()
     bind.execute(
         sa.text(

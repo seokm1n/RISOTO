@@ -11,7 +11,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
-from app.config import Settings, get_settings
 from app.database import get_db
 from app.models import (
     ArticleFilterResult,
@@ -49,7 +48,6 @@ def _to_response(
     added_keyword_count: int = 0,
 ) -> CompanyRead:
     """기업 ORM 객체와 연관 정보를 API 응답 스키마로 변환한다."""
-    settings = get_settings()
     accepted_article_count = db.scalar(
         select(func.count(CompanyArticleMatch.article_id)).where(
             CompanyArticleMatch.company_id == company.id
@@ -62,14 +60,7 @@ def _to_response(
             CompanyFeatureWindow.article_count > 0,
         )
     ) or 0
-    ready = (
-        accepted_article_count >= settings.readiness_min_articles
-        and valid_nonempty_window_count >= settings.readiness_min_nonempty_windows
-    )
-    readiness_status = (
-        "active" if company.monitoring_status == "active" else
-        "pending_approval" if ready else "preparing"
-    )
+    readiness_status = "active"
     latest_window = db.scalar(
         select(CompanyFeatureWindow)
         .where(CompanyFeatureWindow.company_id == company.id)
@@ -102,7 +93,7 @@ def _to_response(
         readiness_status=readiness_status,
         accepted_article_count=accepted_article_count,
         valid_nonempty_window_count=valid_nonempty_window_count,
-        activation_required=readiness_status == "pending_approval",
+        activation_required=False,
         model_state=latest_window.model_state if latest_window else "unavailable",
     )
 
@@ -235,8 +226,8 @@ def _create_company(
             company_size_class=payload.company_size_class,
             industry_id=industry.id,
             backfill_days=7,
-            monitoring_status="backfilling",
-            analysis_status="pending",
+            monitoring_status="active",
+            analysis_status="warming",
             monitoring_started_at=now,
         )
         db.add(company)
@@ -249,8 +240,8 @@ def _create_company(
         company.monitoring_started_at = company.monitoring_started_at or now
         if payload.ticker and not company.ticker:
             company.ticker = payload.ticker
-        if company.monitoring_status in {"paused", "error"}:
-            company.monitoring_status = "warming"
+        if company.monitoring_status == "error":
+            company.monitoring_status = "active"
 
     # 기업과 키워드를 한 트랜잭션으로 저장해 일부 키워드만 반영되는 상태를 방지한다.
     try:
@@ -308,10 +299,9 @@ def _create_company(
 def activate_company(
     company_id: int,
     db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
     auth: CurrentAuth = Depends(require_auth),
 ) -> CompanyActivationRead:
-    """기사·유효 창 기준을 충족한 기업만 사람 요청으로 활성화한다."""
+    """준비 기간 없이 기업 모니터링을 즉시 활성화한다."""
     company = db.scalar(
         select(Company).where(
             Company.id == company_id,
@@ -320,33 +310,10 @@ def activate_company(
     )
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다.")
-    article_count = db.scalar(
-        select(func.count(CompanyArticleMatch.article_id)).where(
-            CompanyArticleMatch.company_id == company_id
-        )
-    ) or 0
-    window_count = db.scalar(
-        select(func.count(CompanyFeatureWindow.id)).where(
-            CompanyFeatureWindow.company_id == company_id,
-            CompanyFeatureWindow.data_quality != "unavailable",
-            CompanyFeatureWindow.article_count > 0,
-        )
-    ) or 0
-    if (
-        article_count < settings.readiness_min_articles
-        or window_count < settings.readiness_min_nonempty_windows
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"PREPARING 상태입니다. 기사 {article_count}/{settings.readiness_min_articles}건, "
-                f"유효 구간 {window_count}/{settings.readiness_min_nonempty_windows}개입니다."
-            ),
-        )
     activated_at = datetime.now(timezone.utc)
     company.monitoring_status = "active"
-    company.analysis_status = "ready"
-    company.baseline_ready_at = company.baseline_ready_at or activated_at
+    if company.analysis_status in {"pending", "running"}:
+        company.analysis_status = "warming"
     db.commit()
     return CompanyActivationRead(
         company_id=company_id,

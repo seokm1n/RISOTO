@@ -12,7 +12,8 @@ import {
 } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 
-const TREND_DAYS = 14;
+const COMPARISON_TREND_DAYS = 14;
+const RISK_TREND_DAYS = 7;
 const SUMMARY_MAX_CHARS = 64;
 
 // 요약 문단 길이를 고정해 기사 카드 높이가 내용에 따라 들쭉날쭉해지지 않게 한다.
@@ -121,8 +122,8 @@ function RiskLevelChart({ days }) {
   </div>;
 }
 
-// 우리 기업과 경쟁사 평균의 일별 부정 기사 비율을 한 그래프에 색으로 구분해 겹쳐 보여준다.
-// 위험이 감지된 날은 우리 기업 선 위에 큰 점으로 강조하고, 두 선의 최신값은 라벨로 표시한다.
+// 나의 기업과 경쟁사 평균의 일별 부정 기사 비율을 한 그래프에 색으로 구분해 겹쳐 보여준다.
+// 위험이 감지된 날은 나의 기업 선 위에 큰 점으로 강조하고, 두 선의 최신값은 라벨로 표시한다.
 function ComparisonTrendChart({ mainDays, competitorDays }) {
   const [canvasRef, { width: measuredWidth, height: measuredHeight }] = useElementSize();
   const mainAscending = [...mainDays]
@@ -130,7 +131,7 @@ function ComparisonTrendChart({ mainDays, competitorDays }) {
     .sort((a, b) => a.summary_date.localeCompare(b.summary_date));
   if (!mainAscending.length) return <div className="main-trend-chart-wrap">
     <div className="main-trend-legend">
-      <span className="main-trend-legend-item main"><i />우리 기업</span>
+      <span className="main-trend-legend-item main"><i />나의 기업</span>
       <span className="main-trend-legend-item competitor"><i />경쟁사 평균</span>
     </div>
     <div className="main-chart-canvas" ref={canvasRef}><p className="panel-empty">아직 표시할 추세 데이터가 없습니다.</p></div>
@@ -157,11 +158,11 @@ function ComparisonTrendChart({ mainDays, competitorDays }) {
 
   return <div className="main-trend-chart-wrap">
     <div className="main-trend-legend">
-      <span className="main-trend-legend-item main"><i />우리 기업</span>
+      <span className="main-trend-legend-item main"><i />나의 기업</span>
       <span className="main-trend-legend-item competitor"><i />경쟁사 평균</span>
     </div>
     <div className="main-chart-canvas" ref={canvasRef}>
-      <svg className="main-trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="일별 부정 기사 비율, 우리 기업과 경쟁사 평균 비교, 위험 감지일은 점으로 표시">
+      <svg className="main-trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="일별 부정 기사 비율, 나의 기업과 경쟁사 평균 비교, 위험 감지일은 점으로 표시">
         {gridRatios.map((ratio) => <g key={ratio}>
           <line className="main-trend-grid-line" x1={left} x2={width - right} y1={y(ratio)} y2={y(ratio)} />
           <text className="main-trend-axis-label" x={left - 8} y={y(ratio) + 4} textAnchor="end">{Math.round(ratio * 100)}%</text>
@@ -170,16 +171,16 @@ function ComparisonTrendChart({ mainDays, competitorDays }) {
         {competitorPoints && <polyline className="main-trend-line-competitor" points={competitorPoints} />}
         <polyline className="main-trend-line-main" points={mainPoints} />
         {mainAscending.map((day, index) => <circle key={day.summary_date} className={day.risk_event_count > 0 ? "main-trend-dot-risk" : "main-trend-dot-main"} cx={x(index)} cy={y(day.negative_probability)} r={day.risk_event_count > 0 ? 5.5 : 3} />)}
-        <text className="main-trend-label" x={x(mainAscending.length - 1)} y={Math.max(top - 4, y(last.negative_probability) - 12)} textAnchor="end">우리 {formatPercent(last.negative_probability)}</text>
+        <text className="main-trend-label" x={x(mainAscending.length - 1)} y={Math.max(top - 4, y(last.negative_probability) - 12)} textAnchor="end">나의 기업 {formatPercent(last.negative_probability)}</text>
         {lastCompetitorValue != null && <text className="main-trend-label-competitor" x={x(mainAscending.length - 1)} y={Math.min(height - bottom - 2, y(lastCompetitorValue) + 16)} textAnchor="end">경쟁사 {formatPercent(lastCompetitorValue)}</text>}
       </svg>
     </div>
   </div>;
 }
 
-// 로그인 직후 우리 기업의 현황·추세·경쟁사 비교와 최신 기사·위험 판정을 한 화면에 모은다.
+// 로그인 직후 나의 기업의 현황·추세·경쟁사 비교와 최신 기사·위험 판정을 한 화면에 모은다.
 // 기업 목록·대시보드 통계는 다른 화면과 캐시를 공유해 중복 폴링을 하지 않는다.
-export default function MainPage({ onOpenCompany, onEditCompany }) {
+export default function MainPage({ onOpenCompany }) {
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
     "/companies", () => api.get("/companies").then((response) => response.data),
   );
@@ -189,20 +190,21 @@ export default function MainPage({ onOpenCompany, onEditCompany }) {
   const mainCompany = companies.find((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   const mainId = mainCompany?.id ?? null;
+  const mainCollectionRunning = ["backfilling", "warming", "active"].includes(mainCompany?.monitoring_status);
   const competitorIds = competitorCompanies.map((company) => company.id).join(",");
 
   const { data: dailySummaries = [] } = useSharedResource(
-    mainId ? `/companies/${mainId}/daily-summaries?days=${TREND_DAYS}` : "skip:main-daily-summaries",
+    mainId ? `/companies/${mainId}/daily-summaries?days=${COMPARISON_TREND_DAYS}` : "skip:main-daily-summaries",
     mainId
-      ? () => api.get(`/companies/${mainId}/daily-summaries?days=${TREND_DAYS}`).then((response) => response.data)
+      ? () => api.get(`/companies/${mainId}/daily-summaries?days=${COMPARISON_TREND_DAYS}`).then((response) => response.data)
       : () => Promise.resolve([]),
   );
   const { data: competitorDaily = [] } = useSharedResource(
-    competitorIds ? `competitor-daily-avg:${competitorIds}:${TREND_DAYS}` : "skip:competitor-daily-avg",
+    competitorIds ? `competitor-daily-avg:${competitorIds}:${COMPARISON_TREND_DAYS}` : "skip:competitor-daily-avg",
     competitorIds
       ? async () => {
         const results = await Promise.allSettled(
-          competitorCompanies.map((company) => api.get(`/companies/${company.id}/daily-summaries?days=${TREND_DAYS}`)),
+          competitorCompanies.map((company) => api.get(`/companies/${company.id}/daily-summaries?days=${COMPARISON_TREND_DAYS}`)),
         );
         return mergeCompetitorDailyAverages(results.flatMap((result) => result.status === "fulfilled" ? [result.value.data] : []));
       }
@@ -239,12 +241,12 @@ export default function MainPage({ onOpenCompany, onEditCompany }) {
   const goToDetail = (riskEventId) => mainId && onOpenCompany(mainId, riskEventId ?? null);
 
   return <section className="workspace main-workspace">
+    <div className="main-page-shell">
     <div className="workspace-head">
-      <div><span className="eyebrow">MAIN COMPANY</span><h1>{mainCompany ? <button className="company-name-link main-company-name" type="button" onClick={() => onEditCompany(mainCompany.id)}>{mainCompany.name}</button> : "메인 기업"}</h1><p className="main-lead">우리 기업의 수집 현황, 위험 신호와 대응 상태를 한 화면에서 확인합니다.</p></div>
-      {mainCompany && <span className="main-live-collecting"><i className="main-live-spinner" aria-hidden="true" />실시간 수집중</span>}
+      <div className="main-workspace-heading"><span className="eyebrow">MY COMPANY</span><h1>{mainCompany ? <button className="company-name-link main-company-name" type="button" onClick={() => onOpenCompany(mainCompany.id)}>나의 기업 - {mainCompany.name}</button> : "나의 기업"}</h1><div className="main-workspace-subhead"><p className="main-lead">나의 기업의 수집 현황, 위험 신호와 대응 상태를 한 화면에서 확인합니다.</p>{mainCompany && <span className={`main-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} role="status" aria-live="polite"><i className="main-live-spinner" aria-hidden="true" />{mainCollectionRunning ? "실시간 수집중" : "수집 중지"}</span>}</div></div>
     </div>
     {error && <div className="notice error">{error}</div>}
-    {loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : !mainCompany ? <p className="empty-state">메인 기업 정보가 없습니다.</p> : <div className="main-dashboard-grid">
+    {loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : !mainCompany ? <p className="empty-state">나의 기업 정보가 없습니다.</p> : <div className="main-dashboard-grid">
       <section className="panel main-left-panel">
         <div className="metric-grid main-summary-metrics">
           <button type="button" className="main-metric-link" onClick={() => goToDetail()}><article className="metric"><span>최근 7일 기사</span><strong>{formatNumber(mainEntry?.article_count ?? 0)}</strong></article></button>
@@ -254,8 +256,8 @@ export default function MainPage({ onOpenCompany, onEditCompany }) {
         </div>
         <div className="main-charts-row">
           <div className="main-chart-col">
-            <PanelTitle kicker="최근 14일" title="위험 판정 추이" />
-            <RiskLevelChart days={dailySummaries} />
+            <PanelTitle kicker="최근 7일" title="위험 판정 추이" />
+            <RiskLevelChart days={dailySummaries.slice(0, RISK_TREND_DAYS)} />
           </div>
           <div className="main-chart-col">
             <PanelTitle kicker="부정 기사 비율 (%)" title="경쟁사 비교" />
@@ -266,7 +268,7 @@ export default function MainPage({ onOpenCompany, onEditCompany }) {
       <div className="main-right-column">
         <section className="panel main-articles-panel">
           <div className="main-articles-panel-head">
-            <PanelTitle kicker="최대 5건" title="최근 수집 기사" />
+            <a className="main-articles-title-link" href={`/companies/${encodeURIComponent(mainId)}`} onClick={(event) => { event.preventDefault(); goToDetail(); }}><PanelTitle kicker="최대 5건" title="최근 수집 기사" /></a>
             <time className="main-live-clock" dateTime={now.toISOString()}>{nowLabel}</time>
           </div>
           <div className="main-article-list">
@@ -288,5 +290,6 @@ export default function MainPage({ onOpenCompany, onEditCompany }) {
         </button>
       </div>
     </div>}
+    </div>
   </section>;
 }

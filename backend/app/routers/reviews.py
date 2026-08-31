@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from app.auth import CurrentAuth, require_auth
+from app.auth import CurrentAuth, require_admin
 from app.database import get_db
 from app.models import (
     ArticleFilterResult,
@@ -36,6 +36,11 @@ from app.schemas import (
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 
+def _company_scope(auth: CurrentAuth) -> list:
+    """관리자는 전체 검수 대상을, 일반 인증 컨텍스트는 자기 기업만 본다."""
+    return [] if auth.user.role == "admin" else [Company.user_id == auth.user_id]
+
+
 def _review_priority(result: ArticleFilterResult, raw: RawNewsArticle) -> float:
     """Prefer uncertainty plus likely rare advertisement/negative examples."""
     uncertainty = 1.0 - float(result.confidence or 0.0)
@@ -53,7 +58,7 @@ def article_review_candidates(
     company_id: int | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
-    auth: CurrentAuth = Depends(require_auth),
+    auth: CurrentAuth = Depends(require_admin),
 ) -> list[ArticleReviewCandidate]:
     """Return blind candidates without exposing current AI labels or scores."""
     latest_ids = (
@@ -67,7 +72,7 @@ def article_review_candidates(
         .join(RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id)
         .join(Company, Company.id == ArticleFilterResult.company_id)
         .where(
-            Company.user_id == auth.user_id,
+            *_company_scope(auth),
             ~exists(
                 select(ArticleLabel.id).where(
                     ArticleLabel.company_id == ArticleFilterResult.company_id,
@@ -104,7 +109,7 @@ def article_review_candidates(
 def llm_audit_sample(
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    auth: CurrentAuth = Depends(require_auth),
+    auth: CurrentAuth = Depends(require_admin),
 ) -> list[ArticleReviewCandidate]:
     """Blind monthly spot-check sample: LLM-confirmed articles a human hasn't cross-checked yet.
 
@@ -117,7 +122,7 @@ def llm_audit_sample(
     take = min(limit, remaining)
     if take <= 0:
         return []
-    rows = audit_sample_candidates(db, auth.user_id, take)
+    rows = audit_sample_candidates(db, None if auth.user.role == "admin" else auth.user_id, take)
     return [
         ArticleReviewCandidate(
             company_id=company.id,
@@ -138,13 +143,13 @@ def llm_audit_sample(
 def save_article_label(
     payload: ArticleLabelCreate,
     db: Session = Depends(get_db),
-    auth: CurrentAuth = Depends(require_auth),
+    auth: CurrentAuth = Depends(require_admin),
 ) -> ArticleLabel:
     valid_candidate = db.scalar(
         select(ArticleFilterResult.id)
         .join(Company, Company.id == ArticleFilterResult.company_id)
         .where(
-            Company.user_id == auth.user_id,
+            *_company_scope(auth),
             ArticleFilterResult.company_id == payload.company_id,
             ArticleFilterResult.raw_article_id == payload.raw_article_id,
         ).limit(1)
@@ -178,14 +183,14 @@ def save_article_label(
 def risk_review_candidates(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    auth: CurrentAuth = Depends(require_auth),
+    auth: CurrentAuth = Depends(require_admin),
 ) -> list[RiskEventRead]:
     events = list(
         db.scalars(
             select(RiskEvent)
             .join(Company, Company.id == RiskEvent.company_id)
             .where(
-                Company.user_id == auth.user_id,
+                *_company_scope(auth),
                 RiskEvent.status != "legacy_candidate",
                 ~exists(
                     select(RiskEventLabel.id).where(
@@ -206,15 +211,12 @@ def save_risk_event_label(
     risk_event_id: int,
     payload: RiskEventLabelCreate,
     db: Session = Depends(get_db),
-    auth: CurrentAuth = Depends(require_auth),
+    auth: CurrentAuth = Depends(require_admin),
 ) -> RiskEventLabel:
     event = db.scalar(
         select(RiskEvent)
         .join(Company, Company.id == RiskEvent.company_id)
-        .where(
-            RiskEvent.id == risk_event_id,
-            Company.user_id == auth.user_id,
-        )
+        .where(RiskEvent.id == risk_event_id, *_company_scope(auth))
     )
     if event is None:
         raise HTTPException(status_code=404, detail="위험 이벤트를 찾을 수 없습니다.")

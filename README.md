@@ -3,54 +3,33 @@
 기업 리스크 분석 서비스입니다. 현재 개발 인프라는 PostgreSQL 18.4와 pgvector 0.8.6으로
 고정되어 있습니다.
 
-## 데이터베이스 실행
+## 데이터베이스 연결
 
-Docker Desktop을 실행한 뒤 프로젝트 루트에서 다음 명령을 사용합니다.
+기본 실행은 공유받은 외부 PostgreSQL을 사용합니다. 실제 접속 정보는 Git에서 제외된
+프로젝트 루트의 `.env`에만 설정합니다.
 
-```powershell
-docker compose config
-docker compose up --build -d db
-docker compose ps
+```dotenv
+DATABASE_URL=postgresql+psycopg://<user>:<password>@<host>:<port>/<database>
+DATABASE_URL_HOST=postgresql+psycopg://<user>:<password>@<host>:<port>/<database>
+RUN_DB_MIGRATIONS=false
 ```
 
-버전을 확인합니다.
+`DATABASE_URL`은 Docker의 백엔드·학습 컨테이너가 사용하고, `DATABASE_URL_HOST`는
+FastAPI를 Docker 밖의 Windows 가상환경에서 실행할 때 사용할 수 있습니다. 외부 DB를
+사용하는 기본 실행에서는 PostgreSQL 컨테이너가 시작되지 않습니다.
+
+격리된 로컬 PostgreSQL이 별도로 필요할 때만 `local-db` 프로필을 명시합니다.
 
 ```powershell
-docker compose exec db psql -U risoto_app -d risoto -c `
+docker compose --profile local-db up --build -d db
+docker compose --profile local-db exec db psql -U risoto_app -d risoto -c `
   "SELECT current_setting('server_version') AS postgres_version, extversion AS pgvector_version FROM pg_extension WHERE extname='vector';"
 ```
 
-로컬 DB 접속 정보:
-
-```text
-Host: localhost
-Port: 5432
-Database: risoto
-Username: risoto_app
-Password: .env의 POSTGRES_PASSWORD
-```
-
-향후 FastAPI 컨테이너에서는 `localhost`가 아니라 Compose 서비스 이름 `db`를 사용합니다.
-
-```text
-postgresql+psycopg://risoto_app:<password>@db:5432/risoto
-```
-
-FastAPI를 Docker 밖의 Windows 가상환경에서 실행할 때는 호스트에 공개한 5432 포트를
-사용합니다.
-
-```text
-postgresql+psycopg://risoto_app:<password>@localhost:5432/risoto
-```
-
-DB를 중지하되 데이터를 유지하려면:
-
-```powershell
-docker compose down
-```
-
-`docker compose down -v`는 `risoto_postgres_data` 볼륨과 모든 로컬 DB 데이터를 삭제하므로
-초기화가 명확히 필요한 경우에만 사용해야 합니다.
+로컬 DB를 사용할 때는 `.env`의 `DATABASE_URL` 호스트를 `db:5432`로 바꾸고,
+Docker 밖에서 접속하는 `DATABASE_URL_HOST`에는 `localhost`와 `POSTGRES_HOST_PORT` 값을
+사용합니다. `docker compose down -v`는 `risoto_postgres_data` 볼륨과 모든 로컬 DB
+데이터를 삭제하므로 초기화가 명확히 필요한 경우에만 사용해야 합니다.
 
 ## FastAPI 백엔드
 
@@ -68,8 +47,10 @@ Invoke-RestMethod http://localhost:8000/health
 - Swagger UI: `http://localhost:8000/docs`
 - 상태 확인: `http://localhost:8000/health`
 
-개발 환경에서는 백엔드 컨테이너가 시작될 때 `alembic upgrade head`를 자동 실행합니다.
-현재 스키마 상태와 모델 차이를 확인하려면 다음 명령을 사용합니다.
+공유 DB의 데이터가 의도치 않게 바뀌지 않도록 자동 마이그레이션은 기본적으로 꺼져 있습니다.
+이 인스턴스에서 마이그레이션까지 담당해야 할 때만 `.env`의 `RUN_DB_MIGRATIONS=true`로
+변경한 뒤 백엔드를 재생성합니다. 현재 스키마 상태와 모델 차이를 확인하려면 다음 명령을
+사용합니다.
 
 ```powershell
 docker compose exec backend alembic current

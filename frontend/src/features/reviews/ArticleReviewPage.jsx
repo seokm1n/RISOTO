@@ -104,7 +104,7 @@ export default function ArticleReviewPage() {
           className="secondary-button"
           onClick={() => setSearchParams(auditMode ? {} : { mode: "audit" })}
         >
-          {auditMode ? "일반 검수로" : "LLM 표본 검수로"}
+          {auditMode ? "일반 검수로" : "LLM 표본 검수"}
         </button>
       </div>
     </div>

@@ -34,7 +34,7 @@ export const FILTER_REASON_LABELS = {
 export const READINESS_LABELS = {
   preparing: "데이터 준비 중",
   pending_approval: "활성화 승인 대기",
-  active: "실시간 모니터링 활성",
+  active: "분석 통계 사용 가능",
 };
 export const DATA_QUALITY_LABELS = { complete: "수집 정상", partial: "일부 수집원 장애", unavailable: "수집 불가" };
 export const LIGHTGBM_STATE_LABELS = { production: "LightGBM 운영 판정", provisional: "LightGBM 검증 판정", unavailable: "LightGBM 판정 대기" };
@@ -64,7 +64,7 @@ export const MODEL_TASK_DESCRIPTIONS = {
   risk_detector: "이상치 탐지 결과를 바탕으로 최종 위험 여부를 판정합니다.",
   isolation_forest: "평소와 다른 이상 징후를 탐지합니다.",
 };
-export const MODEL_STATUS_LABELS = { production: "운영 중", candidate: "후보", retired: "보관", failed: "실패" };
+export const MODEL_STATUS_LABELS = { production: "운영 중", candidate: "후보", retired: "보관", failed: "실패", unavailable: "연결 대기" };
 export const EMPTY_NOTIFICATIONS = { items: [], total: 0, risk_count: 0, model_promotion_count: 0 };
 
 // 블라인드 기사 라벨링 화면의 선택지 표시 문구다.

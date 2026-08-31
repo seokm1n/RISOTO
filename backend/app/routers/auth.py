@@ -56,7 +56,11 @@ def _auth_read(db: Session, auth: CurrentAuth) -> AuthMeRead:
         ).limit(1)
     ) is not None
     return AuthMeRead(
-        user=AuthUserRead(id=auth.user.id, email=auth.user.email),
+        user=AuthUserRead(
+            id=auth.user.id,
+            email=auth.user.email,
+            role=auth.user.role,
+        ),
         has_main_company=has_main_company,
         csrf_token=auth.csrf_token,
     )
@@ -68,10 +72,16 @@ def signup(
     response: Response,
     db: Session = Depends(get_db),
 ) -> AuthMeRead:
+    if payload.email == "admin@company.com":
+        raise HTTPException(status_code=409, detail="관리자 계정은 회원가입으로 만들 수 없습니다.")
     if db.scalar(select(User.id).where(User.email == payload.email)) is not None:
         raise HTTPException(status_code=409, detail="이미 가입된 이메일입니다.")
 
-    user = User(email=payload.email, password_hash=password_hasher.hash(payload.password))
+    user = User(
+        email=payload.email,
+        password_hash=password_hasher.hash(payload.password),
+        role="general",
+    )
     db.add(user)
     try:
         db.flush()
