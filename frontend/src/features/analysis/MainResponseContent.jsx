@@ -164,7 +164,58 @@ function ScenarioReport({ report }) {
   );
 }
 
+// 근거 기사가 없어 생성을 보류한 상태. 두 경로(메인·동종) 모두에서 나온다.
+// 담당자가 봐야 하는 건 "왜 안 만들어졌고 무엇을 확인해야 하는가"뿐이라 그것만 그린다.
+export function NoEvidenceNotice({ content }) {
+  const detection = content.detection ?? {};
+  const probability =
+    typeof detection.risk_probability === "number"
+      ? `${Math.round(detection.risk_probability * 100)}%`
+      : null;
+  return (
+    <div className="response-draft response-draft-hold">
+      <div className="response-draft-head">
+        <div>
+          <span className="eyebrow">대응방안 생성 보류</span>
+          <strong>근거 기사 없음</strong>
+        </div>
+        <span className="draft-kind hold">확인 필요</span>
+      </div>
+
+      <p className="hold-reason">{content.review_reason}</p>
+
+      <dl className="hold-detection">
+        {probability && (
+          <div>
+            <dt>탐지 위험도</dt>
+            <dd>{probability}</dd>
+          </div>
+        )}
+        {detection.severity && (
+          <div>
+            <dt>심각도</dt>
+            <dd>{detection.severity}</dd>
+          </div>
+        )}
+        {detection.model_version && (
+          <div>
+            <dt>탐지 모델</dt>
+            <dd>{detection.model_version}</dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+
 export default function MainResponseContent({ content }) {
+  // 시나리오가 비어 있다고 다 같은 상태가 아니다. 근거부족 보류는 LLM을 부르지 않고
+  // 사람이 확인할 사유만 담아 저장하므로, 빈 목록으로 뭉뚱그리면 그 사유가 화면에서
+  // 사라진다. 생성 실패와 구분해서 전용 화면으로 보낸다.
+  if (content.status === "근거부족_보류") {
+    return <NoEvidenceNotice content={content} />;
+  }
   const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
   // 담당자가 고를 수 있게 여러 관점을 만든다. 결론이 사실상 같으면 엔진이 접어서
   // 하나만 올 수도 있으므로 개수를 가정하지 않는다.
