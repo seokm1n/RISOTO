@@ -62,16 +62,16 @@ def parse_datetime(value: str | None) -> datetime | None:
 
 
 class NaverNewsCollector:
-    """네이버 개발자센터(openapi.naver.com) 뉴스 검색 결과를 수집한다."""
+    """NAVER API HUB 뉴스 검색 결과를 수집한다."""
 
     source = "naver_api_hub"
-    endpoint = "https://openapi.naver.com/v1/search/news.json"
+    endpoint = "https://naverapihub.apigw.ntruss.com/search/v1/news"
 
     def __init__(self, client_id: str, client_secret: str) -> None:
-        """네이버 검색 API 인증 헤더를 구성한다."""
+        """NAVER API HUB 인증 헤더를 구성한다."""
         self.headers = {
-            "X-Naver-Client-Id": client_id,
-            "X-Naver-Client-Secret": client_secret,
+            "X-NCP-APIGW-API-KEY-ID": client_id,
+            "X-NCP-APIGW-API-KEY": client_secret,
         }
 
     def search(self, query: str, start_date: date) -> list[CollectedArticle]:
