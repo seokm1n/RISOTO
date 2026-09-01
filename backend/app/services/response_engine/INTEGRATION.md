@@ -33,12 +33,18 @@ from app.services.response_engine import enqueue_response_draft
 
 ## 프런트 대응 (전환과 함께 가야 함)
 
-`frontend/src/features/realtime/RealtimePanels.jsx`의 `ResponseDraftContent` 한 컴포넌트가
-초안 내용을 그리는 유일한 지점입니다. 조회·생성·승인 API 호출은 `content`를 들여다보지
-않으므로(`ResponseDraftRead.content`가 `dict`) 손대지 않아도 됩니다.
+`ResponseDraftContent` 컴포넌트가 초안 내용을 그리는 유일한 지점입니다. **파일 경로는 여기
+적지 않습니다** — 프런트 재구성으로 세 번 옮겨졌습니다(RealtimePage.jsx → RealtimePanels.jsx →
+features/analysis/AnalysisStatisticsPage.jsx). 위치는 컴포넌트 이름으로 찾으세요.
 
-다만 **v2 키를 v3가 하나도 물려받지 않습니다.** 분기만 추가하는 수준이 아니라 렌더러를
-새로 써야 합니다.
+```
+grep -rn "function ResponseDraftContent" frontend/src
+```
+
+조회·생성·승인 API 호출은 `content`를 들여다보지 않으므로(`ResponseDraftRead.content`가
+`dict`) 손대지 않아도 됩니다.
+
+**v2 키를 v3가 하나도 물려받지 않습니다.** 그래서 분기를 얹고 렌더러를 따로 둡니다.
 
 | v2가 읽는 것 | v3에서의 위치 |
 |---|---|
@@ -50,9 +56,20 @@ from app.services.response_engine import enqueue_response_draft
 `ActionGroups`는 `{immediate, within_24h, within_7d}` 형태를 전제하는데, v3의 `checklist[]`는
 `{task, owner, deadline_hours}` 평면 목록이라 그대로 못 씁니다.
 
-동종 기업 초안(`content_kind: "peer_recommendation"`)은 **또 다른 구조**입니다. `scenarios`가
-아예 없고 `content.recommendation`(`headline`, `recommendations[]`, `avoid[]`)과
-`content.impact`를 읽어야 하며, `status: "영향없음_종료"`면 `recommendation`이 `null`입니다.
+**현재 진행 상황**
+
+- 메인 경로 v3: `MainResponseContent.jsx`로 분리했고 `ResponseDraftContent`에서
+  `schema_version === 3 && generation_kind !== "competitor_impact"`일 때 갈라집니다.
+  v2 렌더링은 그대로 두었으므로 라우터를 바꾸기 전에는 화면이 바뀌지 않습니다.
+- 동종 경로(`content_kind: "peer_recommendation"`)는 **또 다른 구조**입니다. `scenarios`가
+  아예 없고 `content.recommendation`(`headline`, `recommendations[]`, `avoid[]`)과
+  `content.impact`를 읽어야 하며, `status: "영향없음_종료"`면 `recommendation`이 `null`입니다.
+- 근거 기사가 없는 이벤트는 `status: "근거부족_보류"`로 저장됩니다(LLM 미호출).
+  `review_reason`과 `detection`이 사람이 봐야 할 정보입니다.
+
+**전환 순서**: 두 렌더러가 먼저 들어간 뒤 라우터를 바꿉니다. 렌더러만 넣으면 그릴 v3
+데이터가 없고, 라우터만 바꾸면 빈 카드가 됩니다. 라우터 전환은 import 2줄이라 독립
+PR로 두면 되돌리기 쉽습니다.
 
 ## content 구조 (schema_version=3)
 
@@ -86,18 +103,18 @@ from app.services.response_engine import enqueue_response_draft
 ## 의존성
 
 - `numpy` — RAG 벡터 검색 (이미 requirements에 있음)
-- `pypdf`, `python-docx` — **색인 구축 스크립트에만** 필요. 런타임에는 불필요하므로
+- `pypdf`, `python-docx` — **색인 구축 스크립트에만** 필요. hwpx는 표준 zipfile로 읽으므로 추가 설치가 없습니다. 런타임에는 불필요하므로
   requirements에 넣지 않아도 됩니다. 색인을 다시 만들 때만 설치하세요.
 
 ## RAG 색인
 
-`rag/index/`에 22개 문서 2,764청크(약 21MB)가 들어 있습니다. 자료를 추가하면 재색인합니다.
+`rag/index/`에 36개 문서 3,847청크(약 28MB)가 들어 있습니다. 자료를 추가하면 재색인합니다.
 
 ```
 cd backend
 pip install pypdf python-docx
 python -m scripts.build_rag_index --dry-run   # 청크 구성만 확인
-python -m scripts.build_rag_index             # 임베딩까지 (약 95만 토큰)
+python -m scripts.build_rag_index             # 임베딩까지 (약 188만 토큰)
 ```
 
 원문(`sources/*`)은 용량 때문에 저장소에서 제외돼 있습니다. 출처 목록은
@@ -109,6 +126,7 @@ python -m scripts.build_rag_index             # 임베딩까지 (약 95만 토�
 
 ## 아직 사람 확인이 필요한 것
 
-- 법령 매핑 77건 중 **검증 완료 22건**만 서빙됩니다(R01 4건, R02 2건, R04 3건, R05 2건, R10 2건, R11 6건, R12 3건). 미검증 조문은 `KoreanRegulationMapper`가 아예 반환하지 않습니다.
-  나머지는 `verified: false`라 나가지 않습니다.
-- 대응 원칙 13개 중 **11개가 근거 기반**, R07(노무·고용)·R11(정산·거래조건)은 초안입니다.
+- 법령 매핑 104건 중 **검증 완료 62건**만 서빙됩니다(R01 4 · R02 2 · R03 5 · R04 3 · R05 7 · R06 6 · R07 18 · R08 4 · R09 3 · R10 2 · R11 6 · R12 2). 미검증 조문은 `KoreanRegulationMapper`가 아예 반환하지 않습니다.
+- R13(평판·루머)은 법령 0건이 의도한 결과입니다. 언론중재법·명예훼손은 회사의 의무가 아니라 회사가 행사하는 권리라 이 표의 성격과 맞지 않습니다.
+- 대응 원칙은 **13개 유형 전부 근거 기반**입니다(`grounded: true`).
+- `case_records`가 0행이라 유사 사례가 100% 웹검색 경로로만 만들어집니다. 검수 사례 경로를 살릴지는 미정입니다.
