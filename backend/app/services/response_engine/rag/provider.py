@@ -30,7 +30,16 @@ class RagPrincipleProvider:
     """
 
     def __init__(self, store: VectorStore | None = None, top_k: int = 3, min_score: float = 0.30) -> None:
-        self.store = store if store is not None else load_store()
+        # 색인 로드 실패가 초안 생성을 죽이면 안 된다. 파일이 깨졌거나 벡터 차원이
+        # 어긋나도 보충만 빠지고 정적 원칙으로 계속 가야 한다.
+        if store is not None:
+            self.store = store
+        else:
+            try:
+                self.store = load_store()
+            except Exception as exc:
+                print(f"  [rag] 색인 로드 실패 - 보충 없이 진행: {str(exc)[:120]}")
+                self.store = None
         self.top_k = top_k
         self.min_score = min_score
         self.last_supplements: list[Supplement] = []
@@ -62,7 +71,15 @@ class RagPrincipleProvider:
         except Exception as exc:
             print(f"  [rag] 임베딩 실패 - 보충 없이 진행: {str(exc)[:120]}")
             return []
-        hits = self.store.search(q, risk_type=risk_type_code, top_k=self.top_k, min_score=self.min_score)
+        try:
+            hits = self.store.search(
+                q, risk_type=risk_type_code, top_k=self.top_k, min_score=self.min_score
+            )
+        except Exception as exc:
+            # 질의 벡터와 색인 차원이 어긋나는 경우가 여기로 온다(임베딩 모델 교체 후
+            # 재색인 누락 등). 보충을 포기하고 정적 원칙만으로 진행한다.
+            print(f"  [rag] 검색 실패 - 보충 없이 진행: {str(exc)[:120]}")
+            return []
         self.last_supplements = [
             Supplement(
                 text=c.text, doc=c.doc, page=c.page, score=round(s, 4),

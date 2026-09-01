@@ -257,6 +257,9 @@ def _build_content(db, payload, event, generation_kind, target_company):
 
     # 1) 탐지 유형(8) -> 대응 세부 유형(13)
     cls = classify.refine(payload, _detection_scores(event))
+    # 유형 세분화도 LLM을 부를 수 있다. 여기서 집계하지 않으면 메인 경로 사용량이
+    # 호출 1회만큼 과소 보고되고, impact.analyze를 세는 동종 경로와 비교가 안 된다.
+    _add(cls.pop("usage", None))
     code = cls["risk_type"]
     rt = get_type(code)
 
@@ -310,7 +313,10 @@ def _build_content(db, payload, event, generation_kind, target_company):
         candidates = verified
         status = "검증실패"
 
-    kept_drafts, merge_notes = generate.dedupe_scenarios([d for d, _ in candidates])
+    kept_drafts, merge_notes, dedupe_usage = generate.dedupe_scenarios(
+        [d for d, _ in candidates]
+    )
+    _add(dedupe_usage)
     kept_ids = {id(d) for d in kept_drafts}
     kept = [(d, v) for d, v in candidates if id(d) in kept_ids]
 
