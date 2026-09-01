@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
 import { PanelTitle, useAppConfirm } from "../../shared/components";
+import RiskOverviewTrendChart from "../../shared/RiskOverviewTrendChart";
 import {
   DATA_QUALITY_LABELS,
   RISK_TYPE_LABELS,
@@ -14,37 +15,8 @@ import {
   riskEventTitle,
 } from "../../shared/presentation";
 
-const STATISTICS_GRAPH_WIDTH = 720;
-const STATISTICS_GRAPH_HEIGHT = 230;
-const STATISTICS_GRAPH_PADDING = { top: 18, right: 12, bottom: 24, left: 8 };
-const STATISTICS_PERIOD_OPTIONS = [
-  { days: 1, label: "최근 1일" },
-  { days: 3, label: "최근 3일" },
-  { days: 7, label: "최근 7일" },
-  { days: 14, label: "최근 14일" },
-];
-const SEOUL_DAY_FORMATTER = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
-
-const seoulDayKey = (value) => {
-  const parts = Object.fromEntries(SEOUL_DAY_FORMATTER.formatToParts(new Date(value)).map((part) => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-};
-
-// 일일 요약의 기사 합계와 같은 날짜에 기록된 최고 위험도를 하나의 그래프 점으로 결합한다.
-function buildDailyTrendPoints(dailySummaries, windows) {
-  const riskByDay = new Map();
-  (windows ?? []).forEach((window) => {
-    if (window.risk_probability === null || window.risk_probability === undefined) return;
-    const day = seoulDayKey(window.window_start);
-    riskByDay.set(day, Math.max(riskByDay.get(day) ?? 0, window.risk_probability));
-  });
-  return (dailySummaries ?? []).map((summary) => ({
-    id: `daily-${summary.summary_date}`,
-    window_start: `${summary.summary_date}T00:00:00+09:00`,
-    article_count: summary.article_count,
-    risk_probability: riskByDay.get(summary.summary_date) ?? 0,
-  }));
-}
+const STATISTICS_PERIOD_DAYS = 7;
+const STATISTICS_PERIOD_LABEL = "최근 7일";
 
 // 최신 15분 특징 창과 수집 완전성, 공통 모델 상태를 요약한다.
 function FeatureWindowSummary({ window: featureWindow }) {
@@ -52,40 +24,77 @@ function FeatureWindowSummary({ window: featureWindow }) {
   const endTime = new Date(featureWindow.window_end).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }).replace(/^(오전|오후)\s*/, "");
   return <div className="feature-window-summary">
     <div className="feature-window-head"><div><span className="eyebrow">LATEST 15-MINUTE COLLECTION</span><h2>최근 15분 수집</h2><strong>{formatDate(featureWindow.window_start)} – {endTime}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span></div></div>
-    <div className="window-metrics"><div><span>기사</span><strong>{formatNumber(featureWindow.article_count)}</strong></div><div><span>스토리</span><strong>{formatNumber(featureWindow.story_count)}</strong></div><div><span>확산</span><strong>{formatNumber(featureWindow.amplification_count)}</strong></div><div><span>언론사</span><strong>{formatNumber(featureWindow.publisher_count)}</strong></div><div><span>위험도</span><strong>{formatRiskProbability(featureWindow.risk_probability)}</strong></div></div>
+    <div className="window-metrics"><div><span>기사</span><strong>{formatNumber(featureWindow.article_count)}<small className="count-unit">건</small></strong></div><div><span>스토리</span><strong>{formatNumber(featureWindow.story_count)}<small className="count-unit">건</small></strong></div><div><span>확산</span><strong>{formatNumber(featureWindow.amplification_count)}<small className="count-unit">건</small></strong></div><div><span>언론사</span><strong>{formatNumber(featureWindow.publisher_count)}<small className="count-unit">건</small></strong></div><div><span>위험도</span><strong>{formatRiskProbability(featureWindow.risk_probability)}</strong></div></div>
     {featureWindow.data_quality === "unavailable" && <p className="window-warning">수집 불가 구간이므로 위험도를 계산하지 않았습니다.</p>}
   </div>;
 }
 
-// 분석 통계의 날짜별 총수집량과 일일 최고 위험도 흐름을 보여준다.
-function DetailTrendGraph({ windows, label }) {
-  const points = [...(windows ?? [])].reverse();
-  const articleValues = points.map((item) => item.article_count ?? 0);
-  const riskValues = points.map((item) => (item.risk_probability ?? 0) * 100);
-  const articleMax = Math.max(...articleValues, 1);
-  const plotWidth = STATISTICS_GRAPH_WIDTH - STATISTICS_GRAPH_PADDING.left - STATISTICS_GRAPH_PADDING.right;
-  const plotHeight = STATISTICS_GRAPH_HEIGHT - STATISTICS_GRAPH_PADDING.top - STATISTICS_GRAPH_PADDING.bottom;
-  const point = (value, max, index) => {
-    const x = STATISTICS_GRAPH_PADDING.left + (points.length < 2 ? plotWidth / 2 : index / (points.length - 1) * plotWidth);
-    const y = STATISTICS_GRAPH_PADDING.top + plotHeight - value / max * plotHeight;
-    return `${x},${y}`;
-  };
-  const articlePoints = points.map((item, index) => point(item.article_count ?? 0, articleMax, index)).join(" ");
-  const riskPoints = points.map((item, index) => point((item.risk_probability ?? 0) * 100, 100, index)).join(" ");
-  const tickIndexes = points.length ? [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])] : [];
-  const formatWindowDate = (value) => value ? new Date(value).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }) : "-";
-  return <section className="home-trend-graphs statistics-trend-graphs" aria-label={`${label} 일별 수집량과 위험도 추세`}>
-    <figure className="home-line-graph">
-      <figcaption><span className="collection">오늘 수집량 <strong>{articleValues.at(-1) ?? 0}</strong></span><span className="risk">오늘 최고 위험도 <strong>{formatPercent((riskValues.at(-1) ?? 0) / 100)}</strong></span></figcaption>
-      {points.length ? <svg viewBox={`0 0 ${STATISTICS_GRAPH_WIDTH} ${STATISTICS_GRAPH_HEIGHT}`} role="img" aria-label={`${label} 일별 수집량과 최고 위험도 그래프`}>
-        {[0, .5, 1].map((ratio) => <line key={ratio} className="home-graph-grid" x1={STATISTICS_GRAPH_PADDING.left} x2={STATISTICS_GRAPH_WIDTH - STATISTICS_GRAPH_PADDING.right} y1={STATISTICS_GRAPH_PADDING.top + plotHeight * ratio} y2={STATISTICS_GRAPH_PADDING.top + plotHeight * ratio} />)}
-        <polyline className="home-graph-line collection" points={articlePoints} />
-        <polyline className="home-graph-line risk" points={riskPoints} />
-        {points.map((item, index) => { const [articleX, articleY] = point(item.article_count ?? 0, articleMax, index).split(","); const [riskX, riskY] = point((item.risk_probability ?? 0) * 100, 100, index).split(","); return <g key={item.id ?? item.window_start}><circle className="home-graph-point collection" cx={articleX} cy={articleY} r="2.4"><title>{`${formatWindowDate(item.window_start)} · 수집량 ${item.article_count ?? 0}건`}</title></circle><circle className="home-graph-point risk" cx={riskX} cy={riskY} r="2.4"><title>{`${formatWindowDate(item.window_start)} · 위험도 ${formatPercent(item.risk_probability)}`}</title></circle></g>; })}
-        {tickIndexes.map((index) => <text className="home-graph-date" key={index} x={STATISTICS_GRAPH_PADDING.left + (points.length < 2 ? plotWidth / 2 : index / (points.length - 1) * plotWidth)} y={STATISTICS_GRAPH_HEIGHT - 5} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{formatWindowDate(points[index].window_start)}</text>)}
-      </svg> : <p>표시할 추세 데이터가 없습니다.</p>}
-    </figure>
-  </section>;
+// 감성 분석이 끝난 기사만 분모로 삼아 날짜별 긍정·중립·부정 구성을 100% 막대로 비교한다.
+function DailySentimentCompositionChart({ days }) {
+  const points = [...(days ?? [])]
+    .sort((left, right) => left.summary_date.localeCompare(right.summary_date))
+    .map((day) => {
+      const articleCount = Math.max(Number(day.article_count) || 0, 0);
+      const positive = Math.max(Number(day.positive_article_count) || 0, 0);
+      const neutral = Math.max(Number(day.neutral_article_count) || 0, 0);
+      const negative = Math.max(Number(day.negative_article_count) || 0, 0);
+      const analyzed = positive + neutral + negative;
+      return {
+        ...day,
+        articleCount,
+        positive,
+        neutral,
+        negative,
+        analyzed,
+        unclassified: Math.max(articleCount - analyzed, 0),
+      };
+    });
+  if (!points.length) return <p className="panel-empty">아직 표시할 감성 분석 데이터가 없습니다.</p>;
+
+  const totals = points.reduce((result, day) => ({
+    positive: result.positive + day.positive,
+    neutral: result.neutral + day.neutral,
+    negative: result.negative + day.negative,
+    analyzed: result.analyzed + day.analyzed,
+    unclassified: result.unclassified + day.unclassified,
+  }), { positive: 0, neutral: 0, negative: 0, analyzed: 0, unclassified: 0 });
+  const ratio = (count, total) => total > 0 ? count / total : null;
+  const formatDay = (value) => new Date(value).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+  const columns = { gridTemplateColumns: `repeat(${points.length}, minmax(40px, 1fr))` };
+
+  return <div className="statistics-sentiment-composition">
+    <div className="statistics-sentiment-legend" aria-label="선택 기간 감성 기사 합계">
+      <span className="positive"><i />긍정 <strong>{formatNumber(totals.positive)}건 · {formatPercent(ratio(totals.positive, totals.analyzed))}</strong></span>
+      <span className="neutral"><i />중립 <strong>{formatNumber(totals.neutral)}건 · {formatPercent(ratio(totals.neutral, totals.analyzed))}</strong></span>
+      <span className="negative"><i />부정 <strong>{formatNumber(totals.negative)}건 · {formatPercent(ratio(totals.negative, totals.analyzed))}</strong></span>
+    </div>
+    <div className="statistics-sentiment-chart">
+      <div className="statistics-sentiment-axis" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div>
+      <div className="statistics-sentiment-plot">
+        <div className="statistics-sentiment-bars">
+          <span className="statistics-sentiment-grid top" aria-hidden="true" />
+          <span className="statistics-sentiment-grid middle" aria-hidden="true" />
+          <span className="statistics-sentiment-grid bottom" aria-hidden="true" />
+          <div className="statistics-sentiment-columns" style={columns}>
+            {points.map((day) => {
+              const detail = `${formatDay(day.summary_date)} · 긍정 ${day.positive}건 (${formatPercent(ratio(day.positive, day.analyzed))}) · 중립 ${day.neutral}건 (${formatPercent(ratio(day.neutral, day.analyzed))}) · 부정 ${day.negative}건 (${formatPercent(ratio(day.negative, day.analyzed))}) · 미분류·기타 ${day.unclassified}건`;
+              return <div className="statistics-sentiment-day" key={day.summary_date}>
+                <div className={`statistics-sentiment-stack${day.analyzed ? "" : " empty"}`} role="img" aria-label={detail} title={detail}>
+                  {day.analyzed > 0 && <>
+                    <span className="positive" style={{ height: `${ratio(day.positive, day.analyzed) * 100}%` }} />
+                    <span className="neutral" style={{ height: `${ratio(day.neutral, day.analyzed) * 100}%` }} />
+                    <span className="negative" style={{ height: `${ratio(day.negative, day.analyzed) * 100}%` }} />
+                  </>}
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div className="statistics-sentiment-dates" style={columns}>{points.map((day) => <time dateTime={day.summary_date} key={day.summary_date}>{formatDay(day.summary_date)}</time>)}</div>
+      </div>
+    </div>
+    <p className="statistics-sentiment-note">비율은 감성 분석 완료 기사 {formatNumber(totals.analyzed)}건 기준입니다. 미분류·기타 {formatNumber(totals.unclassified)}건은 비율에서 제외했습니다.</p>
+  </div>;
 }
 
 // 위험 이벤트 목록에서 내부 코드 대신 대표 근거 기사와 한글 위험 유형을 보여준다.
@@ -160,11 +169,10 @@ export function RiskDetail({ risk, canReview = false }) {
 }
 
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
-export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister = false, onOpenCollectedArticles, onOpenRiskManagement }) {
+export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister = false, onOpenCollectedArticles, onOpenRiskManagement, onMonitoringChanged }) {
   const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
   const [data, setData] = useState(null); const [error, setError] = useState(null);
   const [changingState, setChangingState] = useState(false);
-  const [periodDays, setPeriodDays] = useState(7);
   const [now, setNow] = useState(Date.now());
   const refreshSequence = useRef(0);
   const { confirm, confirmationDialog } = useAppConfirm();
@@ -182,15 +190,15 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
       if (String(id) !== String(selectedId)) {
         setSelectedId(String(id));
       }
-      const featureWindowLimit = periodDays * 96;
+      const featureWindowLimit = STATISTICS_PERIOD_DAYS * 96;
       const [monitoring, windows, dailySummaries] = await Promise.all([
         api.get(`/companies/${id}/monitoring`), api.get(`/companies/${id}/feature-windows?limit=${featureWindowLimit}`),
-        api.get(`/companies/${id}/daily-summaries?days=${periodDays}`),
+        api.get(`/companies/${id}/daily-summaries?days=${STATISTICS_PERIOD_DAYS}`),
       ]);
       if (requestId !== refreshSequence.current) return;
       setData({ monitoring: monitoring.data, windows: windows.data, dailySummaries: dailySummaries.data }); setError(null);
     } catch (requestError) { if (requestId === refreshSequence.current) setError(getErrorMessage(requestError)); }
-  }, [selectedId, periodDays]);
+  }, [selectedId]);
   // 수집 주기보다 빠른 30초 간격으로 서버 현황을 다시 조회한다.
   useEffect(() => { refresh(); const timer = window.setInterval(refresh, 30000); return () => { window.clearInterval(timer); refreshSequence.current += 1; }; }, [refresh]);
   // 서버 요청 없이 카운트다운 표시만 매초 다시 계산하도록 현재 시각을 갱신한다.
@@ -199,10 +207,8 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   const latestWindow = data?.windows?.[0] ?? null;
-  const dailyTrendPoints = buildDailyTrendPoints(data?.dailySummaries, data?.windows);
   const periodArticleCount = data?.dailySummaries?.reduce((sum, summary) => sum + (summary.article_count ?? 0), 0) ?? 0;
   const periodRiskEventCount = data?.dailySummaries?.reduce((sum, summary) => sum + (summary.risk_event_count ?? 0), 0) ?? 0;
-  const periodLabel = STATISTICS_PERIOD_OPTIONS.find((option) => option.days === periodDays)?.label ?? `최근 ${periodDays}일`;
   const secondsUntilCollection = data?.monitoring.monitoring_status === "paused"
     ? data.monitoring.collection_interval_seconds
     : data?.monitoring.next_collection_at
@@ -227,7 +233,7 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
     setChangingState(true);
     try {
       await api.post(`/companies/${selected.id}/monitoring/${monitoringStatus === "paused" ? "resume" : "pause"}`);
-      await refresh();
+      await Promise.all([refresh(), onMonitoringChanged?.()]);
     } catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setChangingState(false); }
   };
@@ -235,13 +241,20 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
     const confirmed = await confirm({ kicker: "PAGE NAVIGATION", title: `${pageName} 페이지로 이동합니다.`, message, confirmLabel: "이동" });
     if (confirmed) move?.();
   };
-  return <section className="workspace analysis-statistics-workspace"><div className="workspace-head"><div><p>기업별 수집량과 위험도 추세, 수집 기사와 위험 이벤트를 한곳에서 확인합니다.</p></div></div>
-    <div className="monitor-toolbar"><div className="analysis-toolbar-filters"><label><span className="analysis-field-label">분석 기업</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="경쟁사">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label><label><span className="analysis-field-label">기간</span><select value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))}>{STATISTICS_PERIOD_OPTIONS.map((option) => <option value={option.days} key={option.days}>{option.label}</option>)}</select></label></div><div className="analysis-toolbar-actions">{selected && canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}</div></div>
+  return <section className="workspace analysis-statistics-workspace"><div className="workspace-head"><div><p>기업별 수집량과 위험·부정 기사 비율, 수집 기사와 위험 이벤트를 한곳에서 확인합니다.</p></div></div>
+    <div className="monitor-toolbar"><div className="analysis-toolbar-filters"><label><span className="analysis-field-label">분석 기업</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="경쟁사">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label></div><div className="analysis-toolbar-actions">{selected && canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}</div></div>
     {error && <div className="notice error">{error}</div>}
     {!selected ? <p className="empty-state">먼저 기업 등록 페이지에서 모니터링할 기업을 등록해 주세요.</p> : data && <>
-      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id))} aria-label={`${selected.name} ${periodLabel} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle kicker="COLLECTED ARTICLES" title="기간 중 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, periodDays))} aria-label={`${selected.name} ${periodLabel} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle kicker="RISK EVENTS" title="기간 중 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
+      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle kicker="COLLECTED ARTICLES" title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle kicker="RISK EVENTS" title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
       <FeatureWindowSummary window={latestWindow} />
-      <DetailTrendGraph windows={dailyTrendPoints} label={`${selected.name} ${periodLabel}`} />
+      <section className="panel statistics-overview-trend">
+        <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 왼쪽 건수 / 오른쪽 비율`} title="수집·위험·부정 기사 추이" />
+        <RiskOverviewTrendChart days={data.dailySummaries} ariaLabel={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집량, 위험 수집 비율, 부정 기사 비율 추이`} />
+      </section>
+      <section className="panel statistics-sentiment-panel">
+        <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 감성 분석 완료 기사 기준`} title="날짜별 긍정·중립·부정 기사 비율" />
+        <DailySentimentCompositionChart days={data.dailySummaries} />
+      </section>
     </>}
     {confirmationDialog}
   </section>;

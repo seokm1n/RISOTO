@@ -50,7 +50,7 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
 
   return <section className="workspace analysis-statistics-workspace risk-management-workspace">
-    <div className="workspace-head"><div><span className="eyebrow">RISK MANAGEMENT</span><h1>위험 관리</h1><p>기업 위험 이벤트와 근거를 확인하고 대응 초안을 관리합니다.</p></div></div>
+    <div className="workspace-head"><div><p>기업 위험 이벤트와 근거를 확인하고 대응 초안을 관리합니다.</p></div></div>
     <div className="monitor-toolbar"><div className="analysis-toolbar-filters"><label><span className="analysis-field-label">관리 기업</span><select value={selectedCompanyId} onChange={(event) => { setSelectedCompanyId(event.target.value); setRisks([]); setPage(1); setSelectedRiskId(null); }}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="경쟁사">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label><label><span className="analysis-field-label">기간</span><select value={periodDays} onChange={(event) => { setPeriodDays(Number(event.target.value)); setRisks([]); setPage(1); setSelectedRiskId(null); }}>{RISK_PERIOD_OPTIONS.map((option) => <option value={option.days} key={option.days}>{option.label}</option>)}</select></label></div></div>
     {error && <div className="notice error">{error}</div>}
     {!companies.length ? <p className="empty-state">먼저 기업 등록 페이지에서 관리할 기업을 등록해 주세요.</p> : <>

@@ -474,6 +474,10 @@ class DailySummaryRead(BaseModel):
     company_id: int
     summary_date: date
     article_count: int
+    risk_article_count: int
+    positive_article_count: int
+    neutral_article_count: int
+    negative_article_count: int
     story_count: int
     amplification_count: int
     publisher_count: int

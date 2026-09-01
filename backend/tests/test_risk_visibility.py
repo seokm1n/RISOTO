@@ -7,7 +7,15 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import Company, CompanyDailySummary, RiskEvent
+from app.models import (
+    Company,
+    CompanyArticleMatch,
+    CompanyDailySummary,
+    CompanyFeatureWindow,
+    NewsArticle,
+    RiskEvent,
+    RiskEventArticle,
+)
 from app.routers.collection import list_risk_events
 from app.routers.dashboard import get_dashboard_overview
 from app.services.risk_analysis import update_daily_summary
@@ -123,6 +131,101 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
         )
         self.assertIsNotNone(summary)
         self.assertEqual(summary.risk_event_count, len(reportable))
+
+    def test_daily_article_counts_share_the_valid_window_cohort(self):
+        start = datetime(2098, 2, 1, tzinfo=timezone.utc)
+        valid_window = CompanyFeatureWindow(
+            company_id=self.company_id,
+            window_start=start,
+            window_end=start + timedelta(minutes=15),
+            data_quality="complete",
+            article_count=5,
+            model_state="unavailable",
+        )
+        unavailable_window = CompanyFeatureWindow(
+            company_id=self.company_id,
+            window_start=start + timedelta(minutes=15),
+            window_end=start + timedelta(minutes=30),
+            data_quality="unavailable",
+            article_count=1,
+            model_state="unavailable",
+        )
+        self.db.add_all([valid_window, unavailable_window])
+
+        labels = ("부정", "긍정", "neutral", "negative", None, "부정")
+        articles = []
+        for index, label in enumerate(labels):
+            article = NewsArticle(
+                source="daily-ratio-test",
+                title=f"daily-ratio-test-{index}",
+                url=f"https://daily-ratio.test/{self.company_id}/{index}",
+                published_at=start + timedelta(minutes=3 * index if index < 5 else 18),
+                sentiment_label=label,
+            )
+            self.db.add(article)
+            self.db.flush()
+            self.db.add(
+                CompanyArticleMatch(
+                    company_id=self.company_id,
+                    article_id=article.id,
+                )
+            )
+            articles.append(article)
+
+        reportable = RiskEvent(
+            company_id=self.company_id,
+            anomaly_score=0.8,
+            risk_probability=0.9,
+            severity="warning",
+            status="open",
+            summary="daily-ratio-reportable",
+            model_state="provisional",
+            approval_state="draft",
+            opened_at=start,
+            last_seen_at=start,
+            detected_at=start,
+        )
+        dismissed = RiskEvent(
+            company_id=self.company_id,
+            anomaly_score=0.8,
+            risk_probability=0.9,
+            severity="warning",
+            status="dismissed",
+            summary="daily-ratio-dismissed",
+            model_state="provisional",
+            approval_state="draft",
+            opened_at=start,
+            last_seen_at=start,
+            detected_at=start,
+        )
+        self.db.add_all([reportable, dismissed])
+        self.db.flush()
+        self.db.add_all(
+            [
+                RiskEventArticle(risk_event_id=reportable.id, article_id=articles[0].id),
+                RiskEventArticle(risk_event_id=reportable.id, article_id=articles[1].id),
+                RiskEventArticle(risk_event_id=reportable.id, article_id=articles[5].id),
+                RiskEventArticle(risk_event_id=dismissed.id, article_id=articles[3].id),
+            ]
+        )
+        self.db.flush()
+
+        update_daily_summary(self.db, self.company_id, start)
+        self.db.flush()
+        summary = self.db.scalar(
+            select(CompanyDailySummary).where(
+                CompanyDailySummary.company_id == self.company_id,
+                CompanyDailySummary.summary_date
+                == start.astimezone(ZoneInfo("Asia/Seoul")).date(),
+            )
+        )
+
+        self.assertIsNotNone(summary)
+        self.assertEqual(summary.article_count, 5)
+        self.assertEqual(summary.risk_article_count, 2)
+        self.assertEqual(summary.positive_article_count, 1)
+        self.assertEqual(summary.neutral_article_count, 1)
+        self.assertEqual(summary.negative_article_count, 2)
 
 
 if __name__ == "__main__":

@@ -178,6 +178,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
       {registrationForm}
     </section>}
     {!onboarding && <section className="registered-section">
+      <p className="company-page-intro">등록된 기업 정보를 수정할 수 있고, 경쟁사를 새로 등록, 삭제할 수 있습니다.</p>
       {loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : <div className="company-role-sections">
         {[
           { role: "main", title: "나의 기업", kicker: "MY COMPANY", empty: "등록한 나의 기업이 없습니다." },

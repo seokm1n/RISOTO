@@ -23,6 +23,7 @@ import NotificationDrawer from "../notifications/NotificationDrawer";
 import ArticleReviewPage from "../reviews/ArticleReviewPage";
 import { AppNoticeDialog, useAppConfirm } from "../../shared/components";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
+import { useSharedResource } from "../../shared/useSharedResource";
 
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "요약", path: "/main" },
@@ -70,7 +71,7 @@ const pageFromPath = (pathname) => {
   return "collection";
 };
 
-function AnalysisStatisticsRoute({ canAdminister, onOpenCollectedArticles, onOpenRiskManagement }) {
+function AnalysisStatisticsRoute({ canAdminister, onOpenCollectedArticles, onOpenRiskManagement, onMonitoringChanged }) {
   const location = useLocation();
   const normalizedCompanyId = numericParam(location.state?.companyId);
 
@@ -80,13 +81,14 @@ function AnalysisStatisticsRoute({ canAdminister, onOpenCollectedArticles, onOpe
     canAdminister={canAdminister}
     onOpenCollectedArticles={onOpenCollectedArticles}
     onOpenRiskManagement={onOpenRiskManagement}
+    onMonitoringChanged={onMonitoringChanged}
   />;
 }
 
-function CollectionRoute({ onOpenCompany }) {
+function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
   const [searchParams] = useSearchParams();
   const articleCompanyId = numericParam(searchParams.get("articleCompanyId"));
-  return <CollectionPage key={articleCompanyId ?? "collection"} onOpenCompany={onOpenCompany} initialArticleCompanyId={articleCompanyId} />;
+  return <CollectionPage key={articleCompanyId ?? "collection"} onOpenCompany={onOpenCompany} initialArticleCompanyId={articleCompanyId} onMonitoringChanged={onMonitoringChanged} />;
 }
 
 function RiskManagementRoute({ canReview }) {
@@ -116,6 +118,15 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
   const navItems = isAdmin ? ADMIN_NAV_ITEMS : GENERAL_NAV_ITEMS;
   const homePath = isAdmin ? "/admin/members" : "/main";
   const page = pageFromPath(location.pathname);
+  const { data: userCompanies = [], refresh: refreshUserCompanies } = useSharedResource(
+    isAdmin ? "skip:topbar-main-company" : "/companies",
+    isAdmin
+      ? () => Promise.resolve([])
+      : () => api.get("/companies").then((response) => response.data),
+    { intervalMs: isAdmin ? 0 : 30000 },
+  );
+  const mainCompany = userCompanies.find((company) => company.company_role === "main");
+  const mainCollectionRunning = ["backfilling", "warming", "active"].includes(mainCompany?.monitoring_status);
   const [managementDirty, setManagementDirty] = useState(false);
   const [notifications, setNotifications] = useState(EMPTY_NOTIFICATIONS);
   const [notificationError, setNotificationError] = useState(null);
@@ -234,6 +245,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <button className="brand" onClick={() => goTo(homePath)}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
       <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
       <div className="topbar-actions">
+        {!isAdmin && mainCompany && <span className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} role="status" aria-live="polite" aria-label={mainCollectionRunning ? "실시간 수집중" : "수집 중지"} title={mainCollectionRunning ? "실시간 수집중" : "수집 중지"}><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 수집중" : "수집 중지"}</span></span>}
         <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`위험 알림 ${notificationTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationTotal > 99 ? "99+" : notificationTotal}</span>}</button>
         <button className={`account-button ${page === "account" ? "active" : ""}`} type="button" onClick={() => goTo("/account")} title={`${session.user.email} · 마이페이지`} aria-current={page === "account" ? "page" : undefined}><span>{session.user.email}</span><strong>마이페이지</strong></button>
         <button className="logout-button" type="button" onClick={requestLogout}>로그아웃</button>
@@ -255,11 +267,11 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/" element={<Navigate to="/main" replace />} />
       <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} />} />
       <Route path="/account" element={<MyPage session={session} onAccountDeleted={onAccountDeleted} />} />
-      <Route path="/collection" element={<CollectionRoute onOpenCompany={openAnalysisStatistics} />} />
+      <Route path="/collection" element={<CollectionRoute onOpenCompany={openAnalysisStatistics} onMonitoringChanged={refreshUserCompanies} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
-      <Route path="/companies/main" element={<AnalysisStatisticsRoute canAdminister onOpenCollectedArticles={openCollectedArticles} onOpenRiskManagement={openRiskManagement} />} />
+      <Route path="/companies/main" element={<AnalysisStatisticsRoute canAdminister onOpenCollectedArticles={openCollectedArticles} onOpenRiskManagement={openRiskManagement} onMonitoringChanged={refreshUserCompanies} />} />
       <Route path="/risk-management" element={<RiskManagementRoute canReview />} />
       <Route path="/companies/overview" element={<Navigate to="/companies/main" replace />} />
       <Route path="/companies/:companyId" element={<LegacyAnalysisStatisticsRedirect />} />

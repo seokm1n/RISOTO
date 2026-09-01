@@ -82,7 +82,7 @@ function CollectedArticlesDialog({ company, onClose }) {
 }
 
 // 전체 수집기 상태와 사용자별 기업의 실시간 수집 현황 및 제어 기능을 제공한다.
-export default function CollectionPage({ onOpenCompany, initialArticleCompanyId = null }) {
+export default function CollectionPage({ onOpenCompany, initialArticleCompanyId = null, onMonitoringChanged }) {
   const [companies, setCompanies] = useState([]);
   const [summaries, setSummaries] = useState({});
   const [health, setHealth] = useState(null);
@@ -124,14 +124,20 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
     });
     if (!confirmed) return;
     setBusy(`all-${action}`);
-    try { await api.post(`/companies/monitoring/bulk/${action}`); await load(); }
+    try {
+      await api.post(`/companies/monitoring/bulk/${action}`);
+      await Promise.all([load(), onMonitoringChanged?.()]);
+    }
     catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setBusy(null); }
   };
   const changeCompany = async (company) => {
     const action = company.monitoring_status === "paused" ? "resume" : "pause";
     setBusy(company.id);
-    try { await api.post(`/companies/${company.id}/monitoring/${action}`); await load(); }
+    try {
+      await api.post(`/companies/${company.id}/monitoring/${action}`);
+      await Promise.all([load(), onMonitoringChanged?.()]);
+    }
     catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setBusy(null); }
   };
