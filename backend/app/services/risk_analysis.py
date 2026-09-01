@@ -826,7 +826,7 @@ def update_risk_events(
 
 
 def update_daily_summary(db: Session, company_id: int, at: datetime) -> None:
-    """Idempotently rebuild the Seoul-local daily summary from 15-minute windows."""
+    """Idempotently rebuild one Seoul-local day from the same valid-window article cohort."""
     local_day = at.astimezone(SEOUL).date()
     local_start = datetime.combine(local_day, datetime.min.time(), tzinfo=SEOUL)
     utc_start = local_start.astimezone(timezone.utc)
@@ -863,6 +863,34 @@ def update_daily_summary(db: Session, company_id: int, at: datetime) -> None:
     summary.negative_probability = _safe_mean(
         [item.negative_probability for item in valid if item.negative_probability is not None]
     )
+    valid_intervals = [(item.window_start, item.window_end) for item in valid]
+    day_rows = _window_rows(db, company_id, utc_start, utc_end) if valid_intervals else []
+    eligible_articles = {
+        article.id: article
+        for article, _match, _story_id in day_rows
+        if any(
+            interval_start <= (article.published_at or article.created_at) < interval_end
+            for interval_start, interval_end in valid_intervals
+        )
+    }
+    sentiment_counts = Counter(
+        (article.sentiment_label or "").casefold()
+        for article in eligible_articles.values()
+    )
+    summary.positive_article_count = sum(sentiment_counts[label] for label in ("positive", "긍정"))
+    summary.neutral_article_count = sum(sentiment_counts[label] for label in ("neutral", "중립"))
+    summary.negative_article_count = sum(sentiment_counts[label] for label in ("negative", "부정"))
+    summary.risk_article_count = 0
+    if eligible_articles:
+        summary.risk_article_count = db.scalar(
+            select(func.count(func.distinct(RiskEventArticle.article_id)))
+            .join(RiskEvent, RiskEvent.id == RiskEventArticle.risk_event_id)
+            .where(
+                RiskEvent.company_id == company_id,
+                RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+                RiskEventArticle.article_id.in_(eligible_articles),
+            )
+        ) or 0
     summary.risk_event_count = db.scalar(
         select(func.count(RiskEvent.id)).where(
             RiskEvent.company_id == company_id,

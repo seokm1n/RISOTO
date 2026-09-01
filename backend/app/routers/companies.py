@@ -483,6 +483,13 @@ def delete_company(
                     ArticleFilterResult.raw_article_id == RawNewsArticle.id
                 )
             ),
+            # 중복 판정의 기준 기사로 참조 중인 원문은 보존한다. 이 참조를
+            # 끊으면 duplicate 사유에는 기준 원문이 필요하다는 DB 제약을 위반한다.
+            ~exists(
+                select(ArticleFilterResult.id).where(
+                    ArticleFilterResult.duplicate_of_raw_id == RawNewsArticle.id
+                )
+            ),
             ~exists(
                 select(NewsArticle.id).where(
                     NewsArticle.raw_article_id == RawNewsArticle.id

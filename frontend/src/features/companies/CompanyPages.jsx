@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
+import { AppNoticeDialog, useAppConfirm } from "../../shared/components";
 import {
   COMPANY_KEYWORD_FIELDS,
   COMPANY_SIZE_LABELS,
@@ -106,6 +107,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState(null);
+  const { confirm, confirmationDialog } = useAppConfirm();
   const submittedKeywords = companyKeywordsWithDrafts(form, keywordDrafts);
   const keywordCount = Object.values(submittedKeywords).reduce((sum, values) => sum + values.length, 0);
   const targetLabel = companyRole === "main" ? "나의 기업" : COMPETITOR_LABEL;
@@ -139,7 +141,15 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
     event.preventDefault();
     const validationError = validateCompanyForm(form, keywordCount);
     if (validationError) { setNotice({ type: "error", message: validationError }); return; }
-    if (!window.confirm(`${form.name.trim()}을(를) ${targetLabel}(으)로 등록하고 기사 수집을 시작할까요?`)) return;
+    const confirmed = await confirm({
+      kicker: companyRole === "competitor" ? "COMPETITOR REGISTRATION" : "MAIN COMPANY REGISTRATION",
+      title: companyRole === "competitor"
+        ? `${form.name.trim()}을(를) 경쟁사(으)로 등록할까요?`
+        : `${form.name.trim()}을(를) 나의 기업으로 등록할까요?`,
+      message: "등록 후 실시간 수집을 시작합니다.",
+      confirmLabel: "등록",
+    });
+    if (!confirmed) return;
     setSubmitting(true); setNotice(null);
     try {
       const endpoint = companyRole === "main" ? "/companies/main" : "/companies";
@@ -154,21 +164,21 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
   };
 
   const registrationForm = <form className={registrationOnly ? "edit-card company-registration-form" : "setup-card"} onSubmit={submit}>
-    {onboarding && <div className="card-heading"><div><span className="eyebrow">NEW MAIN TARGET</span><h2>{targetLabel} 등록</h2></div></div>}
+    {onboarding && <div className="card-heading onboarding-card-heading"><div><span className="eyebrow">MY COMPANY SETUP</span><h2>나의 기업 등록</h2><h3><strong>나의 기업은 위험 대응의 기준이 됩니다.<br />등록 후 정보는 수정할 수 있지만 삭제하거나 역할을 바꿀 수 없습니다.</strong></h3></div></div>}
     <CompanySettingsFields idPrefix={companyRole === "main" ? "main-register" : "competitor-register"} form={form} industries={industries} disabled={submitting || loading} version={formVersion} onFieldChange={changeField} onKeywordChange={changeKeyword} onKeywordDraftChange={changeKeywordDraft} />
     {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
     <button className="submit-button" type="submit" disabled={submitting || loading}><span>{submitting ? "등록 중..." : `${targetLabel} 등록`}</span><b aria-hidden="true">→</b></button>
   </form>;
 
-  if (registrationOnly) return registrationForm;
+  if (registrationOnly) return <>{registrationForm}{confirmationDialog}</>;
 
   return <>
     {showRegistrationForm && <section className={`hero-grid ${onboarding ? "onboarding-hero" : "competitor-hero"}`}>
-      {onboarding && <div className="hero-copy"><h1>{companyRole === "main" ? <>먼저,<br /><em>나의 기업</em>을 등록하세요.</> : <>분석할 <em>{COMPETITOR_LABEL}</em>의<br />정보를 입력하세요.</>}</h1><p>{companyRole === "main" ? "나의 기업은 위험 대응의 기준이 됩니다. 등록 후 정보는 수정할 수 있지만 삭제하거나 역할을 바꿀 수 없습니다." : `${COMPETITOR_LABEL}의 위험은 나의 기업에 미칠 수 있는 영향과 대응 경우의 수로 분석됩니다.`}</p></div>}
       {!onboarding && <div className="competitor-setup-heading"><span className="eyebrow">NEW COMPETITOR TARGET</span><h1>{COMPETITOR_LABEL} 등록</h1></div>}
       {registrationForm}
     </section>}
     {!onboarding && <section className="registered-section">
+      <p className="company-page-intro">등록된 기업 정보를 수정할 수 있고, 경쟁사를 새로 등록, 삭제할 수 있습니다.</p>
       {loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : <div className="company-role-sections">
         {[
           { role: "main", title: "나의 기업", kicker: "MY COMPANY", empty: "등록한 나의 기업이 없습니다." },
@@ -182,14 +192,33 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
         })}
       </div>}
     </section>}
+    {confirmationDialog}
   </>;
 }
 
 export function MainCompanyOnboardingPage({ onCreated }) {
   const navigate = useNavigate();
+  const [createdCompany, setCreatedCompany] = useState(null);
+  const [completing, setCompleting] = useState(false);
   useEffect(() => { document.title = "RISOTO · 나의 기업 등록"; }, []);
-  const complete = async () => { await onCreated(); navigate("/main", { replace: true }); };
-  return <main className="onboarding-page"><header className="onboarding-topbar"><div className="login-brand"><img src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span>RISOTO</span></div></header><SetupPage companyRole="main" onboarding onCreated={complete} /></main>;
+  const complete = (company) => setCreatedCompany(company);
+  const acknowledgeCollectionStart = async () => {
+    setCompleting(true);
+    try {
+      await onCreated();
+      navigate("/main", { replace: true });
+    } finally {
+      setCompleting(false);
+    }
+  };
+  return <main className="onboarding-page">
+    <header className="topbar onboarding-topbar"><div className="brand onboarding-brand"><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></div></header>
+    <SetupPage companyRole="main" onboarding onCreated={complete} />
+    {createdCompany && <AppNoticeDialog kicker="REALTIME COLLECTION" title="실시간 수집을 시작했습니다" onConfirm={acknowledgeCollectionStart} busy={completing}>
+      <p><strong>{createdCompany.name}</strong>을(를) 나의 기업으로 등록했습니다.</p>
+      <p className="app-notice-detail">등록과 동시에 최근 기사 수집과 실시간 모니터링이 시작됩니다. 요약 및 수집 현황에서 진행 상태를 확인할 수 있습니다.</p>
+    </AppNoticeDialog>}
+  </main>;
 }
 
 function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
@@ -203,6 +232,7 @@ function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState(null);
+  const { confirm, confirmationDialog, confirming } = useAppConfirm();
   const submittedKeywords = companyKeywordsWithDrafts(form, keywordDrafts);
   const hasKeywordDraft = Object.values(keywordDrafts).some((value) => value.trim());
   const isDirty = Boolean(selected) && (companyFormSignature(form) !== companyFormSignature(initialForm) || hasKeywordDraft);
@@ -228,10 +258,20 @@ function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, [isDirty]);
 
-  const requestClose = useCallback(() => {
-    if (isDirty && !window.confirm("저장하지 않은 변경사항을 버리고 수정창을 닫을까요?")) return;
+  const requestClose = useCallback(async () => {
+    if (confirming) return;
+    if (isDirty) {
+      const confirmed = await confirm({
+        kicker: "UNSAVED CHANGES",
+        title: "저장하지 않은 변경사항을 버리고 수정창을 닫을까요?",
+        message: "닫으면 입력한 변경사항은 저장되지 않습니다.",
+        confirmLabel: "닫기",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
     onClose();
-  }, [isDirty, onClose]);
+  }, [confirm, confirming, isDirty, onClose]);
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -245,7 +285,14 @@ function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
   const changeKeywordDraft = (field, value) => setKeywordDrafts((current) => ({ ...current, [field]: value }));
   const removeCompany = async () => {
     if (!selected || selected.company_role === "main" || deleting || saving) return;
-    if (!window.confirm(`${selected.name}을(를) 삭제할까요?\n수집 작업, 기사, 분석 결과와 위험 이벤트도 함께 삭제되며 복구할 수 없습니다.`)) return;
+    const confirmed = await confirm({
+      kicker: "DELETE COMPETITOR",
+      title: `${selected.name}을(를) 삭제할까요?`,
+      detail: "수집 작업, 기사, 분석 결과와 위험 이벤트도 함께 삭제되며 복구할 수 없습니다.",
+      confirmLabel: "삭제",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setDeleting(true); setNotice(null);
     try {
       await api.delete(`/companies/${selected.id}`);
@@ -259,7 +306,13 @@ function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
     event.preventDefault();
     const validationError = validateCompanyForm(form, keywordCount);
     if (!selected || validationError) { setNotice({ type: "error", message: validationError || "수정할 기업을 찾지 못했습니다." }); return; }
-    if (!window.confirm(`${selected.name}의 변경사항을 저장할까요?`)) return;
+    const confirmed = await confirm({
+      kicker: "SAVE CHANGES",
+      title: `${selected.name}의 변경사항을 저장할까요?`,
+      message: "기업 정보와 기사 수집 설정을 새 내용으로 반영합니다.",
+      confirmLabel: "저장",
+    });
+    if (!confirmed) return;
     setSaving(true); setNotice(null);
     try {
       const response = await api.put(`/companies/${selected.id}`, companyPayload(form, submittedKeywords));
@@ -282,6 +335,7 @@ function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
         <div className="edit-form-actions">{selected.company_role === "competitor" && <button className="delete-button" type="button" onClick={removeCompany} disabled={saving || deleting}><span>{deleting ? "삭제 중..." : `${COMPETITOR_LABEL} 삭제`}</span><b aria-hidden="true">×</b></button>}<button className="submit-button" type="submit" disabled={saving || deleting || !isDirty}><span>{saving ? "저장 중..." : "변경사항 저장"}</span><b aria-hidden="true">→</b></button></div>
       </form>}
     </section>
+    {confirmationDialog}
   </div>
 }
 

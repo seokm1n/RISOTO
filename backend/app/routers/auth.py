@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import Company, User
 from app.schemas import (
+    AuthAccountDeleteRequest,
     AuthLoginRequest,
     AuthMeRead,
     AuthPasswordChangeRequest,
@@ -45,6 +46,25 @@ def _set_session_cookies(response: Response, raw_token: str, raw_csrf_token: str
         secure=settings.session_cookie_secure or settings.app_env.casefold() == "production",
         samesite="lax",
         path="/",
+    )
+
+
+def _delete_session_cookies(response: Response) -> None:
+    """인증 종료 응답에서 브라우저의 세션·CSRF 쿠키를 함께 제거한다."""
+    settings = get_settings()
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        httponly=True,
+        secure=settings.session_cookie_secure or settings.app_env.casefold() == "production",
+        samesite="lax",
+    )
+    response.delete_cookie(
+        settings.csrf_cookie_name,
+        path="/",
+        httponly=False,
+        secure=settings.session_cookie_secure or settings.app_env.casefold() == "production",
+        samesite="lax",
     )
 
 
@@ -158,6 +178,40 @@ def change_password(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    payload: AuthAccountDeleteRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> Response:
+    """일반 사용자 계정과 계정이 소유한 데이터를 영구 삭제한다."""
+    if auth.user.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 계정은 마이페이지에서 탈퇴할 수 없습니다.",
+        )
+
+    try:
+        valid_password = password_hasher.verify(
+            auth.user.password_hash,
+            payload.current_password,
+        )
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        valid_password = False
+    if not valid_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="현재 비밀번호가 올바르지 않습니다.",
+        )
+
+    db.delete(auth.user)
+    db.commit()
+    _delete_session_cookies(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     response: Response,
@@ -166,20 +220,6 @@ def logout(
 ) -> Response:
     auth.session.revoked_at = datetime.now(timezone.utc)
     db.commit()
-    settings = get_settings()
-    response.delete_cookie(
-        settings.session_cookie_name,
-        path="/",
-        httponly=True,
-        secure=settings.session_cookie_secure or settings.app_env.casefold() == "production",
-        samesite="lax",
-    )
-    response.delete_cookie(
-        settings.csrf_cookie_name,
-        path="/",
-        httponly=False,
-        secure=settings.session_cookie_secure or settings.app_env.casefold() == "production",
-        samesite="lax",
-    )
+    _delete_session_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response

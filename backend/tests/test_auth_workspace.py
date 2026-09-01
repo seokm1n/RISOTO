@@ -14,9 +14,22 @@ from starlette.requests import Request
 from app.auth import CurrentAuth, create_auth_session, require_auth
 from app.config import get_settings
 from app.database import engine
-from app.models import AuthSession, User
-from app.routers.auth import change_password, login, logout, me, password_hasher, signup
-from app.schemas import AuthLoginRequest, AuthPasswordChangeRequest, AuthSignupRequest
+from app.models import AuthSession, Company, User
+from app.routers.auth import (
+    change_password,
+    delete_account,
+    login,
+    logout,
+    me,
+    password_hasher,
+    signup,
+)
+from app.schemas import (
+    AuthAccountDeleteRequest,
+    AuthLoginRequest,
+    AuthPasswordChangeRequest,
+    AuthSignupRequest,
+)
 
 
 def _response_cookies(response: Response) -> dict[str, str]:
@@ -178,6 +191,85 @@ class AuthDatabaseTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 204)
         self.assertTrue(password_hasher.verify(user.password_hash, "new-password"))
+
+    def test_delete_account_requires_password_and_removes_owned_data(self):
+        suffix = uuid4().hex
+        user = User(
+            email=f"delete-{suffix}@example.com",
+            password_hash=password_hasher.hash("current-password"),
+            role="general",
+        )
+        self.db.add(user)
+        self.db.flush()
+        company = Company(
+            user_id=user.id,
+            name=f"탈퇴 테스트 {suffix}",
+            normalized_name=f"탈퇴 테스트 {suffix}",
+            company_role="main",
+            annual_revenue_krw=10_000_000_000,
+            company_size_class="large",
+            backfill_days=7,
+            monitoring_status="active",
+            analysis_status="pending",
+        )
+        self.db.add(company)
+        auth_session, _, csrf_token = create_auth_session(self.db, user.id)
+        self.db.commit()
+        user_id = user.id
+        company_id = company.id
+        session_id = auth_session.id
+        auth = CurrentAuth(user=user, session=auth_session, csrf_token=csrf_token)
+
+        with self.assertRaises(HTTPException) as wrong_password:
+            delete_account(
+                AuthAccountDeleteRequest(current_password="wrong-password"),
+                Response(),
+                self.db,
+                auth,
+            )
+        self.assertEqual(wrong_password.exception.status_code, 400)
+        self.assertIsNotNone(self.db.scalar(select(User.id).where(User.id == user_id)))
+
+        response = Response()
+        deleted = delete_account(
+            AuthAccountDeleteRequest(current_password="current-password"),
+            response,
+            self.db,
+            auth,
+        )
+
+        self.assertEqual(deleted.status_code, 204)
+        self.assertIsNone(self.db.scalar(select(User.id).where(User.id == user_id)))
+        self.assertIsNone(self.db.scalar(select(Company.id).where(Company.id == company_id)))
+        self.assertIsNone(
+            self.db.scalar(select(AuthSession.id).where(AuthSession.id == session_id))
+        )
+        cookies = _response_cookies(response)
+        settings = get_settings()
+        self.assertIn(settings.session_cookie_name, cookies)
+        self.assertIn(settings.csrf_cookie_name, cookies)
+
+    def test_delete_account_rejects_admin(self):
+        suffix = uuid4().hex
+        user = User(
+            email=f"admin-delete-{suffix}@example.com",
+            password_hash=password_hasher.hash("current-password"),
+            role="admin",
+        )
+        self.db.add(user)
+        self.db.flush()
+        auth_session, _, csrf_token = create_auth_session(self.db, user.id)
+        self.db.commit()
+
+        with self.assertRaises(HTTPException) as forbidden:
+            delete_account(
+                AuthAccountDeleteRequest(current_password="current-password"),
+                Response(),
+                self.db,
+                CurrentAuth(user=user, session=auth_session, csrf_token=csrf_token),
+            )
+        self.assertEqual(forbidden.exception.status_code, 403)
+        self.assertIsNotNone(self.db.scalar(select(User.id).where(User.id == user.id)))
 
 
 if __name__ == "__main__":
