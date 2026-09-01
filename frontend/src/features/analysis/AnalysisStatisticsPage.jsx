@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
 import MainResponseContent from "./MainResponseContent";
+import PeerRecommendationContent from "./PeerRecommendationContent";
 import { Pagination, PanelTitle } from "../../shared/components";
 import {
   DATA_QUALITY_LABELS,
@@ -119,6 +120,12 @@ function ResponseDraftContent({ draft }) {
   // 앞에서 갈라야, 라우터가 아직 v2를 부르는 동안 화면이 바뀌지 않는다.
   if (draft.schema_version === 3 && draft.generation_kind !== "competitor_impact") {
     return <MainResponseContent content={content} />;
+  }
+  // 동종 경로는 구조가 또 다르다(scenarios가 없고 impact·recommendation을 읽는다).
+  // content_kind가 아니라 generation_kind로 가르는 이유: 근거부족_보류 content에는
+  // content_kind가 없어서, 그 조건으로 잡으면 기사 0건인 동종 초안이 샌다.
+  if (draft.schema_version === 3 && draft.generation_kind === "competitor_impact") {
+    return <PeerRecommendationContent content={content} />;
   }
   const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
   const isCompetitorImpact = draft.generation_kind === "competitor_impact";
