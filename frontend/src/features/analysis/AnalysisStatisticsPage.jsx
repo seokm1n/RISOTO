@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
+import MainResponseContent from "./MainResponseContent";
 import { Pagination, PanelTitle } from "../../shared/components";
 import {
   DATA_QUALITY_LABELS,
@@ -114,6 +115,11 @@ function ActionGroups({ actions }) {
 
 function ResponseDraftContent({ draft }) {
   const content = draft.content ?? {};
+  // v3(schema_version 3)는 v2와 겹치는 키가 하나도 없다. 아래 v2 렌더링을 그대로 두고
+  // 앞에서 갈라야, 라우터가 아직 v2를 부르는 동안 화면이 바뀌지 않는다.
+  if (draft.schema_version === 3 && draft.generation_kind !== "competitor_impact") {
+    return <MainResponseContent content={content} />;
+  }
   const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
   const isCompetitorImpact = draft.generation_kind === "competitor_impact";
   return <div className="response-draft">
