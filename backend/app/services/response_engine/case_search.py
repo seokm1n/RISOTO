@@ -153,9 +153,26 @@ class TeamCaseRetriever:
 
             from app.models import CaseRecord
 
+            # 유형 필터를 SQL에서 먼저 건다. 예전에는 최근 50건을 가져온 뒤 파이썬에서
+            # 걸렀는데, 사례가 쌓이면 50건 밖의 해당 유형 사례가 조용히 사라지고 유료
+            # 웹검색이 대신 돌게 된다. risk_types에는 상위 탐지 유형과 세부 유형이 섞여
+            # 들어올 수 있어 둘 다 후보로 넣는다.
+            from sqlalchemy import cast, or_
+            from sqlalchemy.dialects.postgresql import JSONB
+
+            # risk_types 컬럼이 json이라 포함 연산자(@>)를 바로 못 쓴다. jsonb로 캐스팅해야
+            # 한다 - json 타입에는 그 연산자가 정의돼 있지 않다.
+            parent = get_type(risk_type).parent
+            types_jsonb = cast(CaseRecord.risk_types, JSONB)
             rows = self.db.scalars(
                 select(CaseRecord)
-                .where(CaseRecord.verification_status == "verified")
+                .where(
+                    CaseRecord.verification_status == "verified",
+                    or_(
+                        types_jsonb.contains([parent]),
+                        types_jsonb.contains([risk_type]),
+                    ),
+                )
                 .order_by(CaseRecord.occurred_at.desc().nullslast())
                 .limit(50)
             ).all()

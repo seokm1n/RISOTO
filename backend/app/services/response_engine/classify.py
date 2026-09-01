@@ -224,7 +224,7 @@ def _refine_llm(
             "additionalProperties": False,
         },
     }
-    parsed, _usage = structured_call(
+    parsed, call_usage = structured_call(
         system=_REFINE_PROMPT.format(
             company=payload.company_name,
             catalog=risk_types.catalog_for_prompt(candidates),
@@ -235,6 +235,7 @@ def _refine_llm(
     )
     confidence = float(parsed["confidence"])
     return {
+        "usage": call_usage,
         "risk_type": parsed["risk_type"],
         "confidence": confidence,
         "route": "llm",
@@ -291,7 +292,7 @@ def _classify_llm(payload: AlertPayload, texts: list[str], counts: dict[str, int
     hint = ", ".join(f"{c}:{n}" for c, n in sorted(counts.items(), key=lambda kv: -kv[1])[:3])
     user_content = "\n".join(f"- {s}" for s in sample) + f"\n\n(참고: 키워드 히트 상위 {hint})"
 
-    parsed, _usage = structured_call(
+    parsed, call_usage = structured_call(
         system=_SYSTEM_PROMPT.format(
             company=payload.company_name, catalog=risk_types.catalog_for_prompt()
         ),
@@ -301,6 +302,7 @@ def _classify_llm(payload: AlertPayload, texts: list[str], counts: dict[str, int
     )
     confidence = float(parsed["confidence"])
     return {
+        "usage": call_usage,
         "risk_type": parsed["risk_type"],
         "confidence": confidence,
         "route": "llm",
