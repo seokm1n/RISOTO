@@ -1,0 +1,41 @@
+{
+  "company_name": "무신사",
+  "main_company_name": "쿠팡",
+  "alert_id": "RE-601",
+  "role": "peer",
+  "risk_type": "R10",
+  "risk_type_label": "서비스장애·기술",
+  "impact_direction": "영향_없음",
+  "impact_level": "없음",
+  "impact_channels": [],
+  "reason": "관측된 내용은 무신사가 아닌 SK텔레콤·카카오·KT 컨소시엄의 정부 AI 프로젝트 선정 및 서비스 계획으로, 서비스 장애나 소비자 피해가 발생한 사안이 아닙니다. 쿠팡의 운영·고객·공급망에 직접 연결되는 사실이나 동일 취약점이 확인되지 않아 실질적인 파급은 판단하기 어렵습니다.",
+  "watch_points": [],
+  "confidence": 0.96,
+  "needs_review": false,
+  "proceed": false,
+  "status": "영향없음_종료",
+  "missing_input_fields": [
+    "spread_stage",
+    "days_since_last_alert",
+    "attribution",
+    "daily_series",
+    "negative_ratio"
+  ],
+  "cases": [],
+  "regulations": [],
+  "usage": {
+    "input_tokens": 1903,
+    "output_tokens": 453,
+    "calls": 1
+  },
+  "versions": {
+    "impact": "impact-v0.1",
+    "model": "gpt-5.6-luna",
+    "upstream_model": "risk-detector"
+  },
+  "_provenance": {
+    "note": "공유 DB risk_event 601 실측. 상단 탐지 오탐 사례.",
+    "source": "risk_event id=601, 무신사, severity=critical, risk_probability=0.9495335157074056",
+    "upstream_false_positive": "붙은 기사 21건 중 12건이 '모두의 AI' 컨소시엄 선정 기사로 무신사와 무관하고, 나머지도 대부분 긍정 뉴스임을 확인."
+  }
+}

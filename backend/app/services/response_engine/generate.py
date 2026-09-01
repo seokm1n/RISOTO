@@ -14,6 +14,8 @@
 """
 from __future__ import annotations
 
+import json
+
 from . import principles
 from ._llm import response_model, structured_call
 from .evidence import Evidence
@@ -421,7 +423,9 @@ def _draft_signature(draft: dict) -> str:
     return " ".join(parts)
 
 
-def dedupe_scenarios(drafts: list[dict], threshold: float = 0.93) -> tuple[list[dict], list[str]]:
+def dedupe_scenarios(
+    drafts: list[dict], threshold: float = 0.93
+) -> tuple[list[dict], list[str], dict]:
     """내용이 사실상 같은 시나리오를 하나로 접는다.
 
     관점을 벌려도 사안에 따라 결론이 하나로 모이는 경우가 있다. 그때 거의 같은 초안 셋을
@@ -430,17 +434,20 @@ def dedupe_scenarios(drafts: list[dict], threshold: float = 0.93) -> tuple[list[
 
     임베딩을 못 쓰면(색인 인프라 없음·API 실패) 접지 않고 그대로 둔다 - 잘못 접는 것보다
     중복이 남는 편이 낫다.
+
+    반환의 세 번째 값은 임베딩 사용량이다. 호출자가 집계에 더하지 않으면 이 호출이
+    사용량 보고에서 통째로 빠진다.
     """
     if len(drafts) <= 1:
-        return drafts, []
+        return drafts, [], {}
     try:
         import numpy as np
 
         from .rag.embed import embed
 
-        vectors, _ = embed([_draft_signature(d) for d in drafts])
+        vectors, embed_usage = embed([_draft_signature(d) for d in drafts])
     except Exception as exc:
-        return drafts, [f"유사도 판정 불가 - 중복 접기 생략: {str(exc)[:80]}"]
+        return drafts, [f"유사도 판정 불가 - 중복 접기 생략: {str(exc)[:80]}"], {}
 
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
     unit = vectors / np.clip(norms, 1e-9, None)
@@ -463,7 +470,7 @@ def dedupe_scenarios(drafts: list[dict], threshold: float = 0.93) -> tuple[list[
                 f"{draft.get('scenario_stance','?')} 관점이 "
                 f"{host.get('scenario_stance','?')}와 사실상 같아 하나로 합침"
             )
-    return kept, notes
+    return kept, notes, embed_usage
 
 
 def regenerate_with_feedback(
@@ -479,7 +486,12 @@ def regenerate_with_feedback(
     통째로 다시 쓰게 하지 않고 무엇이 틀렸는지 알려주는 이유: 통과한 부분까지 매번 새로
     쓰면 고쳐야 할 곳 말고 다른 데가 바뀌어, 두 번째 검증에서 새 위반이 생기는 일이 잦다.
     """
-    system = build_system_prompt(risk_type_code, payload, ev, provider=provider)
+    # 재생성 결과는 원래 관점 이름으로 저장되므로 stance를 그대로 넘겨야 한다. 빼먹으면
+    # "선제_공개"라고 적힌 시나리오가 관점 지침 없이 만들어진다.
+    system = build_system_prompt(
+        risk_type_code, payload, ev, provider=provider,
+        stance=previous.get("scenario_stance"),
+    )
     user = build_user_prompt(payload, ev)
 
     # 재생성은 지정된 위반만 고치는 작업이라 다양성이 필요 없다. 재현성 쪽으로 붙인다.

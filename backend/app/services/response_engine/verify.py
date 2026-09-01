@@ -213,7 +213,26 @@ _INTERNAL_FIELD_NAMES = (
     "n_unique_channels", "diversity_ratio", "crisis_probability", "video_hhi",
     "escalation_tier", "spread_stage", "baseline_mean",
 )
-_MENTION_ID_PATTERN = re.compile(r"\[m[_-]?\d+\]")
+# 샘플 픽스처가 쓰는 표기. 프로덕션 id는 이 형태가 아니라 맨 숫자(str(article.id))다.
+_SAMPLE_MENTION_ID_PATTERN = re.compile(r"\[m[_-]?\d+\]")
+
+
+def _leaked_mention_ids(body: str, evidence: Evidence) -> list[str]:
+    """본문에 새어 나온 원문 식별자를 찾는다.
+
+    프로덕션 mention_id는 맨 숫자라, 숫자만 훑으면 "271건" 같은 정상 서술까지 걸린다.
+    프롬프트가 원문을 `- [12345] ...` 형태로 보여 주므로 실제 id가 괄호에 싸인 경우만
+    잡는다. 예전 픽스처 표기(`[m_1]`)도 함께 본다.
+    """
+    found = set(_SAMPLE_MENTION_ID_PATTERN.findall(body))
+    for m in getattr(evidence, "mentions", []) or []:
+        mid = str(getattr(m, "mention_id", "") or "")
+        if not mid:
+            continue
+        for token in (f"[{mid}]", f"({mid})", f"[m_{mid}]"):
+            if token in body:
+                found.add(token)
+    return sorted(found)
 
 
 def _rule10_reader_facing(ctx: _Context) -> tuple[bool, str]:
@@ -233,9 +252,9 @@ def _rule10_reader_facing(ctx: _Context) -> tuple[bool, str]:
     leaked = sorted({f for f in _INTERNAL_FIELD_NAMES if f in body})
     if leaked:
         problems.append(f"지표 필드명 노출: {leaked}")
-    ids = _MENTION_ID_PATTERN.findall(body)
+    ids = _leaked_mention_ids(body, ctx.evidence)
     if ids:
-        problems.append(f"원문 식별자 노출: {sorted(set(ids))}")
+        problems.append(f"원문 식별자 노출: {ids}")
     if "http://" in body or "https://" in body:
         problems.append("본문에 URL 노출(출처는 인용 근거 영역에만 표시)")
 
