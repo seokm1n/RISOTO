@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_admin, require_auth
@@ -25,13 +25,18 @@ from app.schemas import (
     RiskDetectionStatusRead,
     ResponseDraftRead,
     ResponseDraftReview,
+    ResponseGenerationAcceptedRead,
 )
 from app.services.llm_labeling import llm_labeling_status, run_llm_labeling_backlog
 from app.services.model_operations import (
     build_training_readiness,
     ensure_daily_model_check,
 )
-from app.services.response_engine import generate_response_draft
+from app.services.response_engine import (
+    SCHEMA_VERSION,
+    enqueue_response_draft,
+    generate_response_draft,
+)
 from app.services.risk_analysis import resolve_production_risk_detector
 
 
@@ -222,10 +227,88 @@ def create_response_draft(
     )
     if event is None:
         raise HTTPException(status_code=404, detail="위험 이벤트를 찾을 수 없습니다.")
+    existing_v3 = db.scalar(
+        select(ResponseDraft.id)
+        .where(
+            ResponseDraft.risk_event_id == risk_event_id,
+            ResponseDraft.schema_version == SCHEMA_VERSION,
+            ResponseDraft.user_id == auth.user_id,
+        )
+        .limit(1)
+    )
+    if event.event_source == "story_v2" and not (
+        existing_v3 is not None
+        or event.response_generation_status in {"failed", "deferred"}
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="최초 대응방안은 자동 생성 중입니다. 완료 후 다시 시도해 주세요.",
+        )
     try:
-        return generate_response_draft(risk_event_id, force=force)
+        draft = generate_response_draft(risk_event_id, force=True if event.event_source == "story_v2" else force)
+        return draft
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/risk-events/{risk_event_id}/response-generation",
+    response_model=ResponseGenerationAcceptedRead,
+    status_code=202,
+)
+def start_response_generation(
+    risk_event_id: int,
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> ResponseGenerationAcceptedRead:
+    """개별 사건의 대응방안 생성을 중복 없이 비동기로 시작한다."""
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"response-generation-request:{risk_event_id}"},
+        )
+    query = (
+        select(RiskEvent)
+        .join(Company, Company.id == RiskEvent.company_id)
+        .where(
+            RiskEvent.id == risk_event_id,
+            Company.user_id == auth.user_id,
+        )
+    )
+    if db.get_bind().dialect.name != "postgresql":
+        query = query.with_for_update()
+    event = db.scalar(query)
+    if event is None:
+        raise HTTPException(status_code=404, detail="위험 이벤트를 찾을 수 없습니다.")
+    if event.event_source != "story_v2":
+        raise HTTPException(
+            status_code=409,
+            detail="스토리 사건에서만 대응방안을 생성할 수 있습니다.",
+        )
+
+    current_status = event.response_generation_status
+    if current_status in {"pending", "generating"}:
+        db.commit()
+        return ResponseGenerationAcceptedRead(
+            risk_event_id=event.id,
+            status=current_status,
+        )
+    if current_status == "generated" and not force:
+        db.commit()
+        return ResponseGenerationAcceptedRead(
+            risk_event_id=event.id,
+            status="generated",
+        )
+
+    event.response_generation_status = "pending"
+    event.response_generation_error = None
+    db.commit()
+    enqueue_response_draft(event.id, force=force or current_status == "failed")
+    return ResponseGenerationAcceptedRead(
+        risk_event_id=event.id,
+        status="pending",
+    )
 
 
 @router.get("/risk-events/{risk_event_id}/response-drafts", response_model=list[ResponseDraftRead])

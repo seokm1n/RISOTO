@@ -123,5 +123,5 @@ export function Pagination({ page, pageSize, total, onChange }) {
 
 // 패널의 보조 문구와 제목을 공통 레이아웃으로 표시한다.
 export function PanelTitle({ kicker, title }) {
-  return <div className="panel-title"><span className="eyebrow">{kicker}</span><h2>{title}</h2></div>;
+  return <div className="panel-title">{kicker && <span className="eyebrow">{kicker}</span>}<h2>{title}</h2></div>;
 }

@@ -42,14 +42,25 @@ services:
       ARTICLE_FILTER_ADVERTISING_REVIEW_THRESHOLD: ${ARTICLE_FILTER_ADVERTISING_REVIEW_THRESHOLD:-0.55}
       ARTICLE_FILTER_RELEVANCE_ACCEPT_THRESHOLD: ${ARTICLE_FILTER_RELEVANCE_ACCEPT_THRESHOLD:-0.70}
       ARTICLE_FILTER_RELEVANCE_REJECT_THRESHOLD: ${ARTICLE_FILTER_RELEVANCE_REJECT_THRESHOLD:-0.30}
-      STORY_CLUSTER_SIMILARITY_THRESHOLD: ${STORY_CLUSTER_SIMILARITY_THRESHOLD:-0.72}
-      STORY_CLUSTER_LOOKBACK_HOURS: ${STORY_CLUSTER_LOOKBACK_HOURS:-72}
+      STORY_CLUSTER_RECENT_HOURS: ${STORY_CLUSTER_RECENT_HOURS:-168}
+      STORY_CLUSTER_FOLLOWUP_HOURS: ${STORY_CLUSTER_FOLLOWUP_HOURS:-720}
+      STORY_CLUSTER_CANDIDATE_LIMIT: ${STORY_CLUSTER_CANDIDATE_LIMIT:-1500}
+      STORY_CLUSTER_SEMANTIC_CANDIDATE_LIMIT: ${STORY_CLUSTER_SEMANTIC_CANDIDATE_LIMIT:-80}
+      STORY_CLUSTER_EMBEDDING_BATCH_SIZE: ${STORY_CLUSTER_EMBEDDING_BATCH_SIZE:-256}
       READINESS_MIN_ARTICLES: ${READINESS_MIN_ARTICLES:-50}
       READINESS_MIN_NONEMPTY_WINDOWS: ${READINESS_MIN_NONEMPTY_WINDOWS:-40}
       RISK_DEFAULT_THRESHOLD: ${RISK_DEFAULT_THRESHOLD:-0.65}
       RISK_CLOSE_THRESHOLD: ${RISK_CLOSE_THRESHOLD:-0.45}
       RISK_CLOSE_CONSECUTIVE_WINDOWS: ${RISK_CLOSE_CONSECUTIVE_WINDOWS:-2}
       RISK_TYPE_NLI_ENABLED: ${RISK_TYPE_NLI_ENABLED:-true}
+      STORY_RISK_ENGINE_ENABLED: ${STORY_RISK_ENGINE_ENABLED:-true}
+      ARTICLE_RISK_CANDIDATE_THRESHOLD: ${ARTICLE_RISK_CANDIDATE_THRESHOLD:-0.65}
+      ARTICLE_RISK_HIGH_THRESHOLD: ${ARTICLE_RISK_HIGH_THRESHOLD:-0.80}
+      ARTICLE_RISK_UNCERTAIN_LOW: ${ARTICLE_RISK_UNCERTAIN_LOW:-0.35}
+      ARTICLE_RISK_LLM_MAX_PER_RUN: ${ARTICLE_RISK_LLM_MAX_PER_RUN:-20}
+      STORY_EVENT_MIN_DISTINCT_SOURCES: ${STORY_EVENT_MIN_DISTINCT_SOURCES:-2}
+      STORY_EVENT_INACTIVITY_HOURS: ${STORY_EVENT_INACTIVITY_HOURS:-48}
+      STORY_EVENT_REBUILD_HOURS: ${STORY_EVENT_REBUILD_HOURS:-72}
       RETRAIN_MIN_NEW_ARTICLE_LABELS: ${RETRAIN_MIN_NEW_ARTICLE_LABELS:-200}
       RETRAIN_MIN_NEW_RISK_EVENT_LABELS: ${RETRAIN_MIN_NEW_RISK_EVENT_LABELS:-20}
       MODEL_DRIFT_ROBUST_Z_THRESHOLD: ${MODEL_DRIFT_ROBUST_Z_THRESHOLD:-3.5}
@@ -58,11 +69,11 @@ services:
       MODEL_ARTIFACT_DIR: /app/model_artifacts
       IMPORT_EXPORTED_MODELS: ${IMPORT_EXPORTED_MODELS:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      RESPONSE_MODEL_NAME: ${RESPONSE_MODEL_NAME:-gpt-5.6-luna}
+      RESPONSE_MODEL_NAME: ${RESPONSE_MODEL_NAME:-gpt-4o-mini}
       RESPONSE_GENERATION_PROVIDER: ${RESPONSE_GENERATION_PROVIDER:-openai}
       LLM_LABELING_ENABLED: ${LLM_LABELING_ENABLED:-true}
       LLM_LABELING_PROVIDER: ${LLM_LABELING_PROVIDER:-openai}
-      LLM_LABELING_MODEL_NAME: ${LLM_LABELING_MODEL_NAME:-gpt-5.6-luna}
+      LLM_LABELING_MODEL_NAME: ${LLM_LABELING_MODEL_NAME:-gpt-4o-mini}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     command: >-
       sh -c "if [ \"$${RUN_DB_MIGRATIONS}\" = \"true\" ]; then alembic upgrade head; fi
@@ -71,9 +82,9 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
-      - ../../exports/local_models/local_models:/app/local_models:ro
+      - ./exports/local_models/local_models:/app/local_models:ro
       - huggingface_cache:/root/.cache/huggingface
-      - ../../exports/model_artifacts:/app/model_artifacts:ro
+      - ./exports/model_artifacts:/app/model_artifacts:ro
     healthcheck:
       test:
         - CMD
@@ -130,9 +141,9 @@ services:
       ARTICLE_FILTER_ALLOW_MODEL_DOWNLOAD: ${ARTICLE_FILTER_ALLOW_MODEL_DOWNLOAD:-true}
     volumes:
       - ./backend:/app
-      - ../../exports/local_models/local_models:/app/local_models:ro
+      - ./exports/local_models/local_models:/app/local_models:ro
       - huggingface_cache:/root/.cache/huggingface
-      - ../../exports/model_artifacts:/app/model_artifacts:ro
+      - ./exports/model_artifacts:/app/model_artifacts:ro
     gpus: all
     shm_size: "8gb"
 
@@ -141,5 +152,3 @@ volumes:
     name: risoto_frontend_node_modules
   huggingface_cache:
     name: risoto_huggingface_cache
-  model_artifacts:
-    name: risoto_model_artifacts

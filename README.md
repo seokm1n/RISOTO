@@ -207,7 +207,7 @@ POST /api/v1/companies/{id}/activate
 
 ## 현재 모델 운영 방식
 
-공유받은 로컬 KLUE/RoBERTa 모델은 `backend/local_models`에 두며 Docker 백엔드가
+공유받은 로컬 KLUE/RoBERTa 모델은 `exports/local_models/local_models`에 두며 Docker 백엔드가
 `PRETRAINED_RELEVANCE_MODEL_PATH`와 `PRETRAINED_SENTIMENT_MODEL_PATH`로 직접 읽습니다.
 관련성 모델의 `normal`은 관련 기사, `filter`는 제외 기사로 해석하고, 감성 모델은
 아티팩트 `config.json`의 `negative / neutral / positive` 라벨 순서를 그대로 사용합니다.
@@ -261,39 +261,39 @@ POST /api/v1/model-monitoring/check
 
 ## 팀원 온보딩: 모델·정답 데이터 반입
 
-`backend/local_models`(미세조정 KLUE/RoBERTa, 약 1.3GB)와 `model_artifacts` Docker 볼륨
-(LightGBM, Isolation Forest, `model_versions`에 등록된 관련성 모델)은 용량이 커서 git에
+`exports/local_models/local_models`(미세조정 KLUE/RoBERTa, 약 1.3GB)와
+`exports/model_artifacts`(LightGBM, Isolation Forest, `model_versions`에 등록된 관련성 모델)는 용량이 커서 git에
 커밋하지 않고 `.gitignore`로 제외합니다. 정답 라벨(`article_labels`, `risk_event_labels`)도
 저장소가 아니라 각자 로컬 Postgres 안에 있습니다. 저장소를 새로 clone한 팀원은 팀에서 공유
 받은 아래 세 파일을 순서대로 반입하면 코드는 물론 모델·데이터까지 동일한 상태로 맞출 수
 있습니다.
 
-- `local_models.tar.gz` → `backend/local_models/`에 압축 해제
-- `model_artifacts.tar.gz` → `model_artifacts` Docker 볼륨에 반입
+- `local_models.tar.gz` → `exports/local_models/`에 압축 해제
+- `model_artifacts.tar.gz` → `exports/model_artifacts/`에 압축 해제
 - `ground_truth_labels.sql` → 로컬 Postgres에 복원
 
 ### 1. KLUE/RoBERTa 로컬 모델
 
-압축 파일을 저장소 `backend` 폴더 기준으로 풉니다.
+압축 파일을 저장소의 `exports/local_models` 폴더 기준으로 풉니다.
 
 ```powershell
-tar -xzf local_models.tar.gz -C backend
+New-Item -ItemType Directory -Force exports/local_models
+tar -xzf local_models.tar.gz -C exports/local_models
 ```
 
-`backend/local_models/klue_roberta_domain_finetuned` 등 3개 폴더가 생기면 됩니다. 경로는
-`compose.yaml`의 `PRETRAINED_RELEVANCE_MODEL_PATH`/`PRETRAINED_SENTIMENT_MODEL_PATH`가
-이미 가리키고 있어 추가 설정은 필요 없습니다.
+`exports/local_models/local_models/klue_roberta_domain_finetuned` 등 3개 폴더가 생기면 됩니다.
+`compose.yaml`은 이 디렉터리를 컨테이너의 `/app/local_models`에 읽기 전용으로 연결하므로
+프로젝트를 다른 위치로 옮겨도 추가 경로 설정은 필요 없습니다.
 
 ### 2. LightGBM·Isolation Forest·운영 등록 모델
 
-먼저 `docker compose up -d`를 한 번 실행해 `model_artifacts` 볼륨을 만든 뒤, 압축 파일이
-있는 폴더에서 아래처럼 그 볼륨 안에 풀어 넣습니다(`<폴더>`는 `model_artifacts.tar.gz`가
-있는 실제 경로로 바꿉니다).
+압축 파일을 저장소의 `exports/model_artifacts` 폴더에 풉니다. `compose.yaml`은 이
+디렉터리를 컨테이너의 `/app/model_artifacts`에 읽기 전용으로 연결합니다.
 
 ```powershell
-docker compose up -d
-docker run --rm -v risoto_model_artifacts:/data -v "<폴더>:/backup" alpine sh -c "rm -rf /data/* && tar xzf /backup/model_artifacts.tar.gz -C /data"
-docker compose restart backend
+New-Item -ItemType Directory -Force exports/model_artifacts
+tar -xzf model_artifacts.tar.gz -C exports/model_artifacts
+docker compose up -d --force-recreate backend
 ```
 
 ### 3. 정답 데이터(라벨) 복원
@@ -307,12 +307,26 @@ psql "postgresql://<user>:<password>@<host>:<port>/<database>" -f ground_truth_l
 
 ## 위험 사건과 대응 초안
 
-LightGBM 임계값을 처음 넘은 구간에서 사건을 즉시 열고, 같은 사건의 연속 구간은 하나로
-병합합니다. 위험 확률이 하한 임계값 아래인 구간이 두 번 연속 나타날 때 닫습니다. 위험
-유형은 제품·품질, 안전·사고, 보안·개인정보, 법률·규제, 노동·인사, 재무·지배구조,
-공급·운영, 평판·소비자의 다중 라벨이며 초기에는 키워드와 KLUE NLI를 결합합니다.
+운영 위험 사건은 15분 구간 자체가 아니라 `기업 + 스토리 군집`으로
+식별합니다. 정제 기사마다 관련성·감성·키워드·KLUE NLI로 위험 여부와 8개 유형 확률을
+판정하고, 애매한 기사만 설정된 LLM으로 보완합니다. 고위험 기사 1건 또는 같은 스토리의
+서로 다른 원문 도메인 2곳 이상이 확인돼야 사건을 엽니다. 근거가 없는 구간은 사건을
+만들지 않습니다. 사건이 열리면 같은 스토리의 정제 통과 기사를 모두 근거로 연결하고,
+출처 수는 네이버·다음 같은 수집 API 수가 아니라 각 기사의 원문 언론사 도메인 수로 셉니다.
+15분 LightGBM·Isolation Forest 결과는 기사량 급증과 확산 정도를 보여
+주는 대시보드·보정 신호로 계속 보존합니다.
 
-최초 사건 개방 또는 주요 유형 변경 시 대응 초안을 백그라운드에서 만듭니다. 현재 근거
+스토리 군집은 제목뿐 아니라 요약의 문맥, 행위·기관·인물·구체 사실, 다국어 문장 임베딩을
+함께 비교합니다. 장소는 필수 조건으로 사용하지 않습니다. 최근 7일 후보는 복합 근거로
+판정하고, 7일이 지난 후속 보도는 강한 동일성이 있을 때만 최대 30일까지 기존 스토리에
+연결합니다. 한 개의 고정된 "제목 유사도 72%" 기준은 더 이상 사용하지 않습니다.
+
+같은 스토리의 후속 기사는 기존 사건에 연결하고, 마지막 적격 근거 이후 48시간 동안
+새 근거가 없으면 사건을 닫습니다. 위험 유형은 제품·품질, 안전·사고, 보안·개인정보,
+법률·규제, 노동·인사, 재무·지배구조, 공급·운영, 평판·소비자의 다중 라벨로 보존합니다.
+
+최초 사건 확정, 위험 등급 상승, 위험 확률의 의미 있는 상승 또는 공식 출처 추가 시 대응
+초안을 백그라운드에서 만듭니다. 현재 근거
 기사와 검증 사례를 우선 사용하고 부족하면 국내 사례 검색 결과를 `candidate`로 캐시합니다.
 입력에 없는 URL과 인용 없는 대응 문구는 제거하며, URL 근거 기사가 없으면 초안 자체를
 생성하지 않습니다. 승인 전에는 외부 전송이나 실제 대응을 실행하지 않습니다.
@@ -322,6 +336,21 @@ POST /api/v1/risk-events/{id}/response-drafts
 GET  /api/v1/risk-events/{id}/response-drafts
 POST /api/v1/response-drafts/{id}/approve
 POST /api/v1/response-drafts/{id}/reject
+```
+
+`20260902_0023` 마이그레이션 적용 후 기존 활성 15분 사건을 이력 처리하고 최근 72시간을
+새 기준으로 즉시 재구성합니다. 전체 이력을 재구성할 때는 `--all`을 사용합니다. 전체 실행은
+250건씩 커밋하므로 중단되어도 같은 명령을 다시 실행하면 완료된 판정을 재사용합니다. 이때
+기존 `window_v1` 사건은 삭제하지 않고 `legacy_candidate`로 보존해 기본 목록의 중복을 막습니다.
+대량 과금을 방지하기 위해 이력 재구성은 대응 초안을 자동 생성하지 않습니다. 이후 실시간으로
+확정되는 새 사건은 계속 자동 생성되며, 재구성된 활성 사건은 화면에서 개별 생성하거나 명시적인
+`--generate-drafts --draft-limit N` 옵션으로 우선순위가 높은 N건만 일괄 생성할 수 있습니다.
+
+```powershell
+docker compose exec backend python -m app.cli rebuild-story-events --hours 72
+docker compose exec backend python -m app.cli rebuild-story-events --all --batch-size 250
+docker compose exec backend python -m app.cli rebuild-story-events --all --recluster --batch-size 250
+docker compose exec backend python -m app.cli rebuild-story-events --all --generate-drafts --draft-limit 10
 ```
 
 ## 검증

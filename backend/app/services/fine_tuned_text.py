@@ -296,8 +296,8 @@ def predict_sentiment(texts: list[str]) -> tuple[str, list[dict]] | None:
         return None
 
 
-def predict_risk_types(texts: list[str]) -> dict | None:
-    """Return reviewed-taxonomy probabilities from the promoted multi-label model."""
+def predict_risk_types_batch(texts: list[str]) -> tuple[str, list[dict[str, float]]] | None:
+    """Return one reviewed-taxonomy probability map per article text."""
     global _risk_type_cache
     if not texts:
         return None
@@ -319,27 +319,40 @@ def predict_risk_types(texts: list[str]) -> dict | None:
         _, model, tokenizer, device = _risk_type_cache
         import torch
 
-        text = " ".join(item.strip() for item in texts if item.strip())[:6000]
-        if not text:
+        cleaned = [item.strip()[:6000] for item in texts]
+        if not any(cleaned):
             return None
-        encoded = tokenizer(
-            text,
-            truncation=True,
-            max_length=384,
-            return_tensors="pt",
-        )
-        with torch.no_grad():
-            logits = model(
-                input_ids=encoded["input_ids"].to(device),
-                attention_mask=encoded["attention_mask"].to(device),
-            ).logits[0]
-        probabilities = torch.sigmoid(logits).cpu().tolist()
-        return {
-            "version": version.version,
-            "scores": {
-                risk_type: float(probabilities[index])
-                for index, risk_type in enumerate(RISK_TYPES)
-            },
-        }
+        output: list[dict[str, float]] = []
+        for start in range(0, len(cleaned), 16):
+            batch = tokenizer(
+                cleaned[start:start + 16],
+                truncation=True,
+                max_length=384,
+                padding=True,
+                return_tensors="pt",
+            )
+            with torch.no_grad():
+                logits = model(
+                    input_ids=batch["input_ids"].to(device),
+                    attention_mask=batch["attention_mask"].to(device),
+                ).logits
+            for probabilities in torch.sigmoid(logits).cpu().tolist():
+                output.append({
+                    risk_type: float(probabilities[index])
+                    for index, risk_type in enumerate(RISK_TYPES)
+                })
+        return version.version, output
     except Exception:
         return None
+
+
+def predict_risk_types(texts: list[str]) -> dict | None:
+    """Return reviewed-taxonomy probabilities for one combined evidence set."""
+    text = " ".join(item.strip() for item in texts if item.strip())[:6000]
+    if not text:
+        return None
+    predicted = predict_risk_types_batch([text])
+    if predicted is None:
+        return None
+    version, rows = predicted
+    return {"version": version, "scores": rows[0]}

@@ -26,7 +26,7 @@ import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 
 const GENERAL_NAV_ITEMS = [
-  { id: "main", label: "요약", path: "/main" },
+  { id: "main", label: "AI 리스크 브리핑", path: "/main" },
   { id: "collection", label: "수집 현황", path: "/collection" },
   { id: "statistics", label: "분석 통계", path: "/companies/main" },
   { id: "risk-management", label: "위험 관리", path: "/risk-management" },
@@ -41,7 +41,7 @@ const ADMIN_NAV_ITEMS = [
 ];
 
 const PAGE_TITLES = {
-  main: "요약",
+  main: "AI 리스크 브리핑",
   collection: "수집 현황",
   statistics: "분석 통계",
   "risk-management": "위험 관리",
@@ -93,11 +93,7 @@ function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
 }
 
 function RiskManagementRoute({ canReview }) {
-  const [searchParams] = useSearchParams();
-  const companyId = numericParam(searchParams.get("companyId"));
-  const requestedDays = Number(numericParam(searchParams.get("days")));
-  const periodDays = [1, 3, 7, 14].includes(requestedDays) ? requestedDays : 7;
-  return <RiskManagementPage key={`${companyId ?? "risk-management"}-${periodDays}`} canReview={canReview} initialCompanyId={companyId} initialPeriodDays={periodDays} />;
+  return <RiskManagementPage canReview={canReview} />;
 }
 
 function LegacyAnalysisStatisticsRedirect() {

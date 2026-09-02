@@ -407,7 +407,7 @@ class BulkMonitoringStateResponse(BaseModel):
 
 
 class RiskEventRead(BaseModel):
-    """15분 위험 사건, 다중 유형 및 여러 근거 기사를 포함한 응답."""
+    """스토리 중심 위험 사건, 다중 유형 및 여러 근거 기사를 포함한 응답."""
 
     id: int
     company_id: int
@@ -415,6 +415,8 @@ class RiskEventRead(BaseModel):
     article_title: str | None = None
     article_url: str | None = None
     feature_window_id: int | None = None
+    story_cluster_id: int | None = None
+    event_source: str = "window_v1"
     anomaly_score: float
     risk_probability: float | None = None
     severity: str
@@ -422,6 +424,10 @@ class RiskEventRead(BaseModel):
     primary_type: str | None = None
     risk_types: list[dict] = Field(default_factory=list)
     evidence_articles: list[dict] = Field(default_factory=list)
+    risk_article_count: int = 0
+    risk_source_count: int = 0
+    evidence_article_count: int = 0
+    source_count: int = 0
     summary: str | None = None
     model_version: str | None = None
     model_state: str = "provisional"
@@ -429,7 +435,31 @@ class RiskEventRead(BaseModel):
     opened_at: datetime | None = None
     last_seen_at: datetime | None = None
     closed_at: datetime | None = None
+    last_evidence_at: datetime | None = None
+    evidence_revision: int = 0
+    response_generation_status: str = "idle"
+    response_generation_error: str | None = None
+    closure_reason: str | None = None
     detected_at: datetime
+
+
+class RiskEventSummaryRead(BaseModel):
+    """위험관리 상단 카드에 사용하는 기업별 사건 요약."""
+
+    active: int
+    critical: int
+    needs_response: int
+    history: int
+
+
+class RiskEventPageRead(BaseModel):
+    """서버 페이지네이션이 적용된 위험 사건 목록."""
+
+    items: list[RiskEventRead]
+    total: int
+    page: int
+    page_size: int
+    summary: RiskEventSummaryRead
 
 
 class FeatureWindowRead(BaseModel):
@@ -770,6 +800,13 @@ class ResponseDraftRead(BaseModel):
     reviewed_at: datetime | None
     review_notes: str
     created_at: datetime
+
+
+class ResponseGenerationAcceptedRead(BaseModel):
+    """비동기 대응방안 생성 요청의 현재 상태."""
+
+    risk_event_id: int
+    status: Literal["pending", "generating", "generated"]
 
 
 class ResponseDraftReview(BaseModel):

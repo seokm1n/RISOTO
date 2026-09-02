@@ -50,7 +50,8 @@ function DailySentimentCompositionChart({ days }) {
         analyzed,
         unclassified: Math.max(articleCount - analyzed, 0),
       };
-    });
+    })
+    .filter((day) => day.articleCount > 0);
   if (!points.length) return <p className="panel-empty">아직 표시할 감성 분석 데이터가 없습니다.</p>;
 
   const totals = points.reduce((result, day) => ({
@@ -99,16 +100,26 @@ function DailySentimentCompositionChart({ days }) {
   </div>;
 }
 
-// 위험 이벤트 목록에서 내부 코드 대신 대표 근거 기사와 한글 위험 유형을 보여준다.
+const RESPONSE_STATUS_LABELS = {
+  pending: "생성 중",
+  generating: "생성 중",
+  generated: "생성 완료",
+  deferred: "생성 보류",
+  failed: "생성 실패",
+  idle: "미생성",
+};
+
+// 위험 이벤트 목록에서 스토리 제목, 다중 유형, 근거와 대응 상태를 보여준다.
 export function RiskEventListContent({ risk }) {
   const title = riskEventTitle(risk);
-  const types = (risk.risk_types ?? [])
-    .map((item) => RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type)
-    .join(" · ");
+  const types = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
+  const primaryType = types.find((item) => item.is_primary) ?? types.find((item) => item.risk_type === risk.primary_type) ?? types[0];
+  const secondaryTypes = types.filter((item) => item !== primaryType);
   return <>
     <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
-    <small className="risk-event-context">위험 유형: {types || "분류 중"} · 위험도 {formatRiskProbability(risk.risk_probability)}</small>
-    <small>발생 시각 {formatDate(risk.opened_at ?? risk.detected_at)}</small>
+    <div className="risk-event-type-row">{primaryType ? <span className="primary">{RISK_TYPE_LABELS[primaryType.risk_type] ?? primaryType.risk_type}</span> : <span>분류 중</span>}{secondaryTypes.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}</div>
+    <small className="risk-event-context">위험도 {formatRiskProbability(risk.risk_probability)} · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? 0)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳</small>
+    <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>
   </>;
 }
 
@@ -151,26 +162,69 @@ function ResponseDraftContent({ draft, riskTitle }) {
   </div>;
 }
 
+function EvidenceArticle({ article }) {
+  return <article className="evidence-article">
+    <div className="evidence-article-summary">
+      <div><a href={article.url} target="_blank" rel="noreferrer">{article.title}</a><small>{article.source_domain || article.source || "출처 미상"} · {formatDate(article.published_at)}</small></div>
+      <strong>{formatPercent(article.evidence_score)}</strong>
+    </div>
+    <details>
+      <summary>근거 점수 상세</summary>
+      <dl>
+        <div><dt>위험도</dt><dd>{formatPercent(article.risk_probability)}</dd></div>
+        <div><dt>관련성</dt><dd>{formatPercent(article.relevance_score)}</dd></div>
+        <div><dt>유형 일치</dt><dd>{formatPercent(article.type_match_score)}</dd></div>
+        <div><dt>출처 신뢰도</dt><dd>{formatPercent(article.source_credibility)}</dd></div>
+        <div><dt>대표성</dt><dd>{formatPercent(article.representativeness)}</dd></div>
+      </dl>
+    </details>
+  </article>;
+}
+
 // 위험 이벤트의 근거·유형과 관리 승인이 필요한 대응 초안을 한곳에 표시한다.
-export function RiskDetail({ risk, canReview = false }) {
+export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
+  const riskId = risk?.id ?? null;
   const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
+  const [generationStatus, setGenerationStatus] = useState(risk?.response_generation_status ?? "idle");
   const loadDrafts = useCallback(async () => {
-    if (!risk) { setDrafts([]); return; }
-    try { const response = await api.get(`/risk-events/${risk.id}/response-drafts`); setDrafts(response.data); }
-    catch (requestError) { setError(getErrorMessage(requestError)); }
-  }, [risk]);
+    if (!riskId) { setDrafts([]); return; }
+    try {
+      const response = await api.get(`/risk-events/${riskId}/response-drafts`);
+      const nextDrafts = response.data ?? [];
+      setDrafts(nextDrafts);
+    } catch (requestError) { setError(getErrorMessage(requestError)); }
+  }, [riskId]);
   useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
+  useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
+  useEffect(() => {
+    if (!riskId || !["pending", "generating"].includes(generationStatus)) return undefined;
+    const timer = window.setInterval(loadDrafts, 5000);
+    return () => window.clearInterval(timer);
+  }, [generationStatus, loadDrafts, riskId]);
   if (!risk) return <p className="panel-empty">확인할 위험 이벤트를 선택해 주세요.</p>;
-  // 전환 전에 만들어진 v2보다 v3 초안을 우선한다. 기존 v2만 있으면 새 엔진 생성 버튼을
-  // 계속 노출해 사용자가 현재 형식으로 올릴 수 있게 한다.
+
   const v3Draft = drafts.find((draft) => draft.schema_version === 3);
   const latest = v3Draft ?? drafts[0]; const content = latest?.content;
+  const canGenerate = ["deferred", "failed"].includes(generationStatus);
+  const statusCopy = {
+    pending: ["대응방안 자동 생성 중", "사건 근거를 바탕으로 생성을 준비하고 있습니다."],
+    generating: ["대응방안 자동 생성 중", "근거를 검토해 대응방안을 작성하고 있습니다."],
+    generated: ["대응방안 생성 완료", "아래 대응방안을 검토하고 승인하거나 반려할 수 있습니다."],
+    deferred: ["대응방안 생성 보류", "전체 이력 재구성 사건입니다. 필요한 사건만 개별 생성할 수 있습니다."],
+    failed: ["대응방안 생성 실패", risk.response_generation_error || "생성에 실패했습니다. 다시 시도할 수 있습니다."],
+    idle: ["대응방안 없음", "이 사건에는 생성된 대응방안이 없습니다."],
+  }[generationStatus] ?? ["대응방안 없음", "이 사건에는 생성된 대응방안이 없습니다."];
+  const triggerEvidence = (risk.evidence_articles ?? []).filter((article) => article.evidence_role === "trigger");
+  const contextEvidence = (risk.evidence_articles ?? []).filter((article) => article.evidence_role !== "trigger");
+  const orderedTypes = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
+
   const generate = async () => {
     setLoading(true); setError(null);
     try {
-      await api.post(`/risk-events/${risk.id}/response-drafts${v3Draft ? "?force=true" : ""}`);
-      await loadDrafts();
+      const response = await api.post(`/risk-events/${risk.id}/response-generation`);
+      setGenerationStatus(response.data?.status ?? "pending");
+      onGenerationStarted?.();
     } catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setLoading(false); }
   };
@@ -181,13 +235,16 @@ export function RiskDetail({ risk, canReview = false }) {
     catch (requestError) { setError(getErrorMessage(requestError)); } finally { setLoading(false); }
   };
   return <div className="risk-detail">
-    <div className="risk-detail-head"><div><h3><strong className="risk-event-display-title">{riskEventTitle(risk)}</strong></h3></div></div>
-    <p>위험도 {formatRiskProbability(risk.risk_probability)} · 이상 점수 {formatScore(risk.anomaly_score)} · 발생 {formatDate(risk.opened_at ?? risk.detected_at)}</p>
-    <div className="risk-type-list">{risk.risk_types.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
-    <div className="evidence-list"><strong>근거 기사</strong>{risk.evidence_articles.length ? risk.evidence_articles.map((article) => <a key={article.article_id} href={article.url} target="_blank" rel="noreferrer">{article.title}</a>) : <small>연결된 근거 기사가 없습니다.</small>}</div>
-    <div className="draft-generation-toolbar">
-      <div><strong>{v3Draft ? "대응방안 v3" : latest ? "기존 대응 초안" : "대응 초안 없음"}</strong><small>{v3Draft ? "최신 대응 엔진으로 생성됨" : latest ? "v3 대응방안을 새로 생성할 수 있습니다." : "근거를 바탕으로 실행 가능한 대응방안을 생성합니다."}</small></div>
-      <button className="secondary-button" type="button" onClick={generate} disabled={loading}>{loading ? "생성 중..." : v3Draft ? "대응방안 다시 생성" : "대응방안 v3 생성"}</button>
+    <div className="risk-detail-head"><div><h3><strong className="risk-event-display-title">{riskEventTitle(risk)}</strong></h3></div><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span></div>
+    <p>위험도 {formatRiskProbability(risk.risk_probability)} · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? triggerEvidence.length)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳 · 마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at)}</p>
+    <div className="risk-type-list">{orderedTypes.map((item, index) => <span className={item.is_primary || index === 0 ? "primary" : ""} key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
+    <div className="evidence-groups">
+      <section><div className="evidence-group-head"><strong>위험 발생 근거</strong><span>{formatNumber(triggerEvidence.length)}건</span></div>{triggerEvidence.length ? triggerEvidence.map((article) => <EvidenceArticle article={article} key={article.article_id} />) : <small>위험 판정을 통과한 근거 기사가 없습니다.</small>}</section>
+      <section><div className="evidence-group-head"><strong>같은 사건의 관련 보도</strong><span>{formatNumber(contextEvidence.length)}건</span></div>{contextEvidence.length ? contextEvidence.map((article) => <EvidenceArticle article={article} key={article.article_id} />) : <small>추가 관련 보도가 없습니다.</small>}</section>
+    </div>
+    <div className={`draft-generation-toolbar ${generationStatus}`}>
+      <div><strong>{statusCopy[0]}</strong><small>{statusCopy[1]}</small></div>
+      {canReview && canGenerate && <button className="secondary-button" type="button" onClick={generate} disabled={loading}>{loading ? "요청 중..." : generationStatus === "deferred" ? "대응방안 생성" : "다시 시도"}</button>}
     </div>
     {error && <div className="notice error">{error}</div>}
     {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{content.status === "근거부족_보류" ? <div className="draft-review readonly"><span>근거 연결 후 다시 생성해 주세요.</span></div> : canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}
@@ -274,8 +331,8 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
       <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 최근 7일 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle kicker="COLLECTED ARTICLES" title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle kicker="RISK EVENTS" title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
       <FeatureWindowSummary window={latestWindow} />
       <section className="panel statistics-overview-trend">
-        <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 왼쪽 건수 / 오른쪽 비율`} title="수집·위험·부정 기사 추이" />
-        <RiskOverviewTrendChart days={data.dailySummaries} ariaLabel={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집량, 위험 수집 비율, 부정 기사 비율 추이`} />
+        <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 수집이 있는 날짜`} title="위험 판정·부정 기사 건수 추이" />
+        <RiskOverviewTrendChart days={data.dailySummaries} ariaLabel={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 판정 기사와 부정 기사 건수 추이`} />
       </section>
       <section className="panel statistics-sentiment-panel">
         <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 감성 분석 완료 기사 기준`} title="날짜별 긍정·중립·부정 기사 비율" />

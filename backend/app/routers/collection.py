@@ -1,6 +1,7 @@
 """수집 실행, 기사 조회, 필터 감사 및 모니터링 제어 API를 제공한다."""
 
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,10 +22,11 @@ from app.models import (
     NewsArticle,
     RawNewsArticle,
     RiskEvent,
+    RiskEventType,
     StoryClusterArticle,
 )
 from app.presenters import risk_event_read
-from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
+from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES, RISK_TYPES
 from app.schemas import (
     ArticleFilterResultPage,
     ArticleFilterResultRead,
@@ -37,7 +39,9 @@ from app.schemas import (
     MonitoringSummary,
     NewsArticleRead,
     NewsArticlePage,
+    RiskEventPageRead,
     RiskEventRead,
+    RiskEventSummaryRead,
 )
 from app.services.monitoring_pipeline import run_collection
 from app.services.period_aggregation import seoul_period_start
@@ -461,12 +465,133 @@ def get_monitoring_summary(
     )
 
 
+@router.get("/companies/{company_id}/risk-events/page", response_model=RiskEventPageRead)
+def list_risk_events_page(
+    company_id: int,
+    view: Literal["active", "history"] = "active",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    days: int | None = Query(default=None, ge=1, le=36500),
+    severity: Literal["warning", "critical"] | None = None,
+    risk_type: Literal[
+        "product_quality",
+        "safety_accident",
+        "security_privacy",
+        "legal_regulatory",
+        "labor_hr",
+        "financial_governance",
+        "supply_operations",
+        "reputation_consumer",
+    ] | None = None,
+    response: Literal["all", "needs_action", "in_progress", "generated", "none"] = "all",
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> RiskEventPageRead:
+    """위험관리 화면용 사건 목록을 서버에서 필터링·페이지네이션한다."""
+    _user_company(db, company_id, auth.user_id)
+    active_statuses = ("open", "monitoring", "acknowledged")
+    base_filters = (
+        RiskEvent.company_id == company_id,
+        RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+    )
+    query = select(RiskEvent).where(*base_filters)
+    if view == "active":
+        query = query.where(RiskEvent.status.in_(active_statuses))
+        ordering = (
+            func.coalesce(
+                RiskEvent.last_evidence_at,
+                RiskEvent.last_seen_at,
+                RiskEvent.opened_at,
+            ).desc(),
+            RiskEvent.id.desc(),
+        )
+    else:
+        query = query.where(RiskEvent.status == "closed")
+        if days is not None:
+            _, cutoff = seoul_period_start(days)
+            query = query.where(
+                func.coalesce(
+                    RiskEvent.closed_at,
+                    RiskEvent.last_evidence_at,
+                    RiskEvent.opened_at,
+                ) >= cutoff
+            )
+        ordering = (
+            func.coalesce(
+                RiskEvent.closed_at,
+                RiskEvent.last_evidence_at,
+                RiskEvent.opened_at,
+            ).desc(),
+            RiskEvent.id.desc(),
+        )
+    if severity is not None:
+        query = query.where(RiskEvent.severity == severity)
+    if risk_type is not None:
+        # Literal 검증과 별개로 이 조건을 유지해 쿼리 계약과 분류 체계를 함께 고정한다.
+        if risk_type not in RISK_TYPES:
+            raise HTTPException(status_code=422, detail="지원하지 않는 위험 유형입니다.")
+        query = query.where(
+            RiskEvent.id.in_(
+                select(RiskEventType.risk_event_id).where(
+                    RiskEventType.risk_type == risk_type
+                )
+            )
+        )
+    response_statuses = {
+        "needs_action": ("deferred", "failed"),
+        "in_progress": ("pending", "generating"),
+        "generated": ("generated",),
+        "none": ("idle",),
+    }
+    if response != "all":
+        query = query.where(
+            RiskEvent.response_generation_status.in_(response_statuses[response])
+        )
+
+    total = db.scalar(
+        select(func.count()).select_from(query.order_by(None).subquery())
+    ) or 0
+    events = list(
+        db.scalars(
+            query.order_by(*ordering)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    )
+
+    def summary_count(*extra_filters) -> int:
+        return db.scalar(
+            select(func.count(RiskEvent.id)).where(*base_filters, *extra_filters)
+        ) or 0
+
+    summary = RiskEventSummaryRead(
+        active=summary_count(RiskEvent.status.in_(active_statuses)),
+        critical=summary_count(
+            RiskEvent.status.in_(active_statuses),
+            RiskEvent.severity == "critical",
+        ),
+        needs_response=summary_count(
+            RiskEvent.status.in_(active_statuses),
+            RiskEvent.response_generation_status.in_(("deferred", "failed")),
+        ),
+        history=summary_count(RiskEvent.status == "closed"),
+    )
+    return RiskEventPageRead(
+        items=[risk_event_read(db, event) for event in events],
+        total=total,
+        page=page,
+        page_size=page_size,
+        summary=summary,
+    )
+
+
 @router.get("/companies/{company_id}/risk-events", response_model=list[RiskEventRead])
 def list_risk_events(
     company_id: int,
     limit: int = Query(default=50, ge=1, le=1000),
     days: int | None = Query(default=None, ge=1, le=365),
     include_legacy: bool = False,
+    view: Literal["active", "history", "all"] = "active",
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> list[RiskEventRead]:
@@ -476,10 +601,24 @@ def list_risk_events(
         RiskEvent.company_id == company_id,
         RiskEvent.status != "dismissed",
     )
+    if view == "active":
+        query = query.where(RiskEvent.status.in_(["open", "monitoring", "acknowledged"]))
+    elif view == "history":
+        query = query.where(RiskEvent.status == "closed")
     if isinstance(days, int):
         _, cutoff = seoul_period_start(days)
         query = query.where(RiskEvent.opened_at >= cutoff)
     if not include_legacy:
         query = query.where(RiskEvent.status != "legacy_candidate")
-    events = list(db.scalars(query.order_by(RiskEvent.opened_at.desc()).limit(limit)))
+    if view == "history":
+        ordering = (
+            func.coalesce(RiskEvent.closed_at, RiskEvent.last_evidence_at, RiskEvent.opened_at).desc(),
+            RiskEvent.id.desc(),
+        )
+    else:
+        ordering = (
+            func.coalesce(RiskEvent.last_evidence_at, RiskEvent.last_seen_at, RiskEvent.opened_at).desc(),
+            RiskEvent.id.desc(),
+        )
+    events = list(db.scalars(query.order_by(*ordering).limit(limit)))
     return [risk_event_read(db, event) for event in events]

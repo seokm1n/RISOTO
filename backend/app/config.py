@@ -70,15 +70,28 @@ class Settings(BaseSettings):
     article_filter_relevance_accept_threshold: float = 0.70
     article_filter_relevance_reject_threshold: float = 0.30
 
-    # 스토리 군집·준비 상태·공통 위험 모델
-    story_cluster_similarity_threshold: float = 0.72
-    story_cluster_lookback_hours: int = 72
+    # 스토리 군집: 최근 후보는 복합 판정, 오래된 후속 보도는 강한 동일성만 허용한다.
+    story_cluster_recent_hours: int = 168
+    story_cluster_followup_hours: int = 720
+    story_cluster_candidate_limit: int = 1500
+    story_cluster_semantic_candidate_limit: int = 80
+    story_cluster_embedding_batch_size: int = 256
     readiness_min_articles: int = 50
     readiness_min_nonempty_windows: int = 40
     risk_default_threshold: float = 0.65
     risk_close_threshold: float = 0.45
     risk_close_consecutive_windows: int = 2
     risk_type_nli_enabled: bool = True
+
+    # 기사·스토리 중심 운영 사건 엔진. 15분 특징은 확산 신호와 대시보드용으로 유지한다.
+    story_risk_engine_enabled: bool = True
+    article_risk_candidate_threshold: float = 0.65
+    article_risk_high_threshold: float = 0.80
+    article_risk_uncertain_low: float = 0.35
+    article_risk_llm_max_per_run: int = 20
+    story_event_min_distinct_sources: int = 2
+    story_event_inactivity_hours: int = 48
+    story_event_rebuild_hours: int = 72
 
     # 후보 재학습 준비 신호와 일일 운영 점검. 학습·승격은 별도 GPU 작업과 관리자 승인으로 남긴다.
     retrain_min_new_article_labels: int = 200
@@ -89,7 +102,7 @@ class Settings(BaseSettings):
 
     # 근거 기반 대응 초안. 프로바이더가 준비되지 않으면 결정적 템플릿 초안으로 안전하게 폴백한다.
     openai_api_key: str = ""
-    response_model_name: str = "gpt-5.6-luna"
+    response_model_name: str = "gpt-4o-mini"
     # "openai"(API 키 필요, 유료) 또는 "ollama"(로컬 무료 모델, API 키 불필요).
     response_generation_provider: str = "openai"
 
@@ -98,7 +111,7 @@ class Settings(BaseSettings):
     llm_labeling_enabled: bool = True
     # "openai"(API 키 필요, 유료) 또는 "ollama"(로컬 무료 모델, API 키 불필요).
     llm_labeling_provider: str = "openai"
-    llm_labeling_model_name: str = "gpt-5.6-luna"
+    llm_labeling_model_name: str = "gpt-4o-mini"
     llm_labeling_batch_size: int = 20
     llm_labeling_audit_sample_size: int = 20
     # 백엔드 컨테이너에서 호스트의 Ollama 서버로 접근하는 주소.

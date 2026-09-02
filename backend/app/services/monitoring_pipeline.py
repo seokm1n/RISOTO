@@ -57,6 +57,11 @@ from app.services.risk_analysis import (
     reanalyze_historical_windows,
 )
 from app.services.story_clustering import assign_story_cluster
+from app.services.story_risk import (
+    close_stale_story_events,
+    enqueue_company_risk_articles,
+    process_company_risk_articles,
+)
 from app.services.model_operations import SEOUL, ensure_daily_model_check
 
 
@@ -484,6 +489,7 @@ def run_collection(
         fetched_count = 0
         new_count = 0
         matched_count = 0
+        new_match_ids: list[int] = []
         attempted_count = 0
         successful_queries = 0
         filter_config = _article_filter_config(settings)
@@ -650,7 +656,13 @@ def run_collection(
                         )
 
                     if article is not None:
-                        assign_story_cluster(db, article, settings)
+                        assign_story_cluster(
+                            db,
+                            article,
+                            settings,
+                            company_id=company_id,
+                            semantic_scorer=semantic_scorer,
+                        )
 
                     # 정제 기사 하나는 기업마다 한 번만 연결해 집계와 분석의 중복을 막는다.
                     if article is not None and article.id not in existing_match_ids:
@@ -663,6 +675,7 @@ def run_collection(
                             )
                         )
                         existing_match_ids.add(article.id)
+                        new_match_ids.append(article.id)
                         matched_count += 1
 
         # 제공자별 시도를 먼저 고정해 유효한 빈 결과와 수집 장애를 구분한다.
@@ -711,6 +724,7 @@ def run_collection(
     if matched_count:
         analyze_company_articles(company_id)
         enqueue_llm_labeling_for_company(company_id)
+        enqueue_company_risk_articles(company_id, new_match_ids)
     if job_type == "realtime":
         build_feature_window(
             company_id,
@@ -718,7 +732,11 @@ def run_collection(
             data_quality,
             [item.source for item in attempts if item.status == "succeeded"],
             [item.source for item in attempts if item.status == "failed"],
+            update_events=not settings.story_risk_engine_enabled,
+            generate_response_drafts=not settings.story_risk_engine_enabled,
         )
+        if settings.story_risk_engine_enabled:
+            close_stale_story_events(company_id)
     if dispatch_notifications_after:
         dispatch_pending_notifications(settings)
     return job
@@ -875,7 +893,13 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     processed_article_ids.add(article.id)
                     if decision.decision == "accepted":
                         accepted_articles[article.id] = hit
-                        assign_story_cluster(db, article, settings)
+                        assign_story_cluster(
+                            db,
+                            article,
+                            settings,
+                            company_id=company_id,
+                            semantic_scorer=semantic_scorer,
+                        )
 
             current_matches = {
                 match.article_id: match
@@ -942,6 +966,11 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
 
     risk_counts = reanalyze_historical_windows(user_id=user_id)
     counters.update(risk_counts)
+    if settings.story_risk_engine_enabled:
+        for target_company_id in company_ids:
+            story_counts = process_company_risk_articles(target_company_id)
+            counters["story_articles_assessed"] = counters.get("story_articles_assessed", 0) + story_counts["assessed"]
+            counters["story_events_changed"] = counters.get("story_events_changed", 0) + story_counts["events_changed"]
     return {"status": "completed", **counters}
 
 
@@ -1128,6 +1157,8 @@ def run_realtime_tick() -> None:
                 logger.exception("Failed to persist realtime pipeline incident for company %s", company_id)
 
     run_due_collection_retries()
+    if settings.story_risk_engine_enabled:
+        close_stale_story_events(now=now)
     dispatch_pending_notifications(settings)
     _run_due_daily_model_check(now)
 

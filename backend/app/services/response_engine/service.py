@@ -241,7 +241,14 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             if existing is not None and (
                 reviewed_label is None
                 or existing.created_at >= reviewed_label.reviewed_at
-            ) and _same_detection(existing, event):
+            ) and _same_detection(existing, event) and (
+                event.event_source != "story_v2"
+                or event.last_response_revision >= event.evidence_revision
+            ):
+                if event.event_source == "story_v2":
+                    event.response_generation_status = "generated"
+                    event.response_generation_error = None
+                    db.commit()
                 return existing
 
         reviewed_evidence_ids = (
@@ -286,6 +293,10 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             approval_state="draft",
         )
         db.add(draft)
+        if event.event_source == "story_v2":
+            event.last_response_revision = event.evidence_revision
+            event.response_generation_status = "generated"
+            event.response_generation_error = None
         db.commit()
         db.refresh(draft)
         return draft
@@ -577,6 +588,14 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False) -> None:
     줄 서 있을 이유가 없고, 워커를 1분 넘게 묶어 두면 다른 이벤트가 밀린다.
     """
 
+    def _set_status(status: str, error: str | None = None) -> None:
+        with SessionLocal() as status_db:
+            event = status_db.get(RiskEvent, risk_event_id)
+            if event is not None and event.event_source == "story_v2":
+                event.response_generation_status = status
+                event.response_generation_error = error
+                status_db.commit()
+
     def _run() -> None:
         lock_key = f"response-draft:{risk_event_id}"
         with SessionLocal() as db:
@@ -594,9 +613,11 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False) -> None:
             else:
                 acquired = False
             try:
+                _set_status("generating")
                 generate_response_draft(risk_event_id, force=force)
-            except Exception:
+            except Exception as exc:
                 logger.exception("response draft 생성 실패 (risk_event=%s)", risk_event_id)
+                _set_status("failed", f"{type(exc).__name__}: 대응방안 자동 생성에 실패했습니다.")
             finally:
                 if acquired:
                     db.execute(

@@ -84,6 +84,7 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
             self.company_id,
             limit=200,
             include_legacy=False,
+            view="all",
             db=self.db,
             auth=self.auth,
         )
@@ -91,6 +92,7 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
             self.company_id,
             limit=200,
             include_legacy=True,
+            view="all",
             db=self.db,
             auth=self.auth,
         )
@@ -103,6 +105,32 @@ class RiskVisibilityDatabaseTests(unittest.TestCase):
         self.assertNotIn(events["legacy_candidate"].id, normal_ids)
         self.assertNotIn(events["dismissed"].id, legacy_ids)
         self.assertIn(events["legacy_candidate"].id, legacy_ids)
+
+        active_ids = {
+            item.id
+            for item in list_risk_events(
+                self.company_id,
+                limit=200,
+                include_legacy=False,
+                view="active",
+                db=self.db,
+                auth=self.auth,
+            )
+        }
+        history_ids = {
+            item.id
+            for item in list_risk_events(
+                self.company_id,
+                limit=200,
+                include_legacy=False,
+                view="history",
+                db=self.db,
+                auth=self.auth,
+            )
+        }
+        self.assertTrue({events[status].id for status in {"open", "monitoring", "acknowledged"}} <= active_ids)
+        self.assertIn(events["closed"].id, history_ids)
+        self.assertNotIn(events["closed"].id, active_ids)
 
         overview = get_dashboard_overview(days=90, db=self.db, auth=self.auth)
         overview_company_count = next(

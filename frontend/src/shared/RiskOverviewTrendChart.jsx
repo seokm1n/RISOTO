@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { formatNumber, formatPercent } from "./presentation";
+import { formatNumber } from "./presentation";
 
 // 컨테이너의 실제 렌더 크기를 재서 SVG 좌표와 화면 비율을 일치시킨다.
 function useElementSize() {
@@ -19,8 +19,8 @@ function useElementSize() {
   return [ref, size];
 }
 
-// 수집량은 왼쪽 건수 축, 위험·부정 기사 비율은 오른쪽 백분율 축에 함께 그린다.
-export default function RiskOverviewTrendChart({ days = [], ariaLabel = "수집량, 위험 수집 비율, 부정 기사 비율 추이" }) {
+// 수집이 있었던 날짜의 위험·부정 기사 건수를 한 축에서 비교한다.
+export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 판정 기사와 부정 기사 건수 추이", hideEmptySignalDays = false }) {
   const [canvasRef, { width: measuredWidth, height: measuredHeight }] = useElementSize();
   const points = [...days]
     .sort((left, right) => left.summary_date.localeCompare(right.summary_date))
@@ -33,33 +33,29 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "수집�
         article_count: articleCount,
         risk_article_count: riskArticleCount,
         negative_article_count: negativeArticleCount,
-        risk_article_ratio: articleCount > 0 ? riskArticleCount / articleCount : null,
-        negative_article_ratio: articleCount > 0 ? negativeArticleCount / articleCount : null,
       };
-    });
+    })
+    .filter((day) => day.article_count > 0)
+    .filter((day) => !hideEmptySignalDays || day.risk_article_count > 0 || day.negative_article_count > 0);
   if (!points.length) return <div className="main-overview-trend">
     <div className="main-overview-legend" aria-hidden="true" />
-    <div className="main-chart-canvas" ref={canvasRef}><p className="panel-empty">아직 표시할 수집·위험 데이터가 없습니다.</p></div>
+    <div className="main-chart-canvas" ref={canvasRef}><p className="panel-empty">아직 표시할 위험·부정 기사 데이터가 없습니다.</p></div>
   </div>;
 
   const width = measuredWidth || 700, height = measuredHeight || 210;
-  const left = 42, right = 46, top = 18, bottom = 28;
+  const left = 42, right = 18, top = 18, bottom = 28;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
-  const maxCollection = Math.max(...points.map((day) => day.article_count ?? 0), 1);
+  const maxCount = Math.max(...points.flatMap((day) => [day.risk_article_count, day.negative_article_count]), 1);
   const x = (index) => left + (points.length === 1 ? plotWidth / 2 : index / (points.length - 1) * plotWidth);
-  const yCount = (value) => top + plotHeight - Math.min(value / maxCollection, 1) * plotHeight;
-  const yRatio = (value) => top + plotHeight - Math.min(Math.max(value, 0), 1) * plotHeight;
+  const yCount = (value) => top + plotHeight - Math.min(Math.max(value / maxCount, 0), 1) * plotHeight;
   const formatDay = (value) => new Date(value).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
   const gridLevels = [0, .5, 1];
-  const labelEvery = Math.max(1, Math.ceil(points.length / 4));
+  const labelEvery = 1;
   const totals = points.reduce((result, day) => ({
     article_count: result.article_count + day.article_count,
     risk_article_count: result.risk_article_count + day.risk_article_count,
     negative_article_count: result.negative_article_count + day.negative_article_count,
   }), { article_count: 0, risk_article_count: 0, negative_article_count: 0 });
-  const periodRiskRatio = totals.article_count > 0 ? totals.risk_article_count / totals.article_count : null;
-  const periodNegativeRatio = totals.article_count > 0 ? totals.negative_article_count / totals.article_count : null;
-  const ratioLabel = (value) => value == null ? "-" : formatPercent(value);
   const segments = (key, y) => {
     const result = [];
     let current = [];
@@ -78,27 +74,22 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "수집�
 
   return <div className="main-overview-trend">
     <div className="main-overview-legend" aria-hidden="true">
-      <span className="collection"><i />기간 수집량 <strong>{formatNumber(totals.article_count)}건</strong></span>
-      <span className="risk"><i />기간 위험 기사 비율 <strong>{ratioLabel(periodRiskRatio)}</strong></span>
-      <span className="negative"><i />기간 부정 기사 비율 <strong>{ratioLabel(periodNegativeRatio)}</strong></span>
+      <span className="risk"><i />기간 위험 판정 기사 <strong>{formatNumber(totals.risk_article_count)}건</strong></span>
+      <span className="negative"><i />기간 부정 기사 <strong>{formatNumber(totals.negative_article_count)}건</strong></span>
     </div>
     <div className="main-chart-canvas" ref={canvasRef}>
       <svg className="main-trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
         {gridLevels.map((level) => <g key={level}>
-          <line className="main-trend-grid-line" x1={left} x2={width - right} y1={yRatio(level)} y2={yRatio(level)} />
-          <text className="main-trend-axis-label" x={left - 8} y={yRatio(level) + 4} textAnchor="end">{formatNumber(Math.round(maxCollection * level))}</text>
-          <text className="main-trend-axis-label" x={width - right + 8} y={yRatio(level) + 4} textAnchor="start">{Math.round(level * 100)}%</text>
+          <line className="main-trend-grid-line" x1={left} x2={width - right} y1={yCount(maxCount * level)} y2={yCount(maxCount * level)} />
+          <text className="main-trend-axis-label" x={left - 8} y={yCount(maxCount * level) + 4} textAnchor="end">{formatNumber(Math.round(maxCount * level))}</text>
         </g>)}
         <text className="main-trend-axis-unit" x={left - 8} y={10} textAnchor="end">건</text>
-        <text className="main-trend-axis-unit" x={width - right + 8} y={10} textAnchor="start">비율</text>
         {points.map((day, index) => (index % labelEvery === 0 || index === points.length - 1) && <text className="main-trend-axis-label" key={`date-${day.summary_date}`} x={x(index)} y={height - 6} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{formatDay(day.summary_date)}</text>)}
-        {segments("article_count", yCount).map((line, index) => <polyline className="main-overview-line collection" points={line} key={`collection-${index}`} />)}
-        {segments("risk_article_ratio", yRatio).map((line, index) => <polyline className="main-overview-line risk" points={line} key={`risk-${index}`} />)}
-        {segments("negative_article_ratio", yRatio).map((line, index) => <polyline className="main-overview-line negative" points={line} key={`negative-${index}`} />)}
+        {segments("risk_article_count", yCount).map((line, index) => <polyline className="main-overview-line risk" points={line} key={`risk-${index}`} />)}
+        {segments("negative_article_count", yCount).map((line, index) => <polyline className="main-overview-line negative" points={line} key={`negative-${index}`} />)}
         {points.map((day, index) => <g key={`points-${day.summary_date}`}>
-          <circle className="main-overview-point collection" cx={x(index)} cy={yCount(day.article_count)} r="3.2"><title>{`${formatDay(day.summary_date)} · 수집량 ${formatNumber(day.article_count)}건`}</title></circle>
-          {day.risk_article_ratio != null && <circle className="main-overview-point risk" cx={x(index)} cy={yRatio(day.risk_article_ratio)} r="3.4"><title>{`${formatDay(day.summary_date)} · 위험 기사 ${formatNumber(day.risk_article_count)}건 / ${formatNumber(day.article_count)}건 (${formatPercent(day.risk_article_ratio)})`}</title></circle>}
-          {day.negative_article_ratio != null && <circle className="main-overview-point negative" cx={x(index)} cy={yRatio(day.negative_article_ratio)} r="3.4"><title>{`${formatDay(day.summary_date)} · 부정 기사 ${formatNumber(day.negative_article_count)}건 / ${formatNumber(day.article_count)}건 (${formatPercent(day.negative_article_ratio)})`}</title></circle>}
+          <circle className="main-overview-point risk" cx={x(index)} cy={yCount(day.risk_article_count)} r="3.4"><title>{`${formatDay(day.summary_date)} · 위험 판정 기사 ${formatNumber(day.risk_article_count)}건`}</title></circle>
+          <circle className="main-overview-point negative" cx={x(index)} cy={yCount(day.negative_article_count)} r="3.4"><title>{`${formatDay(day.summary_date)} · 부정 기사 ${formatNumber(day.negative_article_count)}건`}</title></circle>
         </g>)}
       </svg>
     </div>

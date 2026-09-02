@@ -8,8 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
+from app.config import get_settings
 from app.database import get_db
 from app.models import (
+    ArticleRiskAssessment,
     CollectionAttempt,
     CollectionIncident,
     Company,
@@ -18,7 +20,6 @@ from app.models import (
     CompanyFeatureWindow,
     NewsArticle,
     RiskEvent,
-    RiskEventArticle,
 )
 from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.schemas import (
@@ -203,6 +204,7 @@ def list_daily_summaries(
     auth: CurrentAuth = Depends(require_auth),
 ) -> list[DailySummaryRead]:
     _user_company(db, company_id, auth.user_id)
+    settings = get_settings()
     now = datetime.now(SEOUL)
     cutoff_date, cutoff = seoul_period_start(days, now=now)
     stored = {
@@ -263,19 +265,15 @@ def list_daily_summaries(
         for row in db.execute(
             select(
                 article_day,
-                func.count(func.distinct(RiskEventArticle.article_id)),
+                func.count(func.distinct(ArticleRiskAssessment.article_id)),
             )
-            .select_from(RiskEventArticle)
-            .join(RiskEvent, RiskEvent.id == RiskEventArticle.risk_event_id)
-            .join(NewsArticle, NewsArticle.id == RiskEventArticle.article_id)
-            .join(
-                CompanyArticleMatch,
-                (CompanyArticleMatch.article_id == RiskEventArticle.article_id)
-                & (CompanyArticleMatch.company_id == company_id),
-            )
+            .select_from(ArticleRiskAssessment)
+            .join(NewsArticle, NewsArticle.id == ArticleRiskAssessment.article_id)
             .where(
-                RiskEvent.company_id == company_id,
-                RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+                ArticleRiskAssessment.company_id == company_id,
+                ArticleRiskAssessment.decision == "risk",
+                ArticleRiskAssessment.risk_probability
+                >= settings.article_risk_candidate_threshold,
                 article_time >= cutoff,
             )
             .group_by(article_day)
