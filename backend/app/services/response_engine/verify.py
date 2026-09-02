@@ -154,18 +154,41 @@ def _rule6_stakeholder(ctx: _Context) -> tuple[bool, str]:
 
 
 def _rule7_regulation(ctx: _Context) -> tuple[bool, str]:
+    """기한이 있는 법령이 체크리스트에 반영됐는지 본다.
+
+    **배타적 조문은 하나만 지키면 된다**: 유가증권시장과 코스닥시장 공시규정처럼 한
+    회사가 동시에 적용받을 수 없는 조문이 함께 서빙된다. 둘 다 강제하면 모델이 상식적인
+    판단(상장 시장은 하나)을 했는데도 검증이 실패한다 - 실제로 R06 초안 4건이 이것 때문에
+    전부 실패하고 재생성 비용만 두 배로 썼다. exclusive_group이 같으면 그중 하나만
+    언급돼 있어도 통과로 본다.
+    """
     tasks = " ".join(str(i.get("task", "")) for i in ctx.report.get("checklist") or [])
-    missing = []
-    for reg in ctx.evidence.regulations:
-        if reg.deadline_hours is None:
-            continue
+
+    def _mentioned(reg) -> bool:
+        # 조항 번호나 법령명 중 하나라도 체크리스트에 언급돼 있으면 반영된 것으로 본다.
+        return reg.article in tasks or reg.law_name in tasks
+
+    required = [
+        reg
+        for reg in ctx.evidence.regulations
         # 40일 지급 기한 같은 장기 의무는 72시간 체크리스트에 넣을 수 없다.
         # 규칙 5(기한 72시간 이내)와 충돌하므로 여기서 강제하지 않는다.
-        if not reg.checklist_enforce:
-            continue
-        # 조항 번호나 법령명 중 하나라도 체크리스트에 언급돼 있으면 통과로 본다.
-        if reg.article not in tasks and reg.law_name not in tasks:
+        if reg.deadline_hours is not None and reg.checklist_enforce
+    ]
+    groups: dict[str, list] = {}
+    missing = []
+    for reg in required:
+        if reg.exclusive_group:
+            groups.setdefault(reg.exclusive_group, []).append(reg)
+        elif not _mentioned(reg):
             missing.append(f"{reg.law_name} {reg.article}({reg.deadline_hours}시간)")
+
+    for name, regs in groups.items():
+        if any(_mentioned(reg) for reg in regs):
+            continue
+        listed = " 또는 ".join(f"{r.law_name} {r.article}" for r in regs)
+        missing.append(f"{listed} 중 하나({regs[0].deadline_hours}시간)")
+
     if missing:
         return False, f"기한 의무가 있는 법령이 체크리스트에 없습니다: {missing}"
     return True, "기한 의무 법령이 모두 체크리스트에 반영됨"
