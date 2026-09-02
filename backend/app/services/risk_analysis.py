@@ -1092,9 +1092,13 @@ def build_feature_window(
         db.commit()
         db.refresh(window)
         if generate_response_drafts and draft_request is not None and draft_request[1]:
-            from app.services.response_generation import enqueue_response_draft
+            from app.services.response_engine import enqueue_response_draft
 
-            enqueue_response_draft(draft_request[0], force=True)
+            # force=True로 부르면 "이미 만든 초안이 있는가" 검사를 통째로 건너뛴다.
+            # 워커 둘이 같은 이벤트를 집으면 그대로 두 번 생성된다(실제로 event 1076에
+            # 24초 간격 중복이 났다). 재생성이 필요한 경우는 탐지 유형이 바뀐 때인데,
+            # 그 판단은 generate_response_draft가 저장된 detection_type과 비교해서 한다.
+            enqueue_response_draft(draft_request[0])
         return window
 
 
