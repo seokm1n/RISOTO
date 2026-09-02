@@ -1,5 +1,5 @@
 {
-  "version": "regulations-v2.1",
+  "version": "regulations-v2.2",
   "source_repo": "https://github.com/legalize-kr/legalize-kr",
   "snapshot_date": "2026-08-25",
   "how_built": "법률·시행령 마크다운에서 (1) 의무 동사 + (2) 기한 표현이 함께 있는 조문만 추출한 뒤, 사고 발생 시 발동하는 것으로 좁히고, 의무 주체가 사업자인 것만 남겼다.",
@@ -831,7 +831,8 @@
           "source_sha": "bookid:210235646",
           "verified_note": "기한이 요구 시점에 따라 달라져 단일 시간으로 인코딩하지 않았다. 실무상 반나절 안에 답해야 하므로 규제·소송 보도가 나간 직후 가장 먼저 걸리는 시계다. 풍문 내용이 1월(일부 사항은 3월) 이내 이미 공시한 사항이면 요구하지 않을 수 있다.",
           "checklist_enforce": true,
-          "applicability_note": "유가증권시장 주권상장법인에만 적용된다. 코스닥 상장사는 코스닥시장 공시규정, 비상장사는 해당 없음."
+          "applicability_note": "유가증권시장 주권상장법인에만 적용된다. 코스닥 상장사는 코스닥시장 공시규정, 비상장사는 해당 없음.",
+          "exclusive_group": "krx_조회공시_풍문보도"
         },
         {
           "reg_id": "KR-R06-102",
@@ -848,7 +849,8 @@
           "source_sha": "bookid:210235646",
           "verified_note": "'요구받은 다음날까지'를 24시간으로 인코딩했다. 날짜 기준이므로 실제 마감은 다음 날 영업 종료 시점이다. 최근 요구일부터 15일 이내 재차 해당하면 요구하지 않을 수 있다.",
           "checklist_enforce": true,
-          "applicability_note": "유가증권시장 주권상장법인에만 적용된다. 코스닥 상장사는 코스닥시장 공시규정, 비상장사는 해당 없음."
+          "applicability_note": "유가증권시장 주권상장법인에만 적용된다. 코스닥 상장사는 코스닥시장 공시규정, 비상장사는 해당 없음.",
+          "exclusive_group": "krx_조회공시_주가급변"
         },
         {
           "reg_id": "KR-R06-103",
@@ -865,7 +867,8 @@
           "source_sha": "bookid:210235646",
           "verified_note": "720시간(1월). 위기 대응 체크리스트에 담기에는 기한이 길어 판정 기준선으로만 둔다. '검토 중'으로 답하고 방치하면 불성실공시가 된다는 점이 대응방안에 반영돼야 한다.",
           "checklist_enforce": false,
-          "applicability_note": "유가증권시장 주권상장법인에만 적용된다. 코스닥 상장사는 코스닥시장 공시규정, 비상장사는 해당 없음."
+          "applicability_note": "유가증권시장 주권상장법인에만 적용된다. 코스닥 상장사는 코스닥시장 공시규정, 비상장사는 해당 없음.",
+          "exclusive_group": "krx_미확정공시_재공시"
         },
         {
           "reg_id": "KR-R06-104",
@@ -882,7 +885,8 @@
           "source_sha": "bookid:210235314",
           "verified_note": "유가증권시장 제12조 제1항과 같은 구조다. 코스닥은 요구 근거(제10조 1항)와 답변 기한(제10조 3항)이 항으로 나뉘어 있다.",
           "checklist_enforce": true,
-          "applicability_note": "코스닥시장 상장법인에만 적용된다. 유가증권시장 상장사는 유가증권시장 공시규정, 비상장사는 해당 없음."
+          "applicability_note": "코스닥시장 상장법인에만 적용된다. 유가증권시장 상장사는 유가증권시장 공시규정, 비상장사는 해당 없음.",
+          "exclusive_group": "krx_조회공시_풍문보도"
         },
         {
           "reg_id": "KR-R06-105",
@@ -899,7 +903,8 @@
           "source_sha": "bookid:210235314",
           "verified_note": "'요구받은 다음날까지'를 24시간으로 인코딩했다. 중요정보가 없다고 답변할 때는 검토 사실을 명시하고 대표이사 확인서를 첨부해야 한다(제10조 6항).",
           "checklist_enforce": true,
-          "applicability_note": "코스닥시장 상장법인에만 적용된다. 유가증권시장 상장사는 유가증권시장 공시규정, 비상장사는 해당 없음."
+          "applicability_note": "코스닥시장 상장법인에만 적용된다. 유가증권시장 상장사는 유가증권시장 공시규정, 비상장사는 해당 없음.",
+          "exclusive_group": "krx_조회공시_주가급변"
         },
         {
           "reg_id": "KR-R06-106",
@@ -916,7 +921,8 @@
           "source_sha": "bookid:210235314",
           "verified_note": "720시간(1월). 미확정공시 시 의사결정 과정 중임을 입증할 자료 첨부가 요구된다(제11조 3항).",
           "checklist_enforce": false,
-          "applicability_note": "코스닥시장 상장법인에만 적용된다. 유가증권시장 상장사는 유가증권시장 공시규정, 비상장사는 해당 없음."
+          "applicability_note": "코스닥시장 상장법인에만 적용된다. 유가증권시장 상장사는 유가증권시장 공시규정, 비상장사는 해당 없음.",
+          "exclusive_group": "krx_미확정공시_재공시"
         }
       ]
     },
