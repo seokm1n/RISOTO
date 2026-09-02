@@ -31,7 +31,7 @@ from app.services.model_operations import (
     build_training_readiness,
     ensure_daily_model_check,
 )
-from app.services.response_generation import generate_response_draft
+from app.services.response_engine import generate_response_draft
 from app.services.risk_analysis import resolve_production_risk_detector
 
 
