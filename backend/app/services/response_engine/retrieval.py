@@ -60,6 +60,11 @@ class Regulation:
     checklist_enforce: bool = True
     # 적용 대상 요건(예: 원사업자·통신판매업자 해당 여부). 회사마다 달라 사람이 확인해야 한다.
     applicability_note: str | None = None
+    # 서로 배타적인 조문 묶음. 유가증권시장과 코스닥시장 공시규정처럼 한 회사가 동시에
+    # 적용받을 수 없는 조문들이 있다. 이 값이 같으면 그중 하나만 지키면 되므로, 검증
+    # 규칙 7이 전부를 강제하지 않는다. applicability_note는 사람이 읽는 안내라
+    # 기계가 판단할 수 없어 별도 필드로 둔다.
+    exclusive_group: str | None = None
 
 
 class CaseRetriever(Protocol):
@@ -183,6 +188,7 @@ class KoreanRegulationMapper:
                     effective_from=row.get("effective_from"),
                     checklist_enforce=row.get("checklist_enforce", True),
                     applicability_note=row.get("applicability_note"),
+                    exclusive_group=row.get("exclusive_group"),
                 )
             )
         return out
