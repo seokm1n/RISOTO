@@ -22,7 +22,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.database import SessionLocal
 from app.models import Company, ResponseDraft, RiskEvent, RiskEventArticle, NewsArticle
@@ -193,6 +193,20 @@ def _resolve_context(db, source_company: Company) -> tuple[Company, str]:
     return target, COMPETITOR_IMPACT
 
 
+def _same_detection(existing: ResponseDraft, event: RiskEvent) -> bool:
+    """기존 초안이 지금과 같은 탐지 유형으로 만들어졌는가.
+
+    content의 detection_type은 세부 유형(R코드)의 상위, 즉 상단 모델이 준 8개 유형이다.
+    이 값이 event.primary_type과 같으면 다시 만들어도 같은 답이 나온다.
+
+    근거부족_보류 초안에는 이 키가 없다. 그때는 같지 않다고 보아 재생성하게 두는 것이
+    맞다 - 기사가 뒤늦게 붙었을 수 있고, 보류 상태를 계속 붙들고 있을 이유가 없다.
+    """
+    content = existing.content or {}
+    recorded = content.get("detection_type")
+    return bool(recorded) and recorded == event.primary_type
+
+
 def generate_response_draft(risk_event_id: int, force: bool = False) -> ResponseDraft:
     """위기 이벤트 하나에 대해 대응 시나리오를 만들어 ResponseDraft로 저장한다."""
     with SessionLocal() as db:
@@ -221,10 +235,13 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
                 .order_by(ResponseDraft.id.desc())
                 .limit(1)
             )
+            # 이미 만든 초안이 있어도 탐지 유형이 바뀌었으면 다시 만들어야 한다. 유형이
+            # 달라지면 대응 원칙·법령·시나리오가 통째로 달라지기 때문이다. 반대로 유형이
+            # 같으면 같은 답이 나오므로 재생성은 비용만 쓴다.
             if existing is not None and (
                 reviewed_label is None
                 or existing.created_at >= reviewed_label.reviewed_at
-            ):
+            ) and _same_detection(existing, event):
                 return existing
 
         reviewed_evidence_ids = (
@@ -549,12 +566,43 @@ def _build_peer_content(db, payload):
 
 
 def enqueue_response_draft(risk_event_id: int, force: bool = False) -> None:
-    """수집 흐름을 막지 않고 백그라운드로 생성한다. 실패는 로그로만 남는다."""
+    """수집 흐름을 막지 않고 백그라운드로 생성한다. 실패는 로그로만 남는다.
+
+    **이벤트 단위로 잠그는 이유**: 이 함수를 부르는 실시간 tick이 여러 곳에서 동시에 돈다
+    (워커 2개짜리 스레드풀이고, 팀원들이 각자 백엔드를 띄운 채 같은 DB를 본다). 생성은
+    LLM 호출 때문에 1분을 넘기므로, "기존 초안 있나" 검사와 저장 사이가 넓게 벌어진다.
+    그 틈에 다른 워커가 같은 검사를 통과해 같은 이벤트로 초안을 하나 더 만든다.
+
+    기다리지 않고(try) 잠근다. 이미 누가 만들고 있다면 그 결과가 곧 저장되므로 여기서
+    줄 서 있을 이유가 없고, 워커를 1분 넘게 묶어 두면 다른 이벤트가 밀린다.
+    """
 
     def _run() -> None:
-        try:
-            generate_response_draft(risk_event_id, force=force)
-        except Exception:
-            logger.exception("response draft 생성 실패 (risk_event=%s)", risk_event_id)
+        lock_key = f"response-draft:{risk_event_id}"
+        with SessionLocal() as db:
+            if db.get_bind().dialect.name == "postgresql":
+                acquired = db.scalar(
+                    text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"),
+                    {"key": lock_key},
+                )
+                if not acquired:
+                    logger.info(
+                        "response draft 생성 건너뜀 - 다른 워커가 처리 중 (risk_event=%s)",
+                        risk_event_id,
+                    )
+                    return
+            else:
+                acquired = False
+            try:
+                generate_response_draft(risk_event_id, force=force)
+            except Exception:
+                logger.exception("response draft 생성 실패 (risk_event=%s)", risk_event_id)
+            finally:
+                if acquired:
+                    db.execute(
+                        text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"),
+                        {"key": lock_key},
+                    )
+                    db.commit()
 
     _executor.submit(_run)
