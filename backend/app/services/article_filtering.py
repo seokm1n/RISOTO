@@ -262,6 +262,43 @@ class LocalSemanticScorer:
             self.last_error = f"{type(exc).__name__}: {exc}"[:500]
             return None
 
+    def embeddings(self, texts: list[str], *, batch_size: int = 256):
+        """여러 문장의 정규화 임베딩을 한 번씩만 계산해 재군집에 사용한다.
+
+        반환형은 호출부가 선택적으로 NumPy를 사용하도록 명시하지 않는다. 모델을
+        불러올 수 없으면 기존 필터와 마찬가지로 ``None``을 반환해 결정적 텍스트
+        유사도 폴백을 허용한다.
+        """
+        if not texts:
+            return None
+        if batch_size < 1:
+            raise ValueError("batch_size는 1 이상이어야 합니다.")
+        if not self._load():
+            return None
+        try:
+            import numpy as np
+            import torch
+            import torch.nn.functional as functional
+
+            chunks = []
+            for start in range(0, len(texts), batch_size):
+                encoded = self._tokenizer(
+                    texts[start:start + batch_size],
+                    padding=True,
+                    truncation=True,
+                    max_length=256,
+                    return_tensors="pt",
+                )
+                with self._lock, torch.no_grad():
+                    hidden = self._model(**encoded).last_hidden_state
+                mask = encoded["attention_mask"].unsqueeze(-1).expand(hidden.size()).float()
+                vectors = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+                chunks.append(functional.normalize(vectors, p=2, dim=1).cpu().numpy())
+            return np.concatenate(chunks, axis=0)
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"[:500]
+            return None
+
 
 _scorers: dict[tuple[str, bool], LocalSemanticScorer] = {}
 _scorers_lock = Lock()

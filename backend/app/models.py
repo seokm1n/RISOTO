@@ -460,7 +460,7 @@ class CompanyBaseline(Base):
 
 
 class RiskEvent(Base):
-    """15분 특징 창에서 감지된 기업 위험 사건과 처리 상태를 기록한다."""
+    """운영 위험 사건과 처리 상태를 기록한다. window_v1과 story_v2 이력을 함께 보존한다."""
 
     __tablename__ = "risk_events"
     __table_args__ = (
@@ -471,6 +471,8 @@ class RiskEvent(Base):
         ),
         Index("ix_risk_events_company_id", "company_id"),
         Index("ix_risk_events_detected_at", "detected_at"),
+        Index("ix_risk_events_story_cluster_id", "story_cluster_id"),
+        UniqueConstraint("event_key", name="uq_risk_events_event_key"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
@@ -485,6 +487,15 @@ class RiskEvent(Base):
         ForeignKey("company_feature_windows.id", ondelete="SET NULL"),
         nullable=True,
     )
+    story_cluster_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("story_clusters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_key: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    event_source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="window_v1", server_default="window_v1"
+    )
     anomaly_score: Mapped[float] = mapped_column(Float, nullable=False)
     risk_probability: Mapped[float | None] = mapped_column(Float)
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -495,6 +506,14 @@ class RiskEvent(Base):
     model_state: Mapped[str] = mapped_column(String(20), nullable=False, default="provisional")
     approval_state: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     consecutive_below: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    evidence_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_response_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    response_generation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="idle", server_default="idle"
+    )
+    response_generation_error: Mapped[str | None] = mapped_column(Text)
+    last_evidence_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closure_reason: Mapped[str | None] = mapped_column(String(80))
     opened_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -676,6 +695,57 @@ class StoryClusterArticle(Base):
     )
 
 
+class ArticleRiskAssessment(Base):
+    """기업별 정제 기사에 대한 운영용 위험 판정 결과다.
+
+    사람 정답지인 ArticleLabel과 분리해 재판정과 모델 교체가 검수 데이터의 의미를
+    바꾸지 않도록 한다. 한 기업·기사에는 현재 운영 판정 하나만 유지한다.
+    """
+
+    __tablename__ = "article_risk_assessments"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('risk', 'non_risk', 'uncertain', 'failed')",
+            name="ck_article_risk_assessments_decision",
+        ),
+        CheckConstraint(
+            "risk_probability >= 0 AND risk_probability <= 1",
+            name="ck_article_risk_assessments_probability",
+        ),
+        Index("ix_article_risk_assessments_story", "company_id", "story_cluster_id"),
+        Index("ix_article_risk_assessments_decision", "decision", "assessed_at"),
+    )
+
+    company_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    article_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("news_articles.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    story_cluster_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("story_clusters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(20), nullable=False)
+    risk_probability: Mapped[float] = mapped_column(Float, nullable=False)
+    type_scores: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    primary_type: Mapped[str | None] = mapped_column(String(40))
+    relevance_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    source_domain: Mapped[str] = mapped_column(String(255), nullable=False, default="unknown")
+    source_credibility: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    classifier_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    assessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ArticleLabel(Base):
     """AI 예측과 분리된 블라인드 기사 사람 라벨을 보존한다."""
 
@@ -833,6 +903,11 @@ class RiskEventArticle(Base):
         BigInteger, ForeignKey("news_articles.id", ondelete="CASCADE"), primary_key=True
     )
     evidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    risk_probability: Mapped[float | None] = mapped_column(Float)
+    relevance_score: Mapped[float | None] = mapped_column(Float)
+    type_match_score: Mapped[float | None] = mapped_column(Float)
+    source_credibility: Mapped[float | None] = mapped_column(Float)
+    representativeness: Mapped[float | None] = mapped_column(Float)
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

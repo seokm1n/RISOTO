@@ -24,9 +24,9 @@ from dataclasses import asdict
 
 from sqlalchemy import select, text
 
-from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Company, ResponseDraft, RiskEvent, RiskEventArticle, NewsArticle
+from app.services.risk_ground_truth import authoritative_risk_label
 
 from . import classify, evidence, generate, impact, recommend, tier, verify
 from ._llm import response_model
@@ -81,7 +81,12 @@ def clean_text(text: str | None) -> str:
     return re.sub(r"\s{2,}", " ", html.unescape(_HTML_TAG.sub("", text or ""))).strip()
 
 
-def _payload_from_event(db, event: RiskEvent, company: Company) -> AlertPayload:
+def _payload_from_event(
+    db,
+    event: RiskEvent,
+    company: Company,
+    evidence_article_ids: list[int] | None = None,
+) -> AlertPayload:
     """DB의 RiskEvent를 대응 엔진 입력으로 옮긴다.
 
     **정렬이 반드시 있어야 한다**: 한 이벤트에 기사가 수백 건 붙는다(실측 최대 661건).
@@ -89,7 +94,7 @@ def _payload_from_event(db, event: RiskEvent, company: Company) -> AlertPayload:
     돌렸을 때 다른 기사 10건이 뽑히고 결론이 달라진다. 재현되지 않는 산출물은 비교도
     검증도 할 수 없다. 근거 점수가 높은 것부터 가져오고, 동점은 id로 갈라 확정한다.
     """
-    articles = db.scalars(
+    article_query = (
         select(NewsArticle)
         .join(RiskEventArticle, RiskEventArticle.article_id == NewsArticle.id)
         .where(RiskEventArticle.risk_event_id == event.id)
@@ -99,7 +104,10 @@ def _payload_from_event(db, event: RiskEvent, company: Company) -> AlertPayload:
             NewsArticle.id.desc(),
         )
         .limit(MAX_EVIDENCE_ARTICLES)
-    ).all()
+    )
+    if evidence_article_ids is not None:
+        article_query = article_query.where(NewsArticle.id.in_(evidence_article_ids))
+    articles = db.scalars(article_query).all()
 
     mentions = [
         {
@@ -201,14 +209,17 @@ def _same_detection(existing: ResponseDraft, event: RiskEvent) -> bool:
 
 def generate_response_draft(risk_event_id: int, force: bool = False) -> ResponseDraft:
     """위기 이벤트 하나에 대해 대응 시나리오를 만들어 ResponseDraft로 저장한다."""
-    settings = get_settings()
     with SessionLocal() as db:
         event = db.get(RiskEvent, risk_event_id)
         if event is None:
             raise ValueError(f"risk event {risk_event_id}을(를) 찾을 수 없습니다.")
+        reviewed_label = authoritative_risk_label(db, risk_event_id)
+        if reviewed_label is not None and not reviewed_label.is_risk:
+            raise ValueError("관리에서 정상 사건으로 확정되어 대응 초안을 생성하지 않습니다.")
         source_company = db.get(Company, event.company_id)
         if source_company is None:
             raise ValueError("위기 이벤트의 기업을 찾을 수 없습니다.")
+        target_company, generation_kind = _resolve_context(db, source_company)
 
         if not force:
             existing = db.scalar(
@@ -216,6 +227,10 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
                 .where(
                     ResponseDraft.risk_event_id == risk_event_id,
                     ResponseDraft.schema_version == SCHEMA_VERSION,
+                    ResponseDraft.user_id == source_company.user_id,
+                    ResponseDraft.source_company_id == source_company.id,
+                    ResponseDraft.target_main_company_id == target_company.id,
+                    ResponseDraft.generation_kind == generation_kind,
                 )
                 .order_by(ResponseDraft.id.desc())
                 .limit(1)
@@ -223,11 +238,30 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             # 이미 만든 초안이 있어도 탐지 유형이 바뀌었으면 다시 만들어야 한다. 유형이
             # 달라지면 대응 원칙·법령·시나리오가 통째로 달라지기 때문이다. 반대로 유형이
             # 같으면 같은 답이 나오므로 재생성은 비용만 쓴다.
-            if existing is not None and _same_detection(existing, event):
+            if existing is not None and (
+                reviewed_label is None
+                or existing.created_at >= reviewed_label.reviewed_at
+            ) and _same_detection(existing, event) and (
+                event.event_source != "story_v2"
+                or event.last_response_revision >= event.evidence_revision
+            ):
+                if event.event_source == "story_v2":
+                    event.response_generation_status = "generated"
+                    event.response_generation_error = None
+                    db.commit()
                 return existing
 
-        target_company, generation_kind = _resolve_context(db, source_company)
-        payload = _payload_from_event(db, event, source_company)
+        reviewed_evidence_ids = (
+            list(dict.fromkeys(reviewed_label.evidence_article_ids or []))
+            if reviewed_label is not None
+            else None
+        )
+        payload = _payload_from_event(
+            db,
+            event,
+            source_company,
+            evidence_article_ids=reviewed_evidence_ids,
+        )
         if generation_kind == COMPETITOR_IMPACT:
             payload.main_company_name = target_company.name
             payload.main_company_industry = _industry_name(db, target_company)
@@ -259,6 +293,10 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             approval_state="draft",
         )
         db.add(draft)
+        if event.event_source == "story_v2":
+            event.last_response_revision = event.evidence_revision
+            event.response_generation_status = "generated"
+            event.response_generation_error = None
         db.commit()
         db.refresh(draft)
         return draft
@@ -550,6 +588,14 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False) -> None:
     줄 서 있을 이유가 없고, 워커를 1분 넘게 묶어 두면 다른 이벤트가 밀린다.
     """
 
+    def _set_status(status: str, error: str | None = None) -> None:
+        with SessionLocal() as status_db:
+            event = status_db.get(RiskEvent, risk_event_id)
+            if event is not None and event.event_source == "story_v2":
+                event.response_generation_status = status
+                event.response_generation_error = error
+                status_db.commit()
+
     def _run() -> None:
         lock_key = f"response-draft:{risk_event_id}"
         with SessionLocal() as db:
@@ -567,9 +613,11 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False) -> None:
             else:
                 acquired = False
             try:
+                _set_status("generating")
                 generate_response_draft(risk_event_id, force=force)
-            except Exception:
+            except Exception as exc:
                 logger.exception("response draft 생성 실패 (risk_event=%s)", risk_event_id)
+                _set_status("failed", f"{type(exc).__name__}: 대응방안 자동 생성에 실패했습니다.")
             finally:
                 if acquired:
                     db.execute(

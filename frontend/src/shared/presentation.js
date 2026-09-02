@@ -110,9 +110,9 @@ export const sentimentText = (label) => {
 export const formatScore = (value) => Number.isFinite(value) ? value.toFixed(2) : "-";
 export const formatPercent = (value) => Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "-";
 export const formatRiskProbability = (value) => Number.isFinite(value) ? formatPercent(value) : "판정 대기";
-// 위험 이벤트를 내부 탐지 문구가 아닌 대표 근거 기사 제목으로 표시한다.
-export const riskEventTitle = (risk) => risk?.evidence_articles?.[0]?.title
+// 사건명은 기사 제목이 아닌 스토리 군집의 대표 제목을 우선한다.
+export const riskEventTitle = (risk) => risk?.summary
+  || risk?.evidence_articles?.[0]?.title
   || risk?.article_title
-  || risk?.summary
   || (risk?.id ? `위험 이벤트 #${risk.id}` : "위험 이벤트");
 export const isRiskDetectionAvailable = (status) => status?.risk_detection_status === "available";

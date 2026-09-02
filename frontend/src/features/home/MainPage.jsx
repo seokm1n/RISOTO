@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { api, getErrorMessage } from "../../api";
 import { PanelTitle } from "../../shared/components";
@@ -8,150 +8,159 @@ import {
   formatDate,
   formatNumber,
   formatPercent,
+  formatRiskProbability,
   riskEventTitle,
-  sentimentKind,
-  sentimentText,
 } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 
 const MAIN_TREND_DAYS = 7;
-const SUMMARY_MAX_CHARS = 64;
+const RISK_ARTICLE_LIMIT = 8;
 
-// 요약 문단 길이를 고정해 기사 카드 높이가 내용에 따라 들쭉날쭉해지지 않게 한다.
-function truncate(text, maxChars) {
-  if (!text || text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars).trimEnd()}…`;
+const RESPONSE_STATUS_LABELS = {
+  pending: "생성 중",
+  generating: "생성 중",
+  generated: "생성 완료",
+  deferred: "생성 보류",
+  failed: "생성 실패",
+  idle: "미생성",
+};
+
+function averageDailySummaries(groups) {
+  if (!groups.length) return [];
+  const oneDecimal = (value) => Math.round((value / groups.length) * 10) / 10;
+  const byDate = new Map();
+  groups.flat().forEach((day) => {
+    const current = byDate.get(day.summary_date) ?? {
+      summary_date: day.summary_date,
+      article_count: 0,
+      risk_article_count: 0,
+      negative_article_count: 0,
+    };
+    current.article_count += day.article_count ?? 0;
+    current.risk_article_count += day.risk_article_count ?? 0;
+    current.negative_article_count += day.negative_article_count ?? 0;
+    byDate.set(day.summary_date, current);
+  });
+  return [...byDate.values()]
+    .map((day) => ({
+      ...day,
+      article_count: oneDecimal(day.article_count),
+      risk_article_count: oneDecimal(day.risk_article_count),
+      negative_article_count: oneDecimal(day.negative_article_count),
+    }));
 }
 
-function averageSentiment(days) {
-  const withData = days.filter((day) => day.positive_probability != null);
-  if (!withData.length) return null;
-  const average = (key) => withData.reduce((sum, day) => sum + (day[key] ?? 0), 0) / withData.length;
-  return { positive: average("positive_probability"), neutral: average("neutral_probability"), negative: average("negative_probability") };
+function CollectionRiskPie({ label, collectionCount, riskCount }) {
+  const safeCollectionCount = Math.max(collectionCount, 0);
+  const safeRiskCount = Math.min(Math.max(riskCount, 0), safeCollectionCount);
+  const nonRiskCount = Math.max(safeCollectionCount - safeRiskCount, 0);
+  const riskRatio = safeCollectionCount > 0 ? safeRiskCount / safeCollectionCount : 0;
+  const degrees = Math.min(Math.max(riskRatio * 360, 0), 360);
+  return <article className="collection-pie-card">
+    <h3>{label}</h3>
+    <div className="collection-pie" style={{ background: `conic-gradient(#b65232 0deg ${degrees}deg, #e4c88d ${degrees}deg 360deg)` }} role="img" aria-label={`${label} 수집 ${safeCollectionCount}건 중 위험 ${safeRiskCount}건, ${formatPercent(riskRatio)}`}>
+      <div><strong>{formatPercent(riskRatio)}</strong><span>위험 / 수집</span></div>
+    </div>
+    <dl>
+      <div><dt><i />전체 수집</dt><dd>{formatNumber(safeCollectionCount)}건</dd></div>
+      <div><dt><i className="risk" />위험 판정</dt><dd>{formatNumber(safeRiskCount)}건</dd></div>
+      <div><dt><i className="normal" />비위험</dt><dd>{formatNumber(nonRiskCount)}건</dd></div>
+    </dl>
+  </article>;
 }
 
-// 긍정/중립/부정 비율을 한 줄 막대로 보여준다.
-function SentimentRatioBar({ sentiment }) {
-  if (!sentiment) return <p className="panel-empty">감성 데이터가 없습니다.</p>;
-  return <div className="sentiment-ratio">
-    <div className="sentiment-ratio-track">
-      <span className="positive" style={{ width: `${sentiment.positive * 100}%` }} />
-      <span className="neutral" style={{ width: `${sentiment.neutral * 100}%` }} />
-      <span className="negative" style={{ width: `${sentiment.negative * 100}%` }} />
-    </div>
-    <div className="sentiment-ratio-legend">
-      <span className="positive">긍정 {formatPercent(sentiment.positive)}</span>
-      <span className="neutral">중립 {formatPercent(sentiment.neutral)}</span>
-      <span className="negative">부정 {formatPercent(sentiment.negative)}</span>
-    </div>
+function CollectionRiskPies({ todayCount, todayRiskCount, sevenDayCount, sevenDayRiskCount }) {
+  return <div className="collection-share">
+    <CollectionRiskPie label="오늘" collectionCount={todayCount} riskCount={todayRiskCount} />
+    <CollectionRiskPie label="최근 7일" collectionCount={sevenDayCount} riskCount={sevenDayRiskCount} />
   </div>;
 }
 
-// 현재 날짜·시간을 일정 주기로 갱신해서 "최근 수집 기사" 패널 위에 표시한다.
-function useNow(intervalMs) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), intervalMs);
-    return () => window.clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
-
-// 로그인 직후 나의 기업의 현황·통합 위험 추세와 최신 기사·위험 판정을 한 화면에 모은다.
-// 기업 목록·대시보드 통계는 다른 화면과 캐시를 공유해 중복 폴링을 하지 않는다.
+// 로그인 직후 나의 기업과 등록 기업 평균을 비교하고 최신 위험 근거를 브리핑한다.
 export default function MainPage({ onOpenCompany }) {
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
     "/companies", () => api.get("/companies").then((response) => response.data),
   );
-  const { data: overview } = useSharedResource(
-    "/dashboard/overview?days=7", () => api.get("/dashboard/overview?days=7").then((response) => response.data),
-  );
   const mainCompany = companies.find((company) => company.company_role === "main");
   const mainId = mainCompany?.id ?? null;
+  const companyIds = companies.map((company) => company.id).join(",");
 
-  const { data: dailySummaries = [] } = useSharedResource(
-    mainId ? `/companies/${mainId}/daily-summaries?days=${MAIN_TREND_DAYS}` : "skip:main-daily-summaries",
+  const { data: dailyGroups = [] } = useSharedResource(
+    companyIds ? `main-briefing-daily:${companyIds}` : "skip:main-briefing-daily",
+    companyIds
+      ? () => Promise.all(companies.map((company) => api.get(`/companies/${company.id}/daily-summaries?days=${MAIN_TREND_DAYS}`).then((response) => response.data)))
+      : () => Promise.resolve([]),
+  );
+  const mainIndex = companies.findIndex((company) => company.id === mainId);
+  const dailySummaries = mainIndex >= 0 ? dailyGroups[mainIndex] ?? [] : [];
+  const mainGraphDates = new Set(
+    dailySummaries
+      .filter((day) => (day.article_count ?? 0) > 0)
+      .map((day) => day.summary_date),
+  );
+  const averageSummaries = averageDailySummaries(dailyGroups)
+    .filter((day) => mainGraphDates.has(day.summary_date));
+
+  const { data: riskPage } = useSharedResource(
+    mainId ? `/companies/${mainId}/risk-events/page?view=active&page=1&page_size=10&response=all` : "skip:main-active-risks",
     mainId
-      ? () => api.get(`/companies/${mainId}/daily-summaries?days=${MAIN_TREND_DAYS}`).then((response) => response.data)
-      : () => Promise.resolve([]),
+      ? () => api.get(`/companies/${mainId}/risk-events/page?view=active&page=1&page_size=10&response=all`).then((response) => response.data)
+      : () => Promise.resolve({ items: [] }),
   );
-  const { data: recentArticles = [] } = useSharedResource(
-    mainId ? `/companies/${mainId}/articles?page=1&page_size=5` : "skip:main-recent-articles",
-    mainId
-      ? () => api.get(`/companies/${mainId}/articles?page=1&page_size=5`).then((response) => response.data.items)
-      : () => Promise.resolve([]),
-  );
-  const { data: latestRisks = [] } = useSharedResource(
-    mainId ? `/companies/${mainId}/risk-events?limit=1` : "skip:main-latest-risk",
-    mainId
-      ? () => api.get(`/companies/${mainId}/risk-events?limit=1`).then((response) => response.data)
-      : () => Promise.resolve([]),
-  );
-  const latestRisk = latestRisks[0] ?? null;
-  const { data: responseDrafts = [] } = useSharedResource(
-    latestRisk ? `/risk-events/${latestRisk.id}/response-drafts` : "skip:main-response-drafts",
-    latestRisk
-      ? () => api.get(`/risk-events/${latestRisk.id}/response-drafts`).then((response) => response.data)
-      : () => Promise.resolve([]),
-  );
+  const activeRisks = riskPage?.items ?? [];
+  const riskyArticles = useMemo(() => {
+    const seen = new Set();
+    return activeRisks.flatMap((risk) => (risk.evidence_articles ?? [])
+      .filter((article) => article.evidence_role === "trigger")
+      .map((article) => ({ article, risk })))
+      .sort((left, right) => new Date(right.article.published_at ?? 0) - new Date(left.article.published_at ?? 0))
+      .filter(({ article }) => {
+        if (seen.has(article.article_id)) return false;
+        seen.add(article.article_id);
+        return true;
+      })
+      .slice(0, RISK_ARTICLE_LIMIT);
+  }, [activeRisks]);
 
   const error = companiesError ? getErrorMessage(companiesError) : null;
-  const mainEntry = overview?.companies?.find((company) => company.id === mainId);
   const todayKey = new Date().toLocaleDateString("sv-SE");
-  const todayCount = dailySummaries.find((day) => day.summary_date === todayKey)?.article_count ?? null;
-  const mainSentiment = useMemo(() => averageSentiment(dailySummaries), [dailySummaries]);
-  const now = useNow(30000);
-  const nowLabel = now.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const todaySummary = dailySummaries.find((day) => day.summary_date === todayKey);
+  const todayCount = todaySummary?.article_count ?? 0;
+  const todayRiskCount = todaySummary?.risk_article_count ?? 0;
+  const sevenDayCount = dailySummaries.reduce((sum, day) => sum + (day.article_count ?? 0), 0);
+  const sevenDayRiskCount = dailySummaries.reduce((sum, day) => sum + (day.risk_article_count ?? 0), 0);
 
-  const goToDetail = (riskEventId) => mainId && onOpenCompany(mainId, riskEventId ?? null);
-
-  return <section className="workspace main-workspace">
-    <p className="main-lead main-page-intro">나의 기업의 수집 현황, 위험 신호와 대응 상태를 한 화면에서 확인합니다.</p>
-    <div className="main-page-shell">
-    <div className="workspace-head">
-      <div className="main-workspace-heading"><span className="eyebrow">MY COMPANY</span><h1>{mainCompany ? <button className="company-name-link main-company-name" type="button" onClick={() => onOpenCompany(mainCompany.id)}>나의 기업 - {mainCompany.name}</button> : "나의 기업"}</h1></div>
-    </div>
-    {error && <div className="notice error">{error}</div>}
-    {loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : !mainCompany ? <p className="empty-state">나의 기업 정보가 없습니다.</p> : <div className="main-dashboard-grid">
-      <section className="panel main-left-panel">
-        <div className="metric-grid main-summary-metrics">
-          <article className="metric"><span>최근 7일 기사</span><strong>{formatNumber(mainEntry?.article_count ?? 0)}<small className="count-unit">건</small></strong></article>
-          <article className="metric"><span>일일 수집</span><strong>{todayCount == null ? "-" : <>{formatNumber(todayCount)}<small className="count-unit">건</small></>}</strong></article>
-          <article className="main-metric-tile"><span className="main-metric-tile-label">감성 비율</span><SentimentRatioBar sentiment={mainSentiment} /></article>
-          <article className={`metric ${mainEntry?.risk_count ? "danger" : "success"}`}><span>위험 판정</span><strong>{formatNumber(mainEntry?.risk_count ?? 0)}<small className="count-unit">건</small></strong></article>
+  return <section className="workspace main-workspace briefing-workspace">
+    <p className="main-page-intro briefing-description">실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</p>
+    <div className="main-page-shell briefing-shell">
+      {error && <div className="notice error">{error}</div>}
+      {loading ? <p className="empty-state">브리핑을 불러오는 중입니다.</p> : !mainCompany ? <p className="empty-state">나의 기업 정보가 없습니다.</p> : <div className="briefing-grid">
+        <div className="briefing-trends">
+          <section className="panel briefing-trend-panel">
+            <PanelTitle title="나의 기업" />
+            <RiskOverviewTrendChart days={dailySummaries} ariaLabel={`${mainCompany.name} 최근 7일 위험 판정 기사와 부정 기사 건수`} />
+          </section>
+          <section className="panel briefing-trend-panel">
+            <PanelTitle kicker={`등록 기업 ${formatNumber(companies.length)}곳 기준`} title="전체 평균" />
+            <RiskOverviewTrendChart days={averageSummaries} ariaLabel="등록 기업 전체의 최근 7일 평균 위험 판정 기사와 부정 기사 건수" />
+          </section>
         </div>
-        <div className="main-charts-row">
-          <div className="main-chart-col">
-            <PanelTitle kicker="최근 7일 · 왼쪽 건수 / 오른쪽 비율" title="수집·위험·부정 기사 추이" />
-            <RiskOverviewTrendChart days={dailySummaries} />
-          </div>
+        <div className="briefing-side">
+          <section className="panel briefing-volume-panel">
+            <PanelTitle kicker="TODAY / LAST 7 DAYS" title="수집·위험 기사 비율" />
+            <CollectionRiskPies todayCount={todayCount} todayRiskCount={todayRiskCount} sevenDayCount={sevenDayCount} sevenDayRiskCount={sevenDayRiskCount} />
+          </section>
+          <section className="panel briefing-risk-articles">
+            <div className="briefing-risk-head"><PanelTitle kicker={`위험 판정 기사 · 최대 ${RISK_ARTICLE_LIMIT}건`} title="위험 수집 기사" /><span>{formatNumber(riskyArticles.length)}건</span></div>
+            <div className="briefing-risk-list">{riskyArticles.length ? riskyArticles.map(({ article, risk }) => <article key={article.article_id}>
+              <div className="briefing-risk-meta"><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><span>{RISK_TYPE_LABELS[risk.primary_type] ?? risk.primary_type ?? "위험"}</span><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>
+              <a href={article.url} target="_blank" rel="noreferrer">{article.title}</a>
+              <p>{riskEventTitle(risk)}</p>
+              <footer><small>{article.source_domain || article.source || "출처 미상"} · {formatDate(article.published_at)} · 위험도 {formatRiskProbability(article.risk_probability)}</small><button type="button" onClick={() => onOpenCompany(mainId, risk.id)}>사건 보기</button></footer>
+            </article>) : <p className="panel-empty">현재 활성 사건에 연결된 위험 판정 기사가 없습니다.</p>}</div>
+          </section>
         </div>
-      </section>
-      <div className="main-right-column">
-        <section className="panel main-articles-panel">
-          <div className="main-articles-panel-head">
-            <PanelTitle kicker="최대 5건" title="최근 수집 기사" />
-            <time className="main-live-clock" dateTime={now.toISOString()}>{nowLabel}</time>
-          </div>
-          <div className="main-article-list">
-            {recentArticles.length ? recentArticles.map((article) => <article className="main-article-row" key={article.id}>
-              <span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span>
-              <div><strong>{article.title}</strong>{article.summary && <p>{truncate(article.summary, SUMMARY_MAX_CHARS)}</p>}</div>
-            </article>) : <p className="panel-empty">아직 수집된 기사가 없습니다.</p>}
-          </div>
-        </section>
-        <button type="button" className="panel main-risk-panel main-risk-panel-link" onClick={() => goToDetail(latestRisk?.id)}>
-          <PanelTitle kicker="LLM 위험 유형 분류·보고서" title="위험 판정 요약" />
-          <div className="main-risk-notice-scroll">
-            {latestRisk ? <div className="main-risk-notice">
-              <span className={`severity ${latestRisk.severity}`}>{latestRisk.severity === "critical" ? "긴급" : "주의"}</span>
-              <p>{(latestRisk.risk_types ?? []).map((item) => RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type).join(", ") || "위험"} 유형의 위험 신호가 감지되어 대응 보고서를 {responseDrafts.length ? "작성했습니다" : "작성 중입니다"}.</p>
-              <small><span>{formatDate(latestRisk.detected_at)} · </span><strong className="risk-event-display-title">{riskEventTitle(latestRisk)}</strong></small>
-            </div> : <p className="panel-empty">최근 감지된 위험이 없습니다.</p>}
-          </div>
-        </button>
-      </div>
-    </div>}
+      </div>}
     </div>
   </section>;
 }

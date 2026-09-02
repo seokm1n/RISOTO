@@ -34,7 +34,7 @@ from app.models import (
 )
 from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.services.collection_health import floor_window
-from app.services.fine_tuned_text import predict_risk_types
+from app.services.fine_tuned_text import predict_risk_types, predict_risk_types_batch
 from app.services.story_clustering import backfill_story_clusters
 
 
@@ -184,6 +184,70 @@ def resolve_risk_type_scores(
     scores = classify_risk_types(texts)
     if use_type_nli and (risk_keyword_count or (negative_probability or 0.0) >= 0.55):
         scores = enrich_risk_types_with_nli(texts, scores, settings)
+    return scores
+
+
+def resolve_article_risk_type_scores_batch(
+    texts: list[str],
+    *,
+    risk_keyword_hits: list[bool],
+    negative_probabilities: list[float],
+    settings: Settings,
+) -> list[dict[str, float]]:
+    """Resolve per-article type scores without repeating model setup for every row."""
+    if not (len(texts) == len(risk_keyword_hits) == len(negative_probabilities)):
+        raise ValueError("기사 위험 유형 배치 입력 길이가 다릅니다.")
+    if not texts:
+        return []
+
+    promoted = predict_risk_types_batch(texts)
+    if promoted is not None:
+        _version, rows = promoted
+        return [
+            {risk_type: float(row.get(risk_type, 0.0)) for risk_type in RISK_TYPE_PATTERNS}
+            for row in rows
+        ]
+
+    scores = [classify_risk_types([value]) for value in texts]
+    if not settings.risk_type_nli_enabled:
+        return scores
+    candidate_indexes = [
+        index
+        for index, (keyword_hit, negative) in enumerate(
+            zip(risk_keyword_hits, negative_probabilities)
+        )
+        if keyword_hit or negative >= 0.55
+    ]
+    if not candidate_indexes:
+        return scores
+    try:
+        from app.services.klue_nli import get_klue_nli_classifier
+
+        risk_types = list(RISK_TYPE_HYPOTHESES)
+        hypotheses = [
+            [*[RISK_TYPE_HYPOTHESES[item] for item in risk_types], "이 글은 기업 위험 사건과 관련이 없다."]
+            for _ in candidate_indexes
+        ]
+        classifier = get_klue_nli_classifier(
+            settings.article_filter_classifier_model,
+            settings.article_filter_allow_model_download,
+        )
+        rows = classifier.score_hypotheses(
+            [texts[index] for index in candidate_indexes],
+            hypotheses,
+            batch_size=32,
+            max_length=256,
+        )
+        for article_index, row in zip(candidate_indexes, rows):
+            scores[article_index] = {
+                risk_type: round(
+                    max(float(scores[article_index].get(risk_type, 0.0)), 0.6 * float(row[type_index])),
+                    6,
+                )
+                for type_index, risk_type in enumerate(risk_types)
+            }
+    except Exception:
+        return scores
     return scores
 
 
@@ -1254,7 +1318,10 @@ def reanalyze_historical_windows(
             use_type_nli=False,
             allow_scoring=True,
             force_scoring=True,
-            update_events=bool(state is None or state["needs_event_update"]),
+            update_events=(
+                not settings.story_risk_engine_enabled
+                and bool(state is None or state["needs_event_update"])
+            ),
             generate_response_drafts=False,
         )
         built += 1
