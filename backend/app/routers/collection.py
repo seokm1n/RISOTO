@@ -40,6 +40,7 @@ from app.schemas import (
     RiskEventRead,
 )
 from app.services.monitoring_pipeline import run_collection
+from app.services.period_aggregation import seoul_period_start
 
 
 router = APIRouter(tags=["collection"])
@@ -305,6 +306,7 @@ def list_company_articles(
     q: str | None = Query(default=None, min_length=1, max_length=200),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    days: int | None = Query(default=None, ge=1, le=365),
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> NewsArticlePage:
@@ -344,6 +346,9 @@ def list_company_articles(
         base_query = base_query.where(NewsArticle.title.ilike(like) | NewsArticle.summary.ilike(like))
     # 화면에는 한국 시간으로 날짜가 표시되므로, 필터도 한국 달력 기준 하루로 계산한다.
     article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+    if isinstance(days, int):
+        _, period_start = seoul_period_start(days)
+        base_query = base_query.where(article_time >= period_start)
     if date_from:
         base_query = base_query.where(article_time >= datetime.combine(date_from, datetime.min.time(), tzinfo=SEOUL).astimezone(timezone.utc))
     if date_to:
@@ -472,10 +477,9 @@ def list_risk_events(
         RiskEvent.status != "dismissed",
     )
     if isinstance(days, int):
-        local_cutoff = datetime.now(SEOUL).date() - timedelta(days=days - 1)
-        cutoff = datetime.combine(local_cutoff, datetime.min.time(), tzinfo=SEOUL).astimezone(timezone.utc)
-        query = query.where(RiskEvent.detected_at >= cutoff)
+        _, cutoff = seoul_period_start(days)
+        query = query.where(RiskEvent.opened_at >= cutoff)
     if not include_legacy:
         query = query.where(RiskEvent.status != "legacy_candidate")
-    events = list(db.scalars(query.order_by(RiskEvent.detected_at.desc()).limit(limit)))
+    events = list(db.scalars(query.order_by(RiskEvent.opened_at.desc()).limit(limit)))
     return [risk_event_read(db, event) for event in events]

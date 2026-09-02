@@ -108,7 +108,7 @@ export function RiskEventListContent({ risk }) {
   return <>
     <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
     <small className="risk-event-context">위험 유형: {types || "분류 중"} · 위험도 {formatRiskProbability(risk.risk_probability)}</small>
-    <small>탐지 시각 {formatDate(risk.detected_at)}</small>
+    <small>발생 시각 {formatDate(risk.opened_at ?? risk.detected_at)}</small>
   </>;
 }
 
@@ -160,10 +160,20 @@ export function RiskDetail({ risk, canReview = false }) {
     try { const response = await api.get(`/risk-events/${risk.id}/response-drafts`); setDrafts(response.data); }
     catch (requestError) { setError(getErrorMessage(requestError)); }
   }, [risk]);
-  useEffect(() => { loadDrafts(); }, [loadDrafts]);
+  useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
   if (!risk) return <p className="panel-empty">확인할 위험 이벤트를 선택해 주세요.</p>;
-  const latest = drafts[0]; const content = latest?.content;
-  const generate = async () => { setLoading(true); setError(null); try { await api.post(`/risk-events/${risk.id}/response-drafts`); await loadDrafts(); } catch (requestError) { setError(getErrorMessage(requestError)); } finally { setLoading(false); } };
+  // 전환 전에 만들어진 v2보다 v3 초안을 우선한다. 기존 v2만 있으면 새 엔진 생성 버튼을
+  // 계속 노출해 사용자가 현재 형식으로 올릴 수 있게 한다.
+  const v3Draft = drafts.find((draft) => draft.schema_version === 3);
+  const latest = v3Draft ?? drafts[0]; const content = latest?.content;
+  const generate = async () => {
+    setLoading(true); setError(null);
+    try {
+      await api.post(`/risk-events/${risk.id}/response-drafts${v3Draft ? "?force=true" : ""}`);
+      await loadDrafts();
+    } catch (requestError) { setError(getErrorMessage(requestError)); }
+    finally { setLoading(false); }
+  };
   const review = async (decision) => {
     if (!latest) return;
     setLoading(true); setError(null);
@@ -172,12 +182,15 @@ export function RiskDetail({ risk, canReview = false }) {
   };
   return <div className="risk-detail">
     <div className="risk-detail-head"><div><h3><strong className="risk-event-display-title">{riskEventTitle(risk)}</strong></h3></div></div>
-    <p>위험도 {formatRiskProbability(risk.risk_probability)} · 이상 점수 {formatScore(risk.anomaly_score)} · {formatDate(risk.detected_at)}</p>
+    <p>위험도 {formatRiskProbability(risk.risk_probability)} · 이상 점수 {formatScore(risk.anomaly_score)} · 발생 {formatDate(risk.opened_at ?? risk.detected_at)}</p>
     <div className="risk-type-list">{risk.risk_types.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
     <div className="evidence-list"><strong>근거 기사</strong>{risk.evidence_articles.length ? risk.evidence_articles.map((article) => <a key={article.article_id} href={article.url} target="_blank" rel="noreferrer">{article.title}</a>) : <small>연결된 근거 기사가 없습니다.</small>}</div>
-    {!latest && <button className="secondary-button" type="button" onClick={generate} disabled={loading || !risk.evidence_articles.length}>{loading ? "생성 중..." : "근거 기반 대응 초안 생성"}</button>}
+    <div className="draft-generation-toolbar">
+      <div><strong>{v3Draft ? "대응방안 v3" : latest ? "기존 대응 초안" : "대응 초안 없음"}</strong><small>{v3Draft ? "최신 대응 엔진으로 생성됨" : latest ? "v3 대응방안을 새로 생성할 수 있습니다." : "근거를 바탕으로 실행 가능한 대응방안을 생성합니다."}</small></div>
+      <button className="secondary-button" type="button" onClick={generate} disabled={loading}>{loading ? "생성 중..." : v3Draft ? "대응방안 다시 생성" : "대응방안 v3 생성"}</button>
+    </div>
     {error && <div className="notice error">{error}</div>}
-    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}
+    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{content.status === "근거부족_보류" ? <div className="draft-review readonly"><span>근거 연결 후 다시 생성해 주세요.</span></div> : canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}
   </div>;
 }
 
@@ -258,7 +271,7 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
     <div className="monitor-toolbar"><div className="analysis-toolbar-filters"><label><span className="analysis-field-label">분석 기업</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="경쟁사">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label></div><div className="analysis-toolbar-actions">{selected && canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}</div></div>
     {error && <div className="notice error">{error}</div>}
     {!selected ? <p className="empty-state">먼저 기업 등록 페이지에서 모니터링할 기업을 등록해 주세요.</p> : data && <>
-      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle kicker="COLLECTED ARTICLES" title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle kicker="RISK EVENTS" title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
+      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 최근 7일 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle kicker="COLLECTED ARTICLES" title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle kicker="RISK EVENTS" title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
       <FeatureWindowSummary window={latestWindow} />
       <section className="panel statistics-overview-trend">
         <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 왼쪽 건수 / 오른쪽 비율`} title="수집·위험·부정 기사 추이" />

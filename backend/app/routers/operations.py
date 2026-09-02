@@ -13,9 +13,14 @@ from app.models import (
     CollectionAttempt,
     CollectionIncident,
     Company,
+    CompanyArticleMatch,
     CompanyDailySummary,
     CompanyFeatureWindow,
+    NewsArticle,
+    RiskEvent,
+    RiskEventArticle,
 )
+from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.schemas import (
     CollectionHealthRead,
     CollectionIncidentPage,
@@ -24,6 +29,7 @@ from app.schemas import (
     DailySummaryRead,
     FeatureWindowRead,
 )
+from app.services.period_aggregation import seoul_day_bucket, seoul_period_start
 
 
 router = APIRouter(tags=["operations"])
@@ -195,16 +201,111 @@ def list_daily_summaries(
     days: int = Query(default=30, ge=1, le=365),
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
-) -> list[CompanyDailySummary]:
+) -> list[DailySummaryRead]:
     _user_company(db, company_id, auth.user_id)
-    cutoff = datetime.now(SEOUL).date() - timedelta(days=days - 1)
-    return list(
-        db.scalars(
-            select(CompanyDailySummary)
-            .where(
+    now = datetime.now(SEOUL)
+    cutoff_date, cutoff = seoul_period_start(days, now=now)
+    stored = {
+        item.summary_date: item
+        for item in db.scalars(
+            select(CompanyDailySummary).where(
                 CompanyDailySummary.company_id == company_id,
-                CompanyDailySummary.summary_date >= cutoff,
+                CompanyDailySummary.summary_date >= cutoff_date,
             )
-            .order_by(CompanyDailySummary.summary_date.desc())
         )
-    )
+    }
+
+    article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+    article_day = seoul_day_bucket(article_time).label("day")
+    sentiment = func.lower(func.coalesce(NewsArticle.sentiment_label, ""))
+    article_rows = {
+        row["day"].date(): row
+        for row in db.execute(
+            select(
+                article_day,
+                func.count(CompanyArticleMatch.article_id).label("article_count"),
+                func.count(CompanyArticleMatch.article_id)
+                .filter(sentiment.in_(["positive", "긍정"]))
+                .label("positive_article_count"),
+                func.count(CompanyArticleMatch.article_id)
+                .filter(sentiment.in_(["neutral", "중립"]))
+                .label("neutral_article_count"),
+                func.count(CompanyArticleMatch.article_id)
+                .filter(sentiment.in_(["negative", "부정"]))
+                .label("negative_article_count"),
+            )
+            .select_from(CompanyArticleMatch)
+            .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+            .where(
+                CompanyArticleMatch.company_id == company_id,
+                article_time >= cutoff,
+            )
+            .group_by(article_day)
+        ).mappings()
+    }
+
+    risk_day = seoul_day_bucket(RiskEvent.opened_at).label("day")
+    risk_rows = {
+        row[0].date(): row[1]
+        for row in db.execute(
+            select(risk_day, func.count(RiskEvent.id))
+            .where(
+                RiskEvent.company_id == company_id,
+                RiskEvent.opened_at >= cutoff,
+                RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+            )
+            .group_by(risk_day)
+        )
+    }
+
+    risk_article_rows = {
+        row[0].date(): row[1]
+        for row in db.execute(
+            select(
+                article_day,
+                func.count(func.distinct(RiskEventArticle.article_id)),
+            )
+            .select_from(RiskEventArticle)
+            .join(RiskEvent, RiskEvent.id == RiskEventArticle.risk_event_id)
+            .join(NewsArticle, NewsArticle.id == RiskEventArticle.article_id)
+            .join(
+                CompanyArticleMatch,
+                (CompanyArticleMatch.article_id == RiskEventArticle.article_id)
+                & (CompanyArticleMatch.company_id == company_id),
+            )
+            .where(
+                RiskEvent.company_id == company_id,
+                RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+                article_time >= cutoff,
+            )
+            .group_by(article_day)
+        )
+    }
+
+    results: list[DailySummaryRead] = []
+    today = now.date()
+    for offset in range(days):
+        summary_date = today - timedelta(days=offset)
+        materialized = stored.get(summary_date)
+        live = article_rows.get(summary_date, {})
+        results.append(
+            DailySummaryRead(
+                company_id=company_id,
+                summary_date=summary_date,
+                article_count=int(live.get("article_count", 0)),
+                risk_article_count=int(risk_article_rows.get(summary_date, 0)),
+                positive_article_count=int(live.get("positive_article_count", 0)),
+                neutral_article_count=int(live.get("neutral_article_count", 0)),
+                negative_article_count=int(live.get("negative_article_count", 0)),
+                story_count=materialized.story_count if materialized else 0,
+                amplification_count=materialized.amplification_count if materialized else 0,
+                publisher_count=materialized.publisher_count if materialized else 0,
+                positive_probability=materialized.positive_probability if materialized else None,
+                neutral_probability=materialized.neutral_probability if materialized else None,
+                negative_probability=materialized.negative_probability if materialized else None,
+                risk_event_count=int(risk_rows.get(summary_date, 0)),
+                unavailable_window_count=materialized.unavailable_window_count if materialized else 0,
+                partial_window_count=materialized.partial_window_count if materialized else 0,
+            )
+        )
+    return results

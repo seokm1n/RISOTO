@@ -88,7 +88,8 @@ function AnalysisStatisticsRoute({ canAdminister, onOpenCollectedArticles, onOpe
 function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
   const [searchParams] = useSearchParams();
   const articleCompanyId = numericParam(searchParams.get("articleCompanyId"));
-  return <CollectionPage key={articleCompanyId ?? "collection"} onOpenCompany={onOpenCompany} initialArticleCompanyId={articleCompanyId} onMonitoringChanged={onMonitoringChanged} />;
+  const articleDays = Number(numericParam(searchParams.get("days"))) || null;
+  return <CollectionPage key={`${articleCompanyId ?? "collection"}-${articleDays ?? "all"}`} onOpenCompany={onOpenCompany} initialArticleCompanyId={articleCompanyId} initialArticleDays={articleDays} onMonitoringChanged={onMonitoringChanged} />;
 }
 
 function RiskManagementRoute({ canReview }) {
@@ -187,8 +188,9 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     goTo(`/companies/main${riskQuery}`, navigationOptions);
   }, [goTo]);
 
-  const openCollectedArticles = useCallback((companyId) => {
-    goTo(`/collection?articleCompanyId=${encodeURIComponent(companyId)}`);
+  const openCollectedArticles = useCallback((companyId, days = null) => {
+    const daysQuery = days ? `&days=${encodeURIComponent(days)}` : "";
+    goTo(`/collection?articleCompanyId=${encodeURIComponent(companyId)}${daysQuery}`);
   }, [goTo]);
 
   const openRiskManagement = useCallback((companyId, days = 7) => {

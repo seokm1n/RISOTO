@@ -23,11 +23,19 @@ function truncate(text, maxChars) {
   return `${text.slice(0, maxChars).trimEnd()}…`;
 }
 
-function averageSentiment(days) {
-  const withData = days.filter((day) => day.positive_probability != null);
-  if (!withData.length) return null;
-  const average = (key) => withData.reduce((sum, day) => sum + (day[key] ?? 0), 0) / withData.length;
-  return { positive: average("positive_probability"), neutral: average("neutral_probability"), negative: average("negative_probability") };
+function aggregateSentiment(days) {
+  const totals = days.reduce((result, day) => ({
+    positive: result.positive + (day.positive_article_count ?? 0),
+    neutral: result.neutral + (day.neutral_article_count ?? 0),
+    negative: result.negative + (day.negative_article_count ?? 0),
+  }), { positive: 0, neutral: 0, negative: 0 });
+  const analyzed = totals.positive + totals.neutral + totals.negative;
+  if (!analyzed) return null;
+  return {
+    positive: totals.positive / analyzed,
+    neutral: totals.neutral / analyzed,
+    negative: totals.negative / analyzed,
+  };
 }
 
 // 긍정/중립/부정 비율을 한 줄 막대로 보여준다.
@@ -99,7 +107,7 @@ export default function MainPage({ onOpenCompany }) {
   const mainEntry = overview?.companies?.find((company) => company.id === mainId);
   const todayKey = new Date().toLocaleDateString("sv-SE");
   const todayCount = dailySummaries.find((day) => day.summary_date === todayKey)?.article_count ?? null;
-  const mainSentiment = useMemo(() => averageSentiment(dailySummaries), [dailySummaries]);
+  const mainSentiment = useMemo(() => aggregateSentiment(dailySummaries), [dailySummaries]);
   const now = useNow(30000);
   const nowLabel = now.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -118,7 +126,7 @@ export default function MainPage({ onOpenCompany }) {
           <article className="metric"><span>최근 7일 기사</span><strong>{formatNumber(mainEntry?.article_count ?? 0)}<small className="count-unit">건</small></strong></article>
           <article className="metric"><span>일일 수집</span><strong>{todayCount == null ? "-" : <>{formatNumber(todayCount)}<small className="count-unit">건</small></>}</strong></article>
           <article className="main-metric-tile"><span className="main-metric-tile-label">감성 비율</span><SentimentRatioBar sentiment={mainSentiment} /></article>
-          <article className={`metric ${mainEntry?.risk_count ? "danger" : "success"}`}><span>위험 판정</span><strong>{formatNumber(mainEntry?.risk_count ?? 0)}<small className="count-unit">건</small></strong></article>
+          <article className={`metric ${mainEntry?.risk_count ? "danger" : "success"}`}><span>최근 7일 위험 이벤트</span><strong>{formatNumber(mainEntry?.risk_count ?? 0)}<small className="count-unit">건</small></strong></article>
         </div>
         <div className="main-charts-row">
           <div className="main-chart-col">
@@ -146,7 +154,7 @@ export default function MainPage({ onOpenCompany }) {
             {latestRisk ? <div className="main-risk-notice">
               <span className={`severity ${latestRisk.severity}`}>{latestRisk.severity === "critical" ? "긴급" : "주의"}</span>
               <p>{(latestRisk.risk_types ?? []).map((item) => RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type).join(", ") || "위험"} 유형의 위험 신호가 감지되어 대응 보고서를 {responseDrafts.length ? "작성했습니다" : "작성 중입니다"}.</p>
-              <small><span>{formatDate(latestRisk.detected_at)} · </span><strong className="risk-event-display-title">{riskEventTitle(latestRisk)}</strong></small>
+              <small><span>{formatDate(latestRisk.opened_at ?? latestRisk.detected_at)} · </span><strong className="risk-event-display-title">{riskEventTitle(latestRisk)}</strong></small>
             </div> : <p className="panel-empty">최근 감지된 위험이 없습니다.</p>}
           </div>
         </button>

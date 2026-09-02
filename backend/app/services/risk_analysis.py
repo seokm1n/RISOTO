@@ -1092,7 +1092,7 @@ def build_feature_window(
         db.commit()
         db.refresh(window)
         if generate_response_drafts and draft_request is not None and draft_request[1]:
-            from app.services.response_generation import enqueue_response_draft
+            from app.services.response_engine import enqueue_response_draft
 
             enqueue_response_draft(draft_request[0], force=True)
         return window

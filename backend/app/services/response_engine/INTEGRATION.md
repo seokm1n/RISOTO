@@ -1,33 +1,26 @@
 # response_engine 연결 안내
 
 기존 `services/response_generation.py`를 대체하는 대응방안 생성 엔진입니다.
-**아직 연결하지 않았습니다** — 저장소 어디에서도 `response_engine`을 임포트하지 않습니다.
+수동 생성 API와 위험 이벤트 자동 생성 경로 모두 `response_engine`에 연결되어 있습니다.
 
-## 전환 방법
+## 연결 지점
 
-**호출 지점이 두 곳입니다. 둘을 같이 바꿔야 합니다.**
+**호출 지점은 두 곳이며 항상 같은 엔진을 가리켜야 합니다.**
 
 `app/routers/governance.py` (담당자가 버튼으로 생성하는 수동 경로)
 
 ```python
-# 기존
-from app.services.response_generation import generate_response_draft
-# 전환
 from app.services.response_engine import generate_response_draft
 ```
 
 `app/services/risk_analysis.py` (위험 이벤트 발생 시 자동으로 큐에 넣는 경로, 함수 안 지연 임포트)
 
 ```python
-# 기존
-from app.services.response_generation import enqueue_response_draft
-# 전환
 from app.services.response_engine import enqueue_response_draft
 ```
 
 한쪽만 바꾸면 **같은 `response_drafts` 테이블에 v2와 v3 초안이 섞입니다.** 수동 생성은
-새 형식, 자동 생성은 옛 형식이 되어 프런트가 두 구조를 동시에 감당해야 하므로, 전환은
-한 번에 하는 편이 낫습니다.
+새 형식, 자동 생성은 옛 형식이 될 수 있으므로 두 연결을 회귀 테스트로 함께 확인합니다.
 
 반환 타입(`ResponseDraft`)과 저장 컬럼은 같습니다. `schema_version`만 2 → 3으로 달라집니다.
 
@@ -60,16 +53,15 @@ grep -rn "function ResponseDraftContent" frontend/src
 
 - 메인 경로 v3: `MainResponseContent.jsx`로 분리했고 `ResponseDraftContent`에서
   `schema_version === 3 && generation_kind !== "competitor_impact"`일 때 갈라집니다.
-  v2 렌더링은 그대로 두었으므로 라우터를 바꾸기 전에는 화면이 바뀌지 않습니다.
+  기존 v2 초안도 계속 조회할 수 있고, 위험관리 페이지에서 v3로 새로 생성할 수 있습니다.
 - 동종 경로(`content_kind: "peer_recommendation"`)는 **또 다른 구조**입니다. `scenarios`가
   아예 없고 `content.recommendation`(`headline`, `recommendations[]`, `avoid[]`)과
   `content.impact`를 읽어야 하며, `status: "영향없음_종료"`면 `recommendation`이 `null`입니다.
 - 근거 기사가 없는 이벤트는 `status: "근거부족_보류"`로 저장됩니다(LLM 미호출).
   `review_reason`과 `detection`이 사람이 봐야 할 정보입니다.
 
-**전환 순서**: 두 렌더러가 먼저 들어간 뒤 라우터를 바꿉니다. 렌더러만 넣으면 그릴 v3
-데이터가 없고, 라우터만 바꾸면 빈 카드가 됩니다. 라우터 전환은 import 2줄이라 독립
-PR로 두면 되돌리기 쉽습니다.
+위험관리 페이지는 v3 초안을 우선 표시하며, v3가 없으면 기존 v2를 보여 주면서 새 엔진
+생성 버튼을 제공합니다. 근거가 없는 이벤트는 보류 사유를 표시하고 승인할 수 없습니다.
 
 ## content 구조 (schema_version=3)
 

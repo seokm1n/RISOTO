@@ -52,7 +52,13 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "수집�
   const formatDay = (value) => new Date(value).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
   const gridLevels = [0, .5, 1];
   const labelEvery = Math.max(1, Math.ceil(points.length / 4));
-  const latest = points.at(-1);
+  const totals = points.reduce((result, day) => ({
+    article_count: result.article_count + day.article_count,
+    risk_article_count: result.risk_article_count + day.risk_article_count,
+    negative_article_count: result.negative_article_count + day.negative_article_count,
+  }), { article_count: 0, risk_article_count: 0, negative_article_count: 0 });
+  const periodRiskRatio = totals.article_count > 0 ? totals.risk_article_count / totals.article_count : null;
+  const periodNegativeRatio = totals.article_count > 0 ? totals.negative_article_count / totals.article_count : null;
   const ratioLabel = (value) => value == null ? "-" : formatPercent(value);
   const segments = (key, y) => {
     const result = [];
@@ -72,9 +78,9 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "수집�
 
   return <div className="main-overview-trend">
     <div className="main-overview-legend" aria-hidden="true">
-      <span className="collection"><i />수집량 <strong>{formatNumber(latest.article_count)}건</strong></span>
-      <span className="risk"><i />위험 수집 비율 <strong>{ratioLabel(latest.risk_article_ratio)}</strong></span>
-      <span className="negative"><i />부정 기사 비율 <strong>{ratioLabel(latest.negative_article_ratio)}</strong></span>
+      <span className="collection"><i />기간 수집량 <strong>{formatNumber(totals.article_count)}건</strong></span>
+      <span className="risk"><i />기간 위험 기사 비율 <strong>{ratioLabel(periodRiskRatio)}</strong></span>
+      <span className="negative"><i />기간 부정 기사 비율 <strong>{ratioLabel(periodNegativeRatio)}</strong></span>
     </div>
     <div className="main-chart-canvas" ref={canvasRef}>
       <svg className="main-trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>

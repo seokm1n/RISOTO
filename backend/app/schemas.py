@@ -467,7 +467,7 @@ class FeatureWindowRead(BaseModel):
 
 
 class DailySummaryRead(BaseModel):
-    """15분 창으로부터 재구성한 기업별 서울 기준 일일 요약."""
+    """정제 기사를 실시간 집계한 기업별 서울 기준 일일 요약."""
 
     model_config = ConfigDict(from_attributes=True)
 

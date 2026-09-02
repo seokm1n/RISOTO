@@ -1,6 +1,5 @@
 """기업·기사·감성·위험 데이터를 기간별 대시보드 통계로 집계한다."""
 
-from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
@@ -27,6 +26,7 @@ from app.schemas import (
     DashboardSentimentRead,
     RiskEventRead,
 )
+from app.services.period_aggregation import seoul_day_bucket, seoul_period_start
 
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -39,7 +39,7 @@ def get_dashboard_overview(
     auth: CurrentAuth = Depends(require_auth),
 ) -> DashboardOverview:
     """선택 기간의 기업·기사·감성·위험 현황을 대시보드용 통계로 집계한다."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    _, cutoff = seoul_period_start(days)
     # 발행일이 없는 기사도 누락되지 않도록 저장 시각을 통계 기준 시각으로 대체한다.
     article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
 
@@ -76,13 +76,13 @@ def get_dashboard_overview(
             Company, Company.id == RiskEvent.company_id
         ).where(
             Company.user_id == auth.user_id,
-            RiskEvent.detected_at >= cutoff,
+            RiskEvent.opened_at >= cutoff,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
     ) or 0
 
     # 기사 추세와 위험 추세를 별도로 집계한 뒤 동일한 날짜 키로 결합한다.
-    day = func.date_trunc("day", article_time).label("day")
+    day = seoul_day_bucket(article_time).label("day")
     daily_rows = db.execute(
         select(
             day,
@@ -104,13 +104,13 @@ def get_dashboard_overview(
     risk_by_day = dict(
         db.execute(
             select(
-                func.date_trunc("day", RiskEvent.detected_at).label("day"),
+                seoul_day_bucket(RiskEvent.opened_at).label("day"),
                 func.count(RiskEvent.id).label("risk_count"),
             )
             .join(Company, Company.id == RiskEvent.company_id)
             .where(
                 Company.user_id == auth.user_id,
-                RiskEvent.detected_at >= cutoff,
+                RiskEvent.opened_at >= cutoff,
                 RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
             )
             .group_by("day")
@@ -172,7 +172,7 @@ def get_dashboard_overview(
         select(func.count(RiskEvent.id))
         .where(
             RiskEvent.company_id == Company.id,
-            RiskEvent.detected_at >= cutoff,
+            RiskEvent.opened_at >= cutoff,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
         .correlate(Company)
@@ -207,10 +207,10 @@ def get_dashboard_overview(
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
             Company.user_id == auth.user_id,
-            RiskEvent.detected_at >= cutoff,
+            RiskEvent.opened_at >= cutoff,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
-        .order_by(RiskEvent.detected_at.desc())
+        .order_by(RiskEvent.opened_at.desc())
         .limit(10)
     ))
     recent_risks = [risk_event_read(db, event) for event in risk_rows]

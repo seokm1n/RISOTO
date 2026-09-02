@@ -28,7 +28,7 @@ function FilterResultRow({ result }) {
 }
 
 // 기업명을 눌렀을 때 해당 기업의 수집 기사와 필터 결과를 목록으로 보여준다.
-function CollectedArticlesDialog({ company, onClose }) {
+function CollectedArticlesDialog({ company, days = null, onClose }) {
   const [page, setPage] = useState(1);
   const [displayMode, setDisplayMode] = useState("");
   const [data, setData] = useState(null);
@@ -50,9 +50,10 @@ function CollectedArticlesDialog({ company, onClose }) {
         ? "review_required"
         : null;
     const sourceQuery = displayMode && !filterDecision ? `&source=${encodeURIComponent(displayMode)}` : "";
+    const daysQuery = days && !filterDecision ? `&days=${encodeURIComponent(days)}` : "";
     const articleRequest = filterDecision
       ? api.get(`/companies/${company.id}/filter-results?decision=${filterDecision}&page=${page}&page_size=10`)
-      : api.get(`/companies/${company.id}/articles?page=${page}&page_size=10${sourceQuery}`);
+      : api.get(`/companies/${company.id}/articles?page=${page}&page_size=10${sourceQuery}${daysQuery}`);
     setData(null);
     Promise.all([articleRequest, api.get(`/companies/${company.id}/filter-summary`)])
       .then(([articleResponse, filterResponse]) => {
@@ -64,7 +65,7 @@ function CollectedArticlesDialog({ company, onClose }) {
       })
       .catch((requestError) => { if (active) setError(getErrorMessage(requestError)); });
     return () => { active = false; };
-  }, [company.id, displayMode, page]);
+  }, [company.id, days, displayMode, page]);
 
   const showingFilterResults = data?.kind === "filter_results";
   const title = data?.decision === "review_required" ? "검토 필요한 데이터" : showingFilterResults ? "필터링된 데이터" : "수집된 기사";
@@ -73,7 +74,7 @@ function CollectedArticlesDialog({ company, onClose }) {
   return <div className="collection-articles-modal-layer">
     <button className="collection-articles-backdrop" type="button" aria-label="수집 기사 목록 닫기" onClick={onClose} />
     <section className="collection-articles-modal" role="dialog" aria-modal="true" aria-labelledby="collection-articles-title">
-      <header><div><span className="eyebrow">COLLECTED ARTICLES</span><h2 id="collection-articles-title">{company.name} 수집 기사</h2><p>{title}를 최신순으로 확인합니다.</p></div><button className="collection-articles-close" type="button" onClick={onClose} aria-label="닫기">×</button></header>
+      <header><div><span className="eyebrow">COLLECTED ARTICLES</span><h2 id="collection-articles-title">{company.name} {days ? `최근 ${days}일 ` : ""}수집 기사</h2><p>{title}를 최신순으로 확인합니다.</p></div><button className="collection-articles-close" type="button" onClick={onClose} aria-label="닫기">×</button></header>
       <label className="collection-articles-filter"><span>표시할 데이터</span><select value={displayMode} onChange={(event) => { setDisplayMode(event.target.value); setPage(1); }}><option value="">정제 통과 기사 전체</option><optgroup label="필터 판정"><option value={FILTERED_DATA_MODE}>필터 제외 데이터 · {formatNumber(filtering.rejected_count)}건</option><option value={REVIEW_DATA_MODE}>검토 필요 데이터 · {formatNumber(filtering.review_required_count)}건</option></optgroup><optgroup label="정제 통과 기사 출처">{sources.map((source) => <option value={source} key={source}>{SOURCE_LABELS[source] ?? source}</option>)}{SUPPORTED_SOURCES.filter((source) => !sources.includes(source)).map((source) => <option value={source} key={source} disabled>{SOURCE_LABELS[source]} · 수집 데이터 없음</option>)}</optgroup></select></label>
       {error && <div className="notice error">{error}</div>}
       {!data ? <p className="panel-empty">기사 목록을 불러오는 중입니다.</p> : <><div className="article-list collection-modal-article-list">{data.items.length ? (showingFilterResults ? data.items.map((result) => <FilterResultRow result={result} key={result.id} />) : data.items.map((article) => <a className="article-row" key={article.id} href={article.url} target="_blank" rel="noreferrer"><span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span><div><strong>{article.title}</strong><small>{SOURCE_LABELS[article.source] ?? article.source} · {formatDate(article.published_at ?? article.created_at)}</small></div></a>)) : <p className="panel-empty">{emptyText}</p>}</div><Pagination page={data.page} pageSize={data.page_size} total={data.total} onChange={setPage} /></>}
@@ -82,7 +83,7 @@ function CollectedArticlesDialog({ company, onClose }) {
 }
 
 // 전체 수집기 상태와 사용자별 기업의 실시간 수집 현황 및 제어 기능을 제공한다.
-export default function CollectionPage({ onOpenCompany, initialArticleCompanyId = null, onMonitoringChanged }) {
+export default function CollectionPage({ onOpenCompany, initialArticleCompanyId = null, initialArticleDays = null, onMonitoringChanged }) {
   const [companies, setCompanies] = useState([]);
   const [summaries, setSummaries] = useState({});
   const [health, setHealth] = useState(null);
@@ -176,7 +177,7 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
       </section>
     </div>
     <section className="panel collection-company-section"><PanelTitle kicker="COMPANY STREAMS" title="기업별 수집 현황" /><p className="collection-company-guide">기업명을 누르면 해당 기업의 수집된 기사를 볼 수 있습니다.</p>{loading ? <p className="empty-state">수집 현황을 불러오는 중입니다.</p> : <div className="collection-stream-groups">{companyGroups.map((group) => <section className={`collection-stream-group ${group.role}`} key={group.role}><header><h3>{group.title}</h3></header>{group.companies.length ? <div className="collection-company-list">{group.companies.map(renderCompanyRow)}</div> : <p className="collection-group-empty">등록된 {group.title}이 없습니다.</p>}</section>)}</div>}</section>
-    {articleCompany && <CollectedArticlesDialog company={articleCompany} onClose={() => setArticleCompany(null)} />}
+    {articleCompany && <CollectedArticlesDialog company={articleCompany} days={initialArticleDays} onClose={() => setArticleCompany(null)} />}
     {confirmationDialog}
   </section>;
 }
