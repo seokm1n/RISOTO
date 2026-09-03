@@ -5,6 +5,12 @@
 // 실제 내용은 report 안에 들어 있다. 그래서 기존 렌더러에 분기를 얹는 대신 파일을 나눴다.
 //
 // 동종 경로(content_kind: "peer_recommendation")와 근거부족 보류는 여기서 다루지 않는다.
+//
+// 시나리오는 접어 두고 눌러서 펼친다. 세 관점을 한꺼번에 펼치면 카드 하나가 화면
+// 서너 개 분량이라 담당자가 관점을 비교하지 못하고 스크롤만 하게 된다. 어느 것을
+// 펼쳤는지는 화면에서만 쓰는 상태라 저장하지 않는다 - 고르는 기능이 아니다.
+
+import { useState } from "react";
 
 const RESPONSIBILITY_LABELS = {
   피해자: "우리도 피해자에 가까움",
@@ -221,6 +227,8 @@ export default function MainResponseContent({ content }) {
   // 하나만 올 수도 있으므로 개수를 가정하지 않는다.
   const selected = content.selected_stance;
 
+  const [openStance, setOpenStance] = useState(selected ?? scenarios[0]?.stance ?? null);
+
   return (
     <div className="response-draft response-draft-v3">
       <div className="response-draft-head">
@@ -244,6 +252,8 @@ export default function MainResponseContent({ content }) {
         {scenarios.map((scenario, index) => {
           const stance = scenario.stance;
           const label = STANCE_LABELS[stance] ?? stance ?? `${index + 1}번째 대응안`;
+          const key = stance ?? `scenario-${index}`;
+          const open = openStance === key;
           return (
             <article
               className={`response-scenario${stance && stance === selected ? " selected" : ""}`}
@@ -253,6 +263,14 @@ export default function MainResponseContent({ content }) {
                 <span>안 {String(index + 1).padStart(2, "0")}</span>
                 <h4>{label}</h4>
                 {stance && stance === selected && <span className="selected-mark">기본 선택</span>}
+                <button
+                  type="button"
+                  className="scenario-toggle"
+                  aria-expanded={open}
+                  onClick={() => setOpenStance(open ? null : key)}
+                >
+                  {open ? "접기" : "자세히"}
+                </button>
               </header>
               {scenario.tradeoff && (
                 <p className="draft-tradeoff">
@@ -265,8 +283,12 @@ export default function MainResponseContent({ content }) {
                   결론이 같아 합쳐진 관점: {scenario.merged_stances.join(", ")}
                 </p>
               )}
-              <ScenarioReport report={scenario.report} />
-              <VerificationBadge verification={scenario.verification} />
+              {open && (
+                <>
+                  <ScenarioReport report={scenario.report} />
+                  <VerificationBadge verification={scenario.verification} />
+                </>
+              )}
             </article>
           );
         })}
