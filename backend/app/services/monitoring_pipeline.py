@@ -801,6 +801,30 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                 latest_hits.setdefault(raw.id, (raw, hit))
 
             rows_to_evaluate = list(latest_hits.values())
+            normalized_urls = {
+                raw.normalized_url for raw, _hit in rows_to_evaluate
+                if raw.normalized_url
+            }
+            same_url_candidates: dict[str, list[RawNewsArticle]] = {
+                url: [] for url in normalized_urls
+            }
+            if normalized_urls:
+                for candidate in db.scalars(
+                    select(RawNewsArticle)
+                    .where(RawNewsArticle.normalized_url.in_(normalized_urls))
+                    .order_by(RawNewsArticle.collected_at.desc())
+                ):
+                    same_url_candidates[candidate.normalized_url].append(candidate)
+            existing_filter_results = {
+                result.raw_article_id: result
+                for result in db.scalars(
+                    select(ArticleFilterResult).where(
+                        ArticleFilterResult.company_id == company_id,
+                        ArticleFilterResult.filter_version == filter_config.version,
+                        ArticleFilterResult.raw_article_id.in_(latest_hits),
+                    )
+                )
+            } if latest_hits else {}
             article_texts = [normalized_content(raw) for raw, _hit in rows_to_evaluate]
             aliases = [
                 keyword.value for keyword in keywords if keyword.keyword_type == "alias"
@@ -844,7 +868,11 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     keywords,
                     raw,
                     raw,
-                    candidate_articles=_raw_candidates(db, raw),
+                    candidate_articles=[
+                        candidate
+                        for candidate in same_url_candidates.get(raw.normalized_url, [])
+                        if candidate.id != raw.id
+                    ][:250],
                     semantic_scorer=semantic_scorer,
                     config=filter_config,
                     precomputed_company_reranker=reranker_prediction,
@@ -872,13 +900,7 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     if not _created:
                         _reuse_existing_curated_article(decision, raw, article)
 
-                result = db.scalar(
-                    select(ArticleFilterResult).where(
-                        ArticleFilterResult.raw_article_id == raw.id,
-                        ArticleFilterResult.company_id == company_id,
-                        ArticleFilterResult.filter_version == filter_config.version,
-                    )
-                )
+                result = existing_filter_results.get(raw.id)
                 if result is None:
                     result = ArticleFilterResult(
                         raw_article_id=raw.id,
@@ -889,6 +911,7 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                         filter_version=decision.filter_version,
                     )
                     db.add(result)
+                    existing_filter_results[raw.id] = result
                 if result.curated_article_id is not None:
                     processed_article_ids.add(result.curated_article_id)
                 result.decision = decision.decision
