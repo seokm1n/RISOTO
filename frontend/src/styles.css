@@ -1897,3 +1897,9 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .draft-avoid li { color: #7d3a26; }
 /* 메인 경로 요약도 같은 이유로 첫 블록을 조금 세운다. */
 .draft-summary li { color: #2e1f14; font-size: .74rem; font-weight: 600; }
+
+/* 시나리오 카드 펼치기 버튼. 관점을 비교하려면 접힌 상태가 기본이어야 한다 - 카드 하나가
+   화면 서너 개 분량이라 다 펼치면 나란히 놓고 볼 수 없다. 머리 오른쪽 끝에 붙인다. */
+.response-scenario > header .scenario-toggle { margin-left: auto; border: 1px solid #cbc8bd; border-radius: 999px; background: transparent; color: #746d68; padding: 3px 10px; font-size: .62rem; font-weight: 800; cursor: pointer; }
+.response-scenario > header .scenario-toggle:hover { border-color: #a84f32; color: #a84f32; }
+.response-scenario > header .scenario-toggle[aria-expanded="true"] { border-color: #a84f32; color: #a84f32; }
