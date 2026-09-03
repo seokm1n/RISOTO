@@ -1758,3 +1758,142 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   .app-notice-actions { display: grid; grid-template-columns: 1fr; }
   .app-notice-actions .secondary-button, .app-notice-actions .submit-button { width: 100%; }
 }
+
+/* ── 대응방안 v3 렌더러 (MainResponseContent · PeerRecommendationContent) ──────
+   schema_version 3 초안을 그리는 두 컴포넌트가 쓰는 클래스다. 기존 .response-draft의
+   크림 배경·주황 소제목·작은 글씨 톤을 그대로 잇고, 구조(간격·정렬)만 여기서 세운다.
+   색은 기존 팔레트만 쓴다 - 디자인이 바뀌면 이 블록의 색만 갈아끼우면 된다.
+
+   기존 규칙 `.response-draft section div { display: flex }`가 섹션 안의 모든 div를
+   가로로 눕히므로, 세로로 쌓아야 하는 컨테이너는 display를 명시해 덮어쓴다.          */
+
+/* 카드 공통 --------------------------------------------------------------- */
+.response-draft-v3 { gap: 15px; }
+.response-draft-v3 h5 { margin: 0 0 1px; color: #a84f32; font-size: .72rem; font-weight: 800; letter-spacing: .01em; }
+.response-draft-v3 section { display: grid; gap: 6px; }
+.response-draft-v3 section > strong { color: #5c4432; font-size: .68rem; font-weight: 800; }
+.response-draft-v3 ul { display: grid; gap: 4px; margin: 0; padding-left: 15px; }
+.response-draft-v3 li { color: #403633; font-size: .72rem; line-height: 1.55; }
+.response-draft-v3 section p { flex: none; color: #403633; font-size: .74rem; line-height: 1.6; }
+
+/* 머리의 경로 배지. 메인·동종·보류를 색으로 가른다.
+   .response-draft > div:first-child가 1열 grid라 그대로 두면 배지가 카드 폭만큼
+   늘어난다. 머리를 2열로 세워 제목 옆에 붙인다. */
+.response-draft-v3 .response-draft-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.draft-kind { justify-self: start; align-self: start; padding: 3px 9px; border-radius: 999px; color: #fffdf7; font-size: .6rem; font-weight: 800; white-space: nowrap; }
+.draft-kind.main { background: #a84f32; }
+.draft-kind.competitor { background: #5c4432; }
+.draft-kind.hold { background: #827a75; }
+
+/* 동종 경로 · 영향 판단 ---------------------------------------------------- */
+.draft-verdict { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; color: #2e1f14; font-size: .86rem; font-weight: 800; }
+.draft-review-flag { padding: 2px 8px; border-radius: 999px; background: #f5e0d8; color: #9e3b22; font-size: .6rem; font-weight: 800; }
+.draft-reason { margin: 0; color: #403633; font-size: .74rem; line-height: 1.6; }
+/* 자체 사고가 아니라는 해명은 화면 구조가 맡는다 - 검증 규칙 5가 headline에서 이걸 금지한다. */
+.draft-peer-note { margin: 0; color: #746d68; font-size: .66rem; }
+
+/* 동종 경로 · 권고 --------------------------------------------------------- */
+/* 검증 규칙 1이 "권고는 영향 경로 중 하나에 매달려야 한다"고 강제한다. 평평한 목록으로
+   그리면 그 구조가 화면에서 사라지므로 경로별로 묶어 보여준다. */
+.draft-recommendations { gap: 9px; }
+.response-draft-v3 .draft-channel-group { display: grid; gap: 6px; padding: 10px 12px; border-left: 3px solid #b7a66d; border-radius: 0 9px 9px 0; background: #f8f5ec; }
+.draft-channel { color: #5c4432; font-size: .7rem; font-weight: 800; }
+.draft-channel-empty { margin: 0; color: #827a75; font-size: .66rem; }
+.draft-recommendations ul { padding-left: 0; gap: 9px; list-style: none; }
+.response-draft-v3 .draft-recommendation { display: grid; gap: 3px; }
+.response-draft-v3 .draft-recommendation-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.draft-order { color: #827a75; font-size: .62rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.draft-timeframe { padding: 2px 7px; border-radius: 999px; background: #f8ecd9; color: #5c4432; font-size: .62rem; font-weight: 700; }
+/* 사실 확인 전 대외 발언 금지라는 뜻이라 놓치면 사고로 이어진다. 눈에 띄어야 한다. */
+.draft-verify-first { padding: 2px 7px; border-radius: 999px; background: #f5e0d8; color: #9e3b22; font-size: .6rem; font-style: normal; font-weight: 800; }
+.draft-action { margin: 0; color: #2e1f14; font-size: .76rem; font-weight: 600; line-height: 1.55; }
+.draft-owner, .draft-rationale { margin: 0; color: #746d68; font-size: .68rem; line-height: 1.5; }
+/* 경로 밖 권고(규칙 1 위반)는 버리지 않고 표시만 남긴다 - 검증 실패도 사람이 봐야 한다. */
+.draft-orphan-channel { margin: 0; color: #9e3b22; font-size: .64rem; }
+
+/* 영향_없음일 때. "만들다 실패했다"가 아니라 "만들지 않기로 했다"로 읽혀야 한다. */
+.response-draft-v3 .draft-no-recommendation { padding: 11px 13px; border-left: 3px solid #a84f32; border-radius: 0 9px 9px 0; background: #fbf3e5; }
+.draft-no-recommendation p { margin: 0; color: #5c4432; font-size: .72rem; line-height: 1.6; }
+
+/* 메인 경로 · 시나리오 ----------------------------------------------------- */
+.draft-stakeholder { margin: 0; color: #746d68; font-size: .68rem; }
+.draft-empty { margin: 0; color: #827a75; font-size: .72rem; }
+.response-draft-v3 .response-scenario-list { display: grid; gap: 11px; }
+.response-draft-v3 .response-scenario { display: grid; gap: 9px; padding: 13px; border: 1px solid #e2d9c4; border-radius: 10px; background: #fffdf7; }
+.response-draft-v3 .response-scenario.selected { border-color: #a84f32; }
+.response-draft-v3 .response-scenario > header { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.response-scenario > header > span:first-child { color: #827a75; font-size: .62rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.response-draft-v3 .response-scenario h4 { margin: 0; color: #2e1f14; font-size: .82rem; font-weight: 800; }
+.selected-mark { padding: 2px 8px; border-radius: 999px; background: #f8ecd9; color: #a84f32; font-size: .6rem; font-weight: 800; }
+.draft-tradeoff, .draft-merged { margin: 0; color: #746d68; font-size: .68rem; line-height: 1.55; }
+.draft-tradeoff strong { display: block; color: #5c4432; font-size: .66rem; font-weight: 800; }
+
+/* 메인 경로 · 보고서 본문 -------------------------------------------------- */
+.responsibility { margin: 0; color: #5c4432; font-size: .72rem; font-weight: 700; }
+.response-draft-v3 .draft-strategy { display: grid; gap: 4px; padding: 9px 11px; border-radius: 8px; background: #f8f5ec; }
+.response-draft-v3 .draft-strategy > header { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.draft-strategy header strong { color: #2e1f14; font-size: .74rem; font-weight: 800; }
+.target { padding: 2px 7px; border-radius: 999px; background: #f8ecd9; color: #5c4432; font-size: .6rem; font-weight: 700; }
+.draft-strategy p { margin: 0; color: #403633; font-size: .7rem; line-height: 1.55; }
+.draft-checklist ul { padding-left: 0; list-style: none; }
+.draft-checklist li { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; padding: 6px 9px; border-radius: 7px; background: #f8f5ec; }
+.draft-checklist .task { flex: 1 1 260px; color: #2e1f14; font-size: .72rem; font-weight: 600; }
+.draft-checklist .owner { color: #746d68; font-size: .64rem; }
+.draft-checklist .due { padding: 2px 7px; border-radius: 999px; background: #f8ecd9; color: #5c4432; font-size: .6rem; font-weight: 700; white-space: nowrap; }
+.response-draft-v3 .draft-case { display: grid; gap: 3px; padding: 8px 10px; border-radius: 7px; background: #f8f5ec; }
+.draft-case strong { color: #2e1f14; font-size: .72rem; font-weight: 800; }
+.draft-case p { margin: 0; color: #403633; font-size: .68rem; line-height: 1.5; }
+
+/* 근거 보류 카드. 같은 상태를 두 경로가 공유하므로 카드 자체를 다르게 보이게 한다. */
+.response-draft-hold { display: grid; gap: 13px; padding: 16px; border: 1px solid #cbc8bd; border-radius: 12px; background: #f8f5ec; }
+.response-draft-hold .response-draft-head { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
+.response-draft-hold .eyebrow { color: #827a75; }
+.response-draft-hold strong { color: #2e1f14; font-size: .88rem; font-weight: 800; }
+.hold-reason { margin: 0; color: #403633; font-size: .74rem; line-height: 1.6; }
+.hold-detection { display: flex; flex-wrap: wrap; gap: 7px 20px; margin: 0; padding-top: 10px; border-top: 1px solid rgba(48,43,41,.12); }
+.hold-detection > div { display: grid; gap: 2px; }
+.hold-detection dt { color: #827a75; font-size: .6rem; font-weight: 700; }
+.hold-detection dd { margin: 0; color: #2e1f14; font-size: .74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* 법령·인용 근거 (두 경로 공통) -------------------------------------------- */
+.draft-regulations ul, .draft-precedents ul { padding-left: 0; gap: 6px; list-style: none; }
+.response-draft-v3 .draft-regulations li { display: grid; gap: 2px; padding: 8px 10px; border-radius: 7px; background: #f8f5ec; }
+.draft-regulations li strong { color: #2e1f14; font-size: .7rem; font-weight: 800; }
+.draft-regulations li span { color: #403633; font-size: .68rem; line-height: 1.5; }
+.draft-precedents li { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; }
+.draft-precedents a { color: #a84f32; font-size: .72rem; }
+/* case_records가 아직 비어 있어 인용 사례가 사실상 전부 웹검색이다. 표시가 없으면
+   검수된 것처럼 읽힌다. */
+.upcoming, .unverified { padding: 2px 7px; border-radius: 999px; background: #f0ece1; color: #827a75; font-size: .58rem; font-style: normal; font-weight: 700; white-space: nowrap; }
+.upcoming { background: #f8ecd9; color: #745f1e; }
+
+/* 한계·검증 --------------------------------------------------------------- */
+.draft-limitations { margin: 0; color: #745f1e; font-size: .68rem; line-height: 1.5; }
+.draft-limitations strong { display: block; color: #5c4432; font-size: .66rem; font-weight: 800; }
+/* 통과하면 아무것도 그리지 않는다. 담당자가 봐야 하는 건 걸린 항목뿐이다. */
+.response-draft-v3 .draft-verification { display: grid; gap: 5px; padding: 10px 12px; border-left: 3px solid #9e3b22; border-radius: 0 9px 9px 0; background: #f9ebe6; }
+.draft-verification strong { color: #9e3b22; font-size: .68rem; font-weight: 800; }
+.draft-verification li { color: #7d3a26; font-size: .68rem; }
+
+@media (max-width: 720px) {
+  .response-draft-v3 .draft-channel-group { padding: 9px 10px; }
+  .draft-checklist li { gap: 5px; }
+  .draft-checklist .task { flex: 1 1 100%; }
+  .hold-detection { gap: 7px 14px; }
+}
+
+/* 나머지 섹션 껍데기(.draft-summary·.draft-basis·.draft-risk·.draft-monitoring 등)는
+   위의 `.response-draft-v3 section` 공통 규칙으로 충분하다. 아래 넷만 담당자가 먼저
+   봐야 하는 자리라 따로 세운다. */
+
+/* 영향 판단은 동종 경로 카드의 첫 블록이자 게이트의 결론이다. */
+.response-draft-v3 .draft-impact { padding: 11px 13px; border-radius: 9px; background: #fbf3e5; }
+/* 행동 요약 한 줄. 담당자가 위에서 아래로 읽다 멈춰도 여기까지는 전달돼야 한다. */
+.draft-headline p { color: #2e1f14; font-size: .84rem; font-weight: 700; line-height: 1.55; }
+.draft-situation p { color: #5c4432; }
+/* 금지 항목. 반사이익 국면에서 특히 중요해 검증 규칙 4가 비어 있는 것을 잡는다. */
+.response-draft-v3 .draft-avoid { padding: 10px 12px; border-left: 3px solid #9e3b22; border-radius: 0 9px 9px 0; background: #f9ebe6; }
+.draft-avoid h5 { color: #9e3b22; }
+.draft-avoid li { color: #7d3a26; }
+/* 메인 경로 요약도 같은 이유로 첫 블록을 조금 세운다. */
+.draft-summary li { color: #2e1f14; font-size: .74rem; font-weight: 600; }
