@@ -314,7 +314,8 @@ def _save_assessment(
         if relevance_score is not None
         else filter_result.relevance_score
         if filter_result and filter_result.relevance_score is not None
-        else 1.0
+        # A missing filter decision is not evidence of company relevance.
+        else 0.0
     )
     assessment = db.get(ArticleRiskAssessment, (company.id, article.id))
     current_llm_version = f"{ENGINE_VERSION}:{settings.llm_labeling_model_name}"
@@ -601,7 +602,9 @@ def process_company_risk_articles(
             relevance = _clamp(
                 filter_result.relevance_score
                 if filter_result and filter_result.relevance_score is not None
-                else 1.0
+                # Legacy/malformed matches without accepted filter evidence must
+                # never become risk events solely because another model is high.
+                else 0.0
             )
             prepared.append((article, cluster, relevance))
             assessment = db.get(ArticleRiskAssessment, (company.id, article.id))

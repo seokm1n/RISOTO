@@ -20,6 +20,7 @@ from app.models import (
     CompanyFeatureWindow,
     NewsArticle,
     RiskEvent,
+    StoryClusterArticle,
 )
 from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.schemas import (
@@ -260,6 +261,27 @@ def list_daily_summaries(
         )
     }
 
+    story_rows = {
+        row[0].date(): row[1]
+        for row in db.execute(
+            select(
+                article_day,
+                func.count(func.distinct(StoryClusterArticle.story_cluster_id)),
+            )
+            .select_from(CompanyArticleMatch)
+            .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+            .join(
+                StoryClusterArticle,
+                StoryClusterArticle.article_id == NewsArticle.id,
+            )
+            .where(
+                CompanyArticleMatch.company_id == company_id,
+                article_time >= cutoff,
+            )
+            .group_by(article_day)
+        )
+    }
+
     risk_article_rows = {
         row[0].date(): row[1]
         for row in db.execute(
@@ -295,7 +317,7 @@ def list_daily_summaries(
                 positive_article_count=int(live.get("positive_article_count", 0)),
                 neutral_article_count=int(live.get("neutral_article_count", 0)),
                 negative_article_count=int(live.get("negative_article_count", 0)),
-                story_count=materialized.story_count if materialized else 0,
+                story_count=int(story_rows.get(summary_date, 0)),
                 amplification_count=materialized.amplification_count if materialized else 0,
                 publisher_count=materialized.publisher_count if materialized else 0,
                 positive_probability=materialized.positive_probability if materialized else None,

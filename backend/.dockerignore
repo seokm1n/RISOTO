@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 .venv/
 tests/
+local_models/
+model_artifacts/

@@ -148,6 +148,68 @@ class ArticleFilteringTests(unittest.TestCase):
         )
         self.assertEqual((result.decision, result.reason), ("rejected", "advertisement"))
 
+    def test_company_mentioned_only_in_affiliate_disclosure_is_rejected(self):
+        """제휴 고지문에만 쿠팡이 등장한 무관 글을 기업 기사로 인정하지 않는다."""
+        company = SimpleNamespace(name="쿠팡", normalized_name="쿠팡", ticker=None)
+        result = classify_article(
+            company,
+            [],
+            article(
+                "오늘의 여행지와 맛집 추천",
+                "해변 근처 맛집을 소개합니다. "
+                "이 포스팅은 쿠팡 파트너스 활동의 일환으로, "
+                "이에 따른 일정액의 수수료를 제공받습니다.",
+            ),
+            config=self.config,
+        )
+        self.assertEqual((result.decision, result.reason), ("rejected", "advertisement"))
+        self.assertTrue(result.details["affiliate_only_target_mention"])
+
+    @patch("app.services.article_filtering.predict_company_relevance")
+    def test_reranker_rejects_incidental_summary_mention(self, predict_reranker):
+        """제목에 기업 근거가 없는 부수적 언급은 reranker 점수로 거부한다."""
+        predict_reranker.return_value = {
+            "version": "company-reranker-test",
+            "relevant": 0.02,
+            "irrelevant": 0.98,
+            "accept_threshold": 0.72,
+            "reject_threshold": 0.25,
+            "input_schema": "company-query-article-pair-v1",
+        }
+        result = classify_article(
+            self.company,
+            self.keywords,
+            article(
+                "Weekend weather forecast",
+                "The digest briefly lists Acme Robotics among hundreds of stocks.",
+            ),
+            config=FilterConfig(ai_enabled=True, allow_model_download=False),
+        )
+        self.assertEqual((result.decision, result.reason), ("rejected", "irrelevant"))
+        self.assertEqual(result.classifier_kind, "company_cross_encoder_reranker")
+        self.assertEqual(result.details["company_reranker_score"], 0.02)
+
+    @patch("app.services.article_filtering.predict_company_relevance")
+    def test_direct_logistics_headline_survives_low_reranker_score(self, predict_reranker):
+        """기업명이 제목에 명시된 물류센터 사고는 미탐지 하한을 유지한다."""
+        predict_reranker.return_value = {
+            "version": "company-reranker-test",
+            "relevant": 0.05,
+            "irrelevant": 0.95,
+            "accept_threshold": 0.72,
+            "reject_threshold": 0.25,
+            "input_schema": "company-query-article-pair-v1",
+        }
+        company = SimpleNamespace(name="쿠팡", normalized_name="쿠팡", ticker=None)
+        result = classify_article(
+            company,
+            [],
+            article("쿠팡 물류센터 화재로 배송 차질", "소방당국이 원인을 조사 중이다."),
+            config=FilterConfig(ai_enabled=True, allow_model_download=False),
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertGreaterEqual(result.relevance_score, 0.70)
+
     def test_klue_nli_can_block_an_ambiguous_company_name(self):
         """동음이의 기업명을 KLUE NLI가 무관 기사로 차단할 수 있는지 검증한다."""
         class FakeNli:

@@ -120,7 +120,10 @@ API 응답은 바로 분석하지 않고 다음 세 계층으로 보관합니다
 - 유사 기사: 다른 URL은 삭제하지 않고 기사량에 포함하며 `story_clusters`로만 연결합니다.
 - 광고: 협찬·제휴·할인·구매·상담·연락처·상거래 URL 신호를 점수화합니다.
 - 관련성: 기업명, 종목코드, 별칭, 제품명이 실제 제목·요약에 등장하는지 확인하고,
-  KLUE-RoBERTa NLI 모델이 실질 기사·부수 언급·무관 가설을 비교합니다.
+  승격된 BGE cross-encoder가 `대상 기업 정보 + 기사` 쌍의 실질적 관련성을 재판정합니다.
+  승격 전에는 기존 NLI·규칙 판정으로 폴백합니다.
+- 제휴 고지: `쿠팡 파트너스 활동의 일환`과 같은 고지문에만 대상 기업이 등장하면
+  관련 기사로 통과시키지 않습니다.
 
 기본 판정 기준은 다음과 같습니다.
 
@@ -244,12 +247,18 @@ KLUE 미세조정은 API 서버와 분리된 CUDA 컨테이너에서 실행합�
 ```powershell
 docker compose --profile training build trainer
 docker compose --profile training run --rm trainer filter --epochs 4
+docker compose --profile training run --rm trainer company-reranker --epochs 2 --batch-size 2 --human-weight 1
 docker compose --profile training run --rm trainer sentiment --epochs 4
 docker compose --profile training run --rm trainer risk-types --epochs 4
 docker compose --profile training run --rm trainer risk
 ```
 
-명령은 모두 `candidate`만 등록합니다. 아래 API는 추후 모델 운영 기능에서 사용합니다.
+명령은 모두 `candidate`만 등록합니다. `company-reranker`는 DB 확정 라벨로
+학습하되 기업 이름이 겹치지 않게 학습·검증·테스트를 나누고,
+`backend/training_data/relevance_labeled.csv`도 서로 겹치지 않는 학습 70%·임계값 보정 15%·최종 평가
+15%로 분리합니다. DB의 미학습 기업명은 CSV 학습 파트에서도 제외해 일반화 지표의
+누출을 막습니다.
+아래 API는 모델 운영 현황 확인에 사용합니다.
 
 ```text
 GET  /api/v1/model-versions

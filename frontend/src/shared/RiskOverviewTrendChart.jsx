@@ -25,9 +25,9 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 
   const points = [...days]
     .sort((left, right) => left.summary_date.localeCompare(right.summary_date))
     .map((day) => {
-      const articleCount = Math.max(Number(day.article_count) || 0, 0);
-      const riskArticleCount = Math.max(Number(day.risk_article_count) || 0, 0);
-      const negativeArticleCount = Math.max(Number(day.negative_article_count) || 0, 0);
+      const articleCount = Math.max(Number(day.story_count) || 0, 0);
+      const riskArticleCount = Math.max(Number(day.risk_event_count) || 0, 0);
+      const negativeArticleCount = articleCount;
       return {
         ...day,
         article_count: articleCount,

@@ -35,10 +35,14 @@ function averageDailySummaries(groups) {
       article_count: 0,
       risk_article_count: 0,
       negative_article_count: 0,
+      story_count: 0,
+      risk_event_count: 0,
     };
     current.article_count += day.article_count ?? 0;
     current.risk_article_count += day.risk_article_count ?? 0;
     current.negative_article_count += day.negative_article_count ?? 0;
+    current.story_count += day.story_count ?? 0;
+    current.risk_event_count += day.risk_event_count ?? 0;
     byDate.set(day.summary_date, current);
   });
   return [...byDate.values()]
@@ -47,6 +51,8 @@ function averageDailySummaries(groups) {
       article_count: oneDecimal(day.article_count),
       risk_article_count: oneDecimal(day.risk_article_count),
       negative_article_count: oneDecimal(day.negative_article_count),
+      story_count: oneDecimal(day.story_count),
+      risk_event_count: oneDecimal(day.risk_event_count),
     }));
 }
 
@@ -95,7 +101,7 @@ export default function MainPage({ onOpenCompany }) {
   const dailySummaries = mainIndex >= 0 ? dailyGroups[mainIndex] ?? [] : [];
   const mainGraphDates = new Set(
     dailySummaries
-      .filter((day) => (day.article_count ?? 0) > 0)
+      .filter((day) => (day.story_count ?? 0) > 0)
       .map((day) => day.summary_date),
   );
   const averageSummaries = averageDailySummaries(dailyGroups)
@@ -125,10 +131,10 @@ export default function MainPage({ onOpenCompany }) {
   const error = companiesError ? getErrorMessage(companiesError) : null;
   const todayKey = new Date().toLocaleDateString("sv-SE");
   const todaySummary = dailySummaries.find((day) => day.summary_date === todayKey);
-  const todayCount = todaySummary?.article_count ?? 0;
-  const todayRiskCount = todaySummary?.risk_article_count ?? 0;
-  const sevenDayCount = dailySummaries.reduce((sum, day) => sum + (day.article_count ?? 0), 0);
-  const sevenDayRiskCount = dailySummaries.reduce((sum, day) => sum + (day.risk_article_count ?? 0), 0);
+  const todayCount = todaySummary?.story_count ?? 0;
+  const todayRiskCount = todaySummary?.risk_event_count ?? 0;
+  const sevenDayCount = dailySummaries.reduce((sum, day) => sum + (day.story_count ?? 0), 0);
+  const sevenDayRiskCount = dailySummaries.reduce((sum, day) => sum + (day.risk_event_count ?? 0), 0);
 
   return <section className="workspace main-workspace briefing-workspace">
     <p className="main-page-intro briefing-description">실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</p>

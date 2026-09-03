@@ -123,12 +123,24 @@ def get_model_runtime_status(
     relevance_model = db.scalar(
         select(ModelVersion)
         .where(
-            ModelVersion.task == "topical_relevance",
+            ModelVersion.task == "company_relevance_reranker",
             ModelVersion.status == "production",
         )
         .order_by(ModelVersion.promoted_at.desc().nullslast(), ModelVersion.id.desc())
         .limit(1)
     )
+    if relevance_model is None:
+        # Keep reporting the legacy text-only classifier until the new pairwise
+        # reranker has passed review and is explicitly promoted.
+        relevance_model = db.scalar(
+            select(ModelVersion)
+            .where(
+                ModelVersion.task == "topical_relevance",
+                ModelVersion.status == "production",
+            )
+            .order_by(ModelVersion.promoted_at.desc().nullslast(), ModelVersion.id.desc())
+            .limit(1)
+        )
     relevance_path = (
         Path(relevance_model.artifact_path).expanduser()
         if relevance_model is not None

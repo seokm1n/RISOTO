@@ -43,6 +43,43 @@ class PromotionEligibilityUnitTests(unittest.TestCase):
         self.assertEqual(result.target_model_state, "provisional")
         self.assertEqual(model.thresholds, {"model_state": "unchanged"})
 
+    def test_reranker_cannot_be_promoted_with_weak_human_metrics(self):
+        with tempfile.TemporaryDirectory() as artifact:
+            model = SimpleNamespace(
+                task="company_relevance_reranker",
+                artifact_path=artifact,
+                metrics={
+                    "human_test": {
+                        "precision_relevant": 0.59,
+                        "recall_relevant": 0.40,
+                        "roc_auc": 0.72,
+                    },
+                    "unseen_company_test": {
+                        "precision_relevant": 0.93,
+                        "recall_relevant": 0.41,
+                    },
+                },
+            )
+            readiness = {
+                "tasks": [
+                    {
+                        "task": "company_relevance_reranker",
+                        "blockers": [],
+                        "class_counts": {
+                            "relevant": 1278,
+                            "irrelevant_or_incidental": 2658,
+                        },
+                    }
+                ]
+            }
+            result = evaluate_model_promotion(
+                SimpleNamespace(), model, readiness=readiness
+            )
+
+        self.assertFalse(result.allowed)
+        self.assertIn("human precision", result.blocker)
+        self.assertIn("unseen-company recall", result.blocker)
+
 
 class NotificationDatabaseTests(unittest.TestCase):
     def setUp(self):

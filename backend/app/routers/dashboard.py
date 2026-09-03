@@ -101,6 +101,20 @@ def get_dashboard_overview(
         .group_by(day)
         .order_by(day)
     ).mappings().all()
+    story_by_day = dict(
+        db.execute(
+            select(
+                day,
+                func.count(func.distinct(StoryClusterArticle.story_cluster_id)),
+            )
+            .select_from(CompanyArticleMatch)
+            .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+            .join(StoryClusterArticle, StoryClusterArticle.article_id == NewsArticle.id)
+            .join(Company, Company.id == CompanyArticleMatch.company_id)
+            .where(Company.user_id == auth.user_id, article_time >= cutoff)
+            .group_by(day)
+        ).all()
+    )
     risk_by_day = dict(
         db.execute(
             select(
@@ -120,6 +134,7 @@ def get_dashboard_overview(
         DashboardDailyRead(
             day=row["day"],
             article_count=row["article_count"],
+            story_count=story_by_day.get(row["day"], 0),
             positive_count=row["positive_count"],
             negative_count=row["negative_count"],
             risk_count=risk_by_day.get(row["day"], 0),

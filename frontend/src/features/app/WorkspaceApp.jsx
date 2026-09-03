@@ -13,24 +13,24 @@ import {
 import { api, getErrorMessage } from "../../api";
 import AdminDashboardPage from "../admin/AdminDashboardPage";
 import MyPage from "../account/MyPage";
-import AnalysisStatisticsPage from "../analysis/AnalysisStatisticsPage";
-import RiskManagementPage from "../risk-management/RiskManagementPage";
+import AnalysisPipelinePage from "../analysis/AnalysisPipelinePage";
 import CollectionPage from "../collection/CollectionPage";
 import CompanyAdministrationPage from "../companies/CompanyPages";
 import MainPage from "../home/MainPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
 import ArticleReviewPage from "../reviews/ArticleReviewPage";
+import RiskManagementPage from "../risk-management/RiskManagementPage";
 import { AppNoticeDialog, useAppConfirm } from "../../shared/components";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "AI 리스크 브리핑", path: "/main" },
-  { id: "collection", label: "수집 현황", path: "/collection" },
-  { id: "statistics", label: "분석 통계", path: "/companies/main" },
-  { id: "risk-management", label: "위험 관리", path: "/risk-management" },
-  { id: "companies", label: "기업 목록", path: "/companies" },
+  { id: "statistics", label: "분석", path: "/analysis/collection" },
+  { id: "risk-management", label: "대응", path: "/risk-management" },
+  { id: "collection", label: "수집 관리", path: "/collection" },
+  { id: "companies", label: "기업 관리", path: "/companies" },
 ];
 
 const ADMIN_NAV_ITEMS = [
@@ -66,23 +66,18 @@ const pageFromPath = (pathname) => {
   if (pathname === "/reviews") return "admin-review";
   if (pathname === "/collection") return "collection";
   if (pathname === "/risk-management") return "risk-management";
+  if (pathname.startsWith("/analysis/")) return "statistics";
   if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "companies";
   if (pathname === "/companies/overview" || /^\/companies\/[^/]+$/.test(pathname)) return "statistics";
   return "collection";
 };
 
-function AnalysisStatisticsRoute({ canAdminister, onOpenCollectedArticles, onOpenRiskManagement, onMonitoringChanged }) {
+function AnalysisStatisticsRoute() {
   const location = useLocation();
   const normalizedCompanyId = numericParam(location.state?.companyId);
-
-  return <AnalysisStatisticsPage
-    key={normalizedCompanyId ?? "main"}
-    initialCompanyId={normalizedCompanyId}
-    canAdminister={canAdminister}
-    onOpenCollectedArticles={onOpenCollectedArticles}
-    onOpenRiskManagement={onOpenRiskManagement}
-    onMonitoringChanged={onMonitoringChanged}
-  />;
+  const params = new URLSearchParams(location.search);
+  if (normalizedCompanyId) params.set("companyId", normalizedCompanyId);
+  return <Navigate to={`/analysis/collection${params.size ? `?${params}` : ""}`} replace />;
 }
 
 function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
@@ -92,18 +87,19 @@ function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
   return <CollectionPage key={`${articleCompanyId ?? "collection"}-${articleDays ?? "all"}`} onOpenCompany={onOpenCompany} initialArticleCompanyId={articleCompanyId} initialArticleDays={articleDays} onMonitoringChanged={onMonitoringChanged} />;
 }
 
-function RiskManagementRoute({ canReview }) {
-  return <RiskManagementPage canReview={canReview} />;
+function RiskManagementRoute() {
+  return <RiskManagementPage canReview />;
 }
 
 function LegacyAnalysisStatisticsRedirect() {
   const { companyId } = useParams();
   const location = useLocation();
   const normalizedCompanyId = numericParam(companyId);
+  const params = new URLSearchParams(location.search);
+  if (normalizedCompanyId) params.set("companyId", normalizedCompanyId);
   return <Navigate
-    to={`/companies/main${location.search}`}
+    to={`/analysis/collection${params.size ? `?${params}` : ""}`}
     replace
-    state={normalizedCompanyId ? { companyId: normalizedCompanyId } : undefined}
   />;
 }
 
@@ -177,20 +173,11 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
   }, [location.pathname, location.search, navigate]);
 
   const openAnalysisStatistics = useCallback((companyId, riskEventId = null, options) => {
-    const riskQuery = riskEventId ? `?riskEventId=${encodeURIComponent(riskEventId)}` : "";
-    const navigationOptions = companyId
-      ? { ...options, state: { ...(options?.state ?? {}), companyId: String(companyId) } }
-      : options;
-    goTo(`/companies/main${riskQuery}`, navigationOptions);
-  }, [goTo]);
-
-  const openCollectedArticles = useCallback((companyId, days = null) => {
-    const daysQuery = days ? `&days=${encodeURIComponent(days)}` : "";
-    goTo(`/collection?articleCompanyId=${encodeURIComponent(companyId)}${daysQuery}`);
-  }, [goTo]);
-
-  const openRiskManagement = useCallback((companyId, days = 7) => {
-    goTo(`/risk-management?companyId=${encodeURIComponent(companyId)}&days=${encodeURIComponent(days)}`);
+    const params = new URLSearchParams();
+    if (companyId) params.set("companyId", String(companyId));
+    if (riskEventId) params.set("eventId", String(riskEventId));
+    const query = params.size ? `?${params}` : "";
+    goTo(`/analysis/${riskEventId ? "risk" : "collection"}${query}`, options);
   }, [goTo]);
 
   const requestLogout = async () => {
@@ -269,8 +256,10 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
-      <Route path="/companies/main" element={<AnalysisStatisticsRoute canAdminister onOpenCollectedArticles={openCollectedArticles} onOpenRiskManagement={openRiskManagement} onMonitoringChanged={refreshUserCompanies} />} />
-      <Route path="/risk-management" element={<RiskManagementRoute canReview />} />
+      <Route path="/companies/main" element={<AnalysisStatisticsRoute />} />
+      <Route path="/analysis/response" element={<Navigate to="/risk-management" replace />} />
+      <Route path="/analysis/:stage" element={<AnalysisPipelinePage />} />
+      <Route path="/risk-management" element={<RiskManagementRoute />} />
       <Route path="/companies/overview" element={<Navigate to="/companies/main" replace />} />
       <Route path="/companies/:companyId" element={<LegacyAnalysisStatisticsRedirect />} />
       <Route path="/operations" element={<Navigate to="/main" replace />} />

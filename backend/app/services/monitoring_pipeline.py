@@ -50,6 +50,7 @@ from app.services.fine_tuned_text import (
     predict_relevance_batch,
     predict_topical_relevance_batch,
 )
+from app.services.company_reranker import predict_company_relevance_batch
 from app.services.sentiment import analyze_company_articles
 from app.services.risk_analysis import (
     backfill_historical_windows,
@@ -801,19 +802,40 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
 
             rows_to_evaluate = list(latest_hits.values())
             article_texts = [normalized_content(raw) for raw, _hit in rows_to_evaluate]
-            relevance_predictions = predict_relevance_batch(
-                [(company.name, text) for text in article_texts]
+            aliases = [
+                keyword.value for keyword in keywords if keyword.keyword_type == "alias"
+            ]
+            products = [
+                keyword.value for keyword in keywords if keyword.keyword_type == "product"
+            ]
+            reranker_predictions = predict_company_relevance_batch(
+                [
+                    (company.name, aliases, products, raw.title, raw.summary or "")
+                    for raw, _hit in rows_to_evaluate
+                ]
             )
-            topical_predictions = (
-                predict_topical_relevance_batch(article_texts)
-                if company.name in TOPICAL_RELEVANCE_TRAINED_COMPANIES
-                else [None] * len(article_texts)
-            )
+            if rows_to_evaluate and all(
+                prediction is not None for prediction in reranker_predictions
+            ):
+                # 승격된 공용 reranker가 전체 배치를 처리했으면 결과에 쓰이지 않는
+                # 구형 관련성 모델 두 개를 다시 실행하지 않는다.
+                relevance_predictions = [None] * len(article_texts)
+                topical_predictions = [None] * len(article_texts)
+            else:
+                relevance_predictions = predict_relevance_batch(
+                    [(company.name, text) for text in article_texts]
+                )
+                topical_predictions = (
+                    predict_topical_relevance_batch(article_texts)
+                    if company.name in TOPICAL_RELEVANCE_TRAINED_COMPANIES
+                    else [None] * len(article_texts)
+                )
 
             accepted_articles: dict[int, ArticleQueryHit] = {}
             processed_article_ids: set[int] = set()
-            for (raw, hit), relevance_prediction, topical_prediction in zip(
+            for (raw, hit), reranker_prediction, relevance_prediction, topical_prediction in zip(
                 rows_to_evaluate,
+                reranker_predictions,
                 relevance_predictions,
                 topical_predictions,
             ):
@@ -825,6 +847,7 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     candidate_articles=_raw_candidates(db, raw),
                     semantic_scorer=semantic_scorer,
                     config=filter_config,
+                    precomputed_company_reranker=reranker_prediction,
                     precomputed_relevance=relevance_prediction,
                     precomputed_topical_relevance=topical_prediction,
                 )
@@ -968,7 +991,12 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
     counters.update(risk_counts)
     if settings.story_risk_engine_enabled:
         for target_company_id in company_ids:
-            story_counts = process_company_risk_articles(target_company_id)
+            # 과거 재분석은 위험 결과까지만 갱신한다. 대응 초안은 별도 화면에서
+            # 필요할 때 생성해 대량 API 호출과 토큰 사용을 피한다.
+            story_counts = process_company_risk_articles(
+                target_company_id,
+                enqueue_drafts=False,
+            )
             counters["story_articles_assessed"] = counters.get("story_articles_assessed", 0) + story_counts["assessed"]
             counters["story_events_changed"] = counters.get("story_events_changed", 0) + story_counts["events_changed"]
     return {"status": "completed", **counters}

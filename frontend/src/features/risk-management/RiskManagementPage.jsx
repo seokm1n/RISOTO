@@ -151,8 +151,6 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const historyTitle = period === "all" ? "종료 사건 · 전체" : `종료 사건 · 최근 ${period === "365" ? "1년" : `${period}일`}`;
 
   return <section className="workspace analysis-statistics-workspace risk-management-workspace">
-    <div className="workspace-head risk-management-heading"><div><span className="eyebrow">STORY RISK MANAGEMENT</span><h1>위험 관리</h1><p>기사별 위험 판정과 동일 스토리의 확산 근거를 사건 단위로 확인하고 대응합니다.</p></div></div>
-
     <div className="risk-summary-grid" aria-label="위험 사건 요약">
       <article><span>활성 사건</span><strong>{formatNumber(pageData.summary.active)}</strong><small>지금 추적 중</small></article>
       <article className="critical"><span>치명적 사건</span><strong>{formatNumber(pageData.summary.critical)}</strong><small>즉시 확인 필요</small></article>
