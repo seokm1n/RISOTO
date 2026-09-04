@@ -14,6 +14,7 @@ from app.services.model_operations import build_training_readiness
 
 READINESS_GATED_TASKS = {
     "article_filter",
+    "company_relevance_reranker",
     "sentiment",
     "risk_type_classifier",
     "risk_detector",
@@ -77,6 +78,33 @@ def evaluate_model_promotion(
             return PromotionEligibility(
                 False,
                 f"유효 특징 창이 {windows}개입니다. 최소 200개가 필요합니다.",
+            )
+
+    if model.task == "company_relevance_reranker":
+        metrics = model.metrics or {}
+        human_test = metrics.get("human_test") or {}
+        unseen_test = metrics.get("unseen_company_test") or {}
+        quality_requirements = (
+            ("human precision", human_test.get("precision_relevant"), 0.80),
+            ("human recall", human_test.get("recall_relevant"), 0.60),
+            ("human ROC-AUC", human_test.get("roc_auc"), 0.80),
+            (
+                "unseen-company validation ROC-AUC",
+                (metrics.get("unseen_company_validation") or {}).get("roc_auc"),
+                0.75,
+            ),
+            ("unseen-company precision", unseen_test.get("precision_relevant"), 0.80),
+            ("unseen-company recall", unseen_test.get("recall_relevant"), 0.55),
+        )
+        failed = [
+            f"{name} {float(value or 0):.3f}/{minimum:.2f}"
+            for name, value, minimum in quality_requirements
+            if not isinstance(value, (int, float)) or float(value) < minimum
+        ]
+        if failed:
+            return PromotionEligibility(
+                False,
+                "reranker 운영 성능 기준 미달: " + ", ".join(failed),
             )
 
     return PromotionEligibility(True, target_model_state=target_model_state)

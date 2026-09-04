@@ -508,6 +508,12 @@ class DailySummaryRead(BaseModel):
     positive_article_count: int
     neutral_article_count: int
     negative_article_count: int
+    negative_story_count: int = 0
+    eligible_story_count: int = 0
+    eligible_positive_story_count: int = 0
+    eligible_neutral_story_count: int = 0
+    eligible_negative_story_count: int = 0
+    eligible_risk_story_count: int = 0
     story_count: int
     amplification_count: int
     publisher_count: int
@@ -563,6 +569,8 @@ class CollectionSourceHealthRead(BaseModel):
     last_attempt_at: datetime | None
     last_success_at: datetime | None
     consecutive_failures: int
+    last_error_code: str | None = None
+    last_error_message: str | None = None
 
 
 class CollectionHealthRead(BaseModel):
@@ -723,7 +731,8 @@ class TrainingTaskReadiness(BaseModel):
     """후보 학습 조건을 작업별로 설명하되 학습을 직접 시작하지 않는다."""
 
     task: Literal[
-        "article_filter", "sentiment", "risk_type_classifier", "risk_detector"
+        "article_filter", "company_relevance_reranker", "sentiment",
+        "risk_type_classifier", "risk_detector"
     ]
     latest_model_version: str | None
     latest_model_status: str | None
@@ -825,6 +834,7 @@ class DashboardDailyRead(BaseModel):
 
     day: datetime
     article_count: int
+    story_count: int = 0
     positive_count: int
     negative_count: int
     risk_count: int
@@ -920,6 +930,7 @@ class AdminCollectionCompanyRead(BaseModel):
 class AdminCollectionDailyRead(BaseModel):
     day: date
     collected_count: int
+    story_count: int = 0
     risk_count: int
 
 

@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     baseline_min_days: int = 3
 
     # 기사 중복·광고·관련성 하이브리드 필터 설정
-    article_filter_version: str = "hybrid-klue-roberta-v3-company-context"
+    article_filter_version: str = "hybrid-company-reranker-v5"
     article_filter_ai_enabled: bool = True
     article_filter_classifier_model: str = "Huffon/klue-roberta-base-nli"
     article_filter_semantic_model: str = (
@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     article_filter_advertising_review_threshold: float = 0.55
     article_filter_relevance_accept_threshold: float = 0.70
     article_filter_relevance_reject_threshold: float = 0.30
+    # 대상 기업과 기사를 함께 입력받는 공용 cross-encoder. 승격된 아티팩트만 서빙한다.
+    company_reranker_enabled: bool = True
+    company_reranker_base_model: str = "BAAI/bge-reranker-v2-m3"
+    company_reranker_max_length: int = 512
+    company_reranker_batch_size: int = 8
 
     # 스토리 군집: 최근 후보는 복합 판정, 오래된 후속 보도는 강한 동일성만 허용한다.
     story_cluster_recent_hours: int = 168
@@ -94,8 +99,9 @@ class Settings(BaseSettings):
     article_risk_high_threshold: float = 0.80
     article_risk_uncertain_low: float = 0.35
     article_risk_llm_max_per_run: int = 20
-    story_event_min_distinct_sources: int = 2
-    story_event_inactivity_hours: int = 48
+    story_event_min_articles: int = 2
+    # 마지막 관련 기사 날짜 다음 날부터 빈 날짜 3일이 모두 지나면 종료한다.
+    story_event_inactivity_days: int = 3
     story_event_rebuild_hours: int = 72
 
     # 후보 재학습 준비 신호와 일일 운영 점검. 학습·승격은 별도 GPU 작업과 관리자 승인으로 남긴다.
@@ -107,7 +113,7 @@ class Settings(BaseSettings):
 
     # 근거 기반 대응 초안. 프로바이더가 준비되지 않으면 결정적 템플릿 초안으로 안전하게 폴백한다.
     openai_api_key: str = ""
-    response_model_name: str = "gpt-4o-mini"
+    response_model_name: str = "gpt-5.6-luna"
     # "openai"(API 키 필요, 유료) 또는 "ollama"(로컬 무료 모델, API 키 불필요).
     response_generation_provider: str = "openai"
 

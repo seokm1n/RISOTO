@@ -1,6 +1,7 @@
 """기사 필터의 관련성·광고·중복 판정 회귀 테스트."""
 
 import unittest
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -18,7 +19,7 @@ def article(title, summary="", url="https://news.example/story", **extra):
         title=title,
         summary=summary,
         url=url,
-        published_at=None,
+        published_at=extra.pop("published_at", None),
         **extra,
     )
 
@@ -111,12 +112,14 @@ class ArticleFilteringTests(unittest.TestCase):
         self.assertEqual((result.decision, result.reason), ("rejected", "duplicate"))
         self.assertEqual(result.duplicate_of_raw_id, 41)
 
-    def test_similar_content_at_a_different_url_is_preserved(self):
-        """내용이 같아도 정규화 URL이 다르면 기사량 집계 대상으로 보존한다."""
+    def test_exact_title_at_a_different_url_within_15_minutes_is_duplicate(self):
+        """URL이 달라도 같은 제목이 15분 이내 반복되면 한 기사로 처리한다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
         candidate = article(
             "Acme Robotics launches Robo One",
             url="https://publisher-a.example/news/1",
             id=42,
+            published_at=published_at,
         )
         candidate.normalized_url = normalize_url(candidate.url)
         candidate.content_hash = content_hash(candidate.title, candidate.summary)
@@ -124,8 +127,108 @@ class ArticleFilteringTests(unittest.TestCase):
             article(
                 "Acme Robotics launches Robo One",
                 url="https://publisher-b.example/articles/99",
+                published_at=published_at + timedelta(minutes=14),
             ),
             candidates=[candidate],
+        )
+        self.assertEqual((result.decision, result.reason), ("rejected", "duplicate"))
+        self.assertEqual(result.duplicate_of_raw_id, 42)
+        self.assertEqual(
+            result.details["duplicate_evidence"],
+            "same_title_within_15_minutes",
+        )
+
+    def test_exact_title_at_a_different_url_after_15_minutes_is_preserved(self):
+        """같은 제목이라도 15분을 넘긴 별도 발행은 기사량 집계 대상으로 보존한다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
+        candidate = article(
+            "Acme Robotics launches Robo One",
+            url="https://publisher-a.example/news/1",
+            id=43,
+            published_at=published_at,
+        )
+        candidate.normalized_url = normalize_url(candidate.url)
+        result = self.classify(
+            article(
+                "Acme Robotics launches Robo One",
+                url="https://publisher-b.example/articles/99",
+                published_at=published_at + timedelta(minutes=16),
+            ),
+            candidates=[candidate],
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertIsNone(result.duplicate_of_raw_id)
+
+    def test_youtube_comments_with_the_same_video_title_are_preserved(self):
+        """같은 영상의 서로 다른 댓글은 영상 제목이 같아도 별도 항목으로 보존한다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
+        candidate = article(
+            "Acme Robotics product review",
+            summary="첫 번째 시청자 댓글",
+            url="https://youtube.com/watch?v=1&lc=comment-a",
+            id=44,
+            source="youtube_comment",
+            published_at=published_at,
+        )
+        candidate.normalized_url = normalize_url(candidate.url)
+        result = self.classify(
+            article(
+                "Acme Robotics product review",
+                summary="서로 다른 두 번째 시청자 댓글",
+                url="https://youtube.com/watch?v=1&lc=comment-b",
+                source="youtube_comment",
+                published_at=published_at + timedelta(minutes=1),
+            ),
+            candidates=[candidate],
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertIsNone(result.duplicate_of_raw_id)
+
+    def test_title_duplicate_never_points_to_a_later_raw_record(self):
+        """재정제 시 기준 원문이 더 큰 ID의 중복 원문을 가리키지 않는다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
+        canonical = article(
+            "Acme Robotics launches Robo One",
+            url="https://publisher-a.example/news/1",
+            id=41,
+            published_at=published_at,
+        )
+        later = article(
+            "Acme Robotics launches Robo One",
+            url="https://publisher-a.example/news/2",
+            id=42,
+            published_at=published_at + timedelta(minutes=1),
+        )
+        result = classify_article(
+            self.company,
+            self.keywords,
+            canonical,
+            canonical,
+            candidate_articles=[later],
+            config=self.config,
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertIsNone(result.duplicate_of_raw_id)
+
+    def test_url_duplicate_never_points_to_a_later_raw_record(self):
+        """재정제 시 같은 URL의 기준 원문도 항상 더 낮은 ID로 고정한다."""
+        canonical = article(
+            "Acme Robotics launches Robo One",
+            id=45,
+        )
+        canonical.normalized_url = normalize_url(canonical.url)
+        later = article(
+            "Acme Robotics launches Robo One updated",
+            id=46,
+        )
+        later.normalized_url = normalize_url(later.url)
+        result = classify_article(
+            self.company,
+            self.keywords,
+            canonical,
+            canonical,
+            candidate_articles=[later],
+            config=self.config,
         )
         self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
         self.assertIsNone(result.duplicate_of_raw_id)
@@ -147,6 +250,68 @@ class ArticleFilteringTests(unittest.TestCase):
             config=self.config,
         )
         self.assertEqual((result.decision, result.reason), ("rejected", "advertisement"))
+
+    def test_company_mentioned_only_in_affiliate_disclosure_is_rejected(self):
+        """제휴 고지문에만 쿠팡이 등장한 무관 글을 기업 기사로 인정하지 않는다."""
+        company = SimpleNamespace(name="쿠팡", normalized_name="쿠팡", ticker=None)
+        result = classify_article(
+            company,
+            [],
+            article(
+                "오늘의 여행지와 맛집 추천",
+                "해변 근처 맛집을 소개합니다. "
+                "이 포스팅은 쿠팡 파트너스 활동의 일환으로, "
+                "이에 따른 일정액의 수수료를 제공받습니다.",
+            ),
+            config=self.config,
+        )
+        self.assertEqual((result.decision, result.reason), ("rejected", "advertisement"))
+        self.assertTrue(result.details["affiliate_only_target_mention"])
+
+    @patch("app.services.article_filtering.predict_company_relevance")
+    def test_reranker_rejects_incidental_summary_mention(self, predict_reranker):
+        """제목에 기업 근거가 없는 부수적 언급은 reranker 점수로 거부한다."""
+        predict_reranker.return_value = {
+            "version": "company-reranker-test",
+            "relevant": 0.02,
+            "irrelevant": 0.98,
+            "accept_threshold": 0.72,
+            "reject_threshold": 0.25,
+            "input_schema": "company-query-article-pair-v1",
+        }
+        result = classify_article(
+            self.company,
+            self.keywords,
+            article(
+                "Weekend weather forecast",
+                "The digest briefly lists Acme Robotics among hundreds of stocks.",
+            ),
+            config=FilterConfig(ai_enabled=True, allow_model_download=False),
+        )
+        self.assertEqual((result.decision, result.reason), ("rejected", "irrelevant"))
+        self.assertEqual(result.classifier_kind, "company_cross_encoder_reranker")
+        self.assertEqual(result.details["company_reranker_score"], 0.02)
+
+    @patch("app.services.article_filtering.predict_company_relevance")
+    def test_direct_logistics_headline_survives_low_reranker_score(self, predict_reranker):
+        """기업명이 제목에 명시된 물류센터 사고는 미탐지 하한을 유지한다."""
+        predict_reranker.return_value = {
+            "version": "company-reranker-test",
+            "relevant": 0.05,
+            "irrelevant": 0.95,
+            "accept_threshold": 0.72,
+            "reject_threshold": 0.25,
+            "input_schema": "company-query-article-pair-v1",
+        }
+        company = SimpleNamespace(name="쿠팡", normalized_name="쿠팡", ticker=None)
+        result = classify_article(
+            company,
+            [],
+            article("쿠팡 물류센터 화재로 배송 차질", "소방당국이 원인을 조사 중이다."),
+            config=FilterConfig(ai_enabled=True, allow_model_download=False),
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertGreaterEqual(result.relevance_score, 0.70)
 
     def test_klue_nli_can_block_an_ambiguous_company_name(self):
         """동음이의 기업명을 KLUE NLI가 무관 기사로 차단할 수 있는지 검증한다."""

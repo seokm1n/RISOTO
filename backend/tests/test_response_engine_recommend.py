@@ -143,7 +143,7 @@ class RecommendPromptAssemblyTests(unittest.TestCase):
         up = recommend.build_system_prompt(_peer(impact_direction="반사이익"))
         down = recommend.build_system_prompt(_peer(impact_direction="부정적_파급"))
         self.assertIn("반사이익", up)
-        self.assertIn("경쟁사 사고를 직접 언급하는 마케팅", up)
+        self.assertIn("비교 기업 사고를 직접 언급하는 마케팅", up)
         self.assertIn("부정적 파급", down)
 
     def test_case_rule_switch(self):

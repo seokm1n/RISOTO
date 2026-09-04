@@ -3,11 +3,19 @@
 from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
+from uuid import uuid4
 
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import Company, RiskEvent, RiskEventType
+from app.models import (
+    Company,
+    NewsArticle,
+    RiskEvent,
+    RiskEventArticle,
+    RiskEventType,
+    StoryCluster,
+)
 from app.routers.collection import list_risk_events_page
 from app.routers.governance import start_response_generation
 from tests.auth_helpers import auth_for_company
@@ -34,6 +42,26 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         self.db.add(self.company)
         self.db.commit()
         self.auth = auth_for_company(self.db, self.company.id)
+        self.cluster = StoryCluster(
+            fingerprint=uuid4().hex,
+            representative_title="위험관리 페이지 테스트 스토리",
+            first_published_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+            last_published_at=datetime(2099, 1, 2, tzinfo=timezone.utc),
+        )
+        self.db.add(self.cluster)
+        self.db.flush()
+        self.evidence_articles = []
+        for index in range(2):
+            article = NewsArticle(
+                source="risk-page-test",
+                title=f"위험관리 근거 기사 {index}",
+                url=f"https://risk-page.test/{self.company.id}/{uuid4().hex}",
+                published_at=datetime(2099, 1, 1, tzinfo=timezone.utc)
+                + timedelta(minutes=index),
+            )
+            self.db.add(article)
+            self.db.flush()
+            self.evidence_articles.append(article)
 
     def tearDown(self):
         if hasattr(self, "company"):
@@ -41,14 +69,34 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
             if company is not None:
                 self.db.delete(company)
                 self.db.commit()
+        if hasattr(self, "evidence_articles"):
+            for article in self.evidence_articles:
+                stored = self.db.get(NewsArticle, article.id)
+                if stored is not None:
+                    self.db.delete(stored)
+        if hasattr(self, "cluster"):
+            stored_cluster = self.db.get(StoryCluster, self.cluster.id)
+            if stored_cluster is not None:
+                self.db.delete(stored_cluster)
+        self.db.commit()
         self.db.close()
 
-    def event(self, index: int, *, status: str, severity: str, response_status: str) -> RiskEvent:
+    def event(
+        self,
+        index: int,
+        *,
+        status: str,
+        severity: str,
+        response_status: str,
+        evidence_count: int = 2,
+        event_source: str = "story_v2",
+    ) -> RiskEvent:
         timestamp = datetime(2099, 1, 1, tzinfo=timezone.utc) + timedelta(hours=index)
         event = RiskEvent(
             company_id=self.company.id,
             event_key=f"story-v3:{self.company.id}:page-test-{index}",
-            event_source="story_v2",
+            event_source=event_source,
+            story_cluster_id=self.cluster.id if event_source == "story_v2" else None,
             anomaly_score=0.5,
             risk_probability=0.7 + index / 100,
             severity=severity,
@@ -73,6 +121,12 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
             is_primary=True,
             evidence={"source": "test"},
         ))
+        for article in self.evidence_articles[:evidence_count]:
+            self.db.add(RiskEventArticle(
+                risk_event_id=event.id,
+                article_id=article.id,
+                evidence_score=0.8,
+            ))
         return event
 
     def test_page_filters_summary_and_fixed_sorting(self):
@@ -82,6 +136,8 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         closed = self.event(4, status="closed", severity="warning", response_status="generated")
         self.event(5, status="legacy_candidate", severity="critical", response_status="failed")
         self.event(6, status="dismissed", severity="critical", response_status="failed")
+        singleton = self.event(7, status="open", severity="critical", response_status="deferred", evidence_count=1)
+        window_event = self.event(8, status="open", severity="critical", response_status="deferred", event_source="window_v1")
         self.db.commit()
 
         result = list_risk_events_page(
@@ -102,6 +158,8 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         self.assertEqual(result.summary.critical, 1)
         self.assertEqual(result.summary.needs_response, 1)
         self.assertEqual(result.summary.history, 1)
+        self.assertNotIn(singleton.id, [item.id for item in result.items])
+        self.assertNotIn(window_event.id, [item.id for item in result.items])
 
         needs_response = list_risk_events_page(
             self.company.id,

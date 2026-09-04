@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 import json
 import logging
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -27,6 +28,7 @@ from app.models import (
     NewsArticle,
     RiskEvent,
     RiskEventArticle,
+    RiskEventLabel,
     RiskEventType,
     StoryCluster,
     StoryClusterArticle,
@@ -43,7 +45,9 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="story-risk")
 ENGINE_VERSION = "story-risk-hybrid-v1"
 EVENT_ENGINE_VERSION = "story-event-hybrid-v2"
+EVENT_KEY_PREFIX = "story-v3"
 GOVERNMENT_SUFFIXES = (".go.kr", ".gov", ".gov.kr")
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 def _clamp(value: float) -> float:
@@ -77,15 +81,19 @@ def source_credibility(domain: str) -> float:
 
 
 def meets_event_threshold(
-    probabilities: list[float],
-    source_domains: list[str],
+    candidate_probabilities: list[float],
+    story_article_count: int,
     settings: Settings,
 ) -> bool:
-    """민감 모드: 고위험 한 건 또는 서로 다른 출처의 후보 두 건이면 사건화한다."""
-    if any(value >= settings.article_risk_high_threshold for value in probabilities):
-        return True
-    domains = {value for value in source_domains if value != "unknown"}
-    return len(domains) >= settings.story_event_min_distinct_sources
+    """위험 후보가 있고 같은 스토리에 기사가 두 건 이상일 때만 사건화한다.
+
+    출처 수는 제한하지 않는다. 같은 언론사의 후속 기사 두 건도 하나의 스토리로
+    군집화됐다면 사건 개방 요건을 충족한다.
+    """
+    return (
+        bool(candidate_probabilities)
+        and story_article_count >= settings.story_event_min_articles
+    )
 
 
 def _latest_filter(db: Session, company_id: int, article_id: int) -> ArticleFilterResult | None:
@@ -314,7 +322,8 @@ def _save_assessment(
         if relevance_score is not None
         else filter_result.relevance_score
         if filter_result and filter_result.relevance_score is not None
-        else 1.0
+        # A missing filter decision is not evidence of company relevance.
+        else 0.0
     )
     assessment = db.get(ArticleRiskAssessment, (company.id, article.id))
     current_llm_version = f"{ENGINE_VERSION}:{settings.llm_labeling_model_name}"
@@ -367,6 +376,94 @@ def _event_lock(db: Session, event_key: str) -> None:
         )
 
 
+def _story_event_inactivity_cutoff(now: datetime, inactivity_days: int) -> datetime:
+    """Return the first instant after the configured full empty Seoul dates.
+
+    If the last article was published on September 3 and the policy is three
+    empty dates, September 4, 5 and 6 are observed and the event becomes
+    closable at the start of September 7.
+    """
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    local_today = now.astimezone(SEOUL).date()
+    cutoff_date = local_today - timedelta(days=max(1, inactivity_days))
+    return datetime.combine(cutoff_date, time.min, tzinfo=SEOUL).astimezone(timezone.utc)
+
+
+def _story_event_closure_time(last_evidence_at: datetime, inactivity_days: int) -> datetime:
+    """Return midnight after all configured empty Seoul dates have completed."""
+    if last_evidence_at.tzinfo is None:
+        last_evidence_at = last_evidence_at.replace(tzinfo=timezone.utc)
+    last_date = last_evidence_at.astimezone(SEOUL).date()
+    closure_date = last_date + timedelta(days=max(1, inactivity_days) + 1)
+    return datetime.combine(closure_date, time.min, tzinfo=SEOUL).astimezone(timezone.utc)
+
+
+def _sync_event_evidence(
+    db: Session,
+    event: RiskEvent,
+    evidence_rows: list[tuple[ArticleRiskAssessment, NewsArticle, StoryClusterArticle]],
+    resolved_primary_type: str,
+) -> bool:
+    """Replace an event's evidence links with the currently related story articles."""
+    new_official = False
+    revision_delta = 0
+    current_evidence_ids = {article.id for _assessment, article, _link in evidence_rows}
+    existing_evidence = {
+        link.article_id: link
+        for link in db.scalars(
+            select(RiskEventArticle).where(RiskEventArticle.risk_event_id == event.id)
+        )
+    }
+    for article_id in set(existing_evidence) - current_evidence_ids:
+        db.delete(existing_evidence[article_id])
+        revision_delta += 1
+    for assessment, article, cluster_link in evidence_rows:
+        type_match = float((assessment.type_scores or {}).get(resolved_primary_type, 0.0))
+        representativeness = 1.0 if cluster_link.is_representative else _clamp(cluster_link.similarity)
+        evidence_score = _clamp(
+            0.30 * assessment.risk_probability
+            + 0.25 * assessment.relevance_score
+            + 0.20 * type_match
+            + 0.15 * assessment.source_credibility
+            + 0.10 * representativeness
+        )
+        link = existing_evidence.get(article.id)
+        if link is None:
+            link = RiskEventArticle(risk_event_id=event.id, article_id=article.id)
+            db.add(link)
+            revision_delta += 1
+            new_official = new_official or assessment.source_credibility >= 0.90
+        elif abs(float(link.evidence_score or 0.0) - evidence_score) >= 0.05:
+            revision_delta += 1
+        link.evidence_score = round(evidence_score, 6)
+        link.risk_probability = assessment.risk_probability
+        link.relevance_score = assessment.relevance_score
+        link.type_match_score = type_match
+        link.source_credibility = assessment.source_credibility
+        link.representativeness = representativeness
+    if revision_delta:
+        event.evidence_revision += revision_delta
+    return new_official
+
+
+def _has_authoritative_closure(db: Session, event: RiskEvent) -> bool:
+    """Keep an explicit human dismissal/end date outside automatic lifecycle changes."""
+    if event.status == "dismissed":
+        return True
+    if event.status != "closed":
+        return False
+    return db.scalar(
+        select(RiskEventLabel.id)
+        .where(
+            RiskEventLabel.risk_event_id == event.id,
+            RiskEventLabel.status.in_(["confirmed", "adjudicated"]),
+            RiskEventLabel.event_end.is_not(None),
+        )
+        .limit(1)
+    ) is not None
+
+
 def _aggregate_story_event(
     db: Session,
     company_id: int,
@@ -390,23 +487,19 @@ def _aggregate_story_event(
             ArticleRiskAssessment.story_cluster_id == cluster_id,
         )
     ).all()
+    event_key = f"{EVENT_KEY_PREFIX}:{company_id}:{cluster_id}"
+    _event_lock(db, event_key)
+    event = db.scalar(select(RiskEvent).where(RiskEvent.event_key == event_key).limit(1))
+    if event is not None and _has_authoritative_closure(db, event):
+        return event.id, False
     candidates = [
         row for row in rows
         if row[0].decision == "risk"
         and row[0].risk_probability >= settings.article_risk_candidate_threshold
     ]
-    if not candidates:
-        return None, False
     candidate_sources = {
         row[0].source_domain for row in candidates if row[0].source_domain != "unknown"
     }
-    if not meets_event_threshold(
-        [row[0].risk_probability for row in candidates],
-        [row[0].source_domain for row in candidates],
-        settings,
-    ):
-        return None, False
-
     evidence_rows = [
         row for row in rows
         if row[0].decision != "failed"
@@ -415,6 +508,47 @@ def _aggregate_story_event(
             or row in candidates
         )
     ]
+    qualifies = meets_event_threshold(
+        [row[0].risk_probability for row in candidates],
+        len(evidence_rows),
+        settings,
+    )
+    if not qualifies:
+        if event is None:
+            return None, False
+        # Risk probability is an opening/severity signal, never an automatic
+        # closing signal.  Once opened, a story stays operational until three
+        # complete Seoul dates pass without a related article.  A non-risk
+        # follow-up still refreshes the story and its evidence list.
+        retained_type = event.primary_type or primary_type
+        if retained_type is not None:
+            _sync_event_evidence(db, event, evidence_rows, retained_type)
+        latest_evidence = (
+            max(_article_time(row[1]) for row in evidence_rows)
+            if evidence_rows
+            else None
+        )
+        if (
+            latest_evidence is not None
+            and retained_type is not None
+            and event.status not in {"dismissed", "legacy_candidate"}
+            and (
+                event.status != "closed"
+                or latest_evidence >= _story_event_inactivity_cutoff(
+                    datetime.now(timezone.utc),
+                    settings.story_event_inactivity_days,
+                )
+            )
+        ):
+            event.status = "acknowledged" if event.status == "acknowledged" else "monitoring"
+            event.closed_at = None
+            event.closure_reason = None
+            event.consecutive_below = 0
+            event.last_seen_at = latest_evidence
+            event.last_evidence_at = latest_evidence
+        db.flush()
+        return event.id, False
+
     aggregate_scores = {
         risk_type: max(
             float((row[0].type_scores or {}).get(risk_type, 0.0))
@@ -424,12 +558,16 @@ def _aggregate_story_event(
     }
     resolved_primary_type, _ = max(aggregate_scores.items(), key=lambda item: item[1])
 
-    event_key = f"story-v3:{company_id}:{cluster_id}"
-    _event_lock(db, event_key)
-    event = db.scalar(select(RiskEvent).where(RiskEvent.event_key == event_key).limit(1))
     cluster = db.get(StoryCluster, cluster_id)
     candidate_times = [_article_time(row[1]) for row in candidates]
     evidence_times = [_article_time(row[1]) for row in evidence_rows]
+    # A story is counted once when it first becomes operationally eligible:
+    # it has the configured number of accepted articles and at least one of
+    # them is a risk candidate. Later follow-up articles only update evidence.
+    article_threshold_time = sorted(evidence_times)[
+        settings.story_event_min_articles - 1
+    ]
+    qualification_time = max(article_threshold_time, min(candidate_times))
     evidence_time = max(evidence_times)
     latest_window = db.scalar(
         select(CompanyFeatureWindow)
@@ -443,6 +581,7 @@ def _aggregate_story_event(
     old_probability = float(event.risk_probability or 0.0) if event else 0.0
     old_severity = event.severity if event else None
     old_primary_type = event.primary_type if event else None
+    old_status = event.status if event else None
     maximum = max(row[0].risk_probability for row in candidates)
     probability = _clamp(
         maximum
@@ -472,7 +611,7 @@ def _aggregate_story_event(
             model_version=EVENT_ENGINE_VERSION,
             model_state="provisional",
             approval_state="draft",
-            opened_at=min(evidence_times),
+            opened_at=qualification_time,
             last_seen_at=max(evidence_times),
             last_evidence_at=max(evidence_times),
         )
@@ -482,53 +621,43 @@ def _aggregate_story_event(
         event.status = "monitoring" if event.status != "acknowledged" else event.status
         event.closed_at = None
         event.closure_reason = None
-        event.risk_probability = max(old_probability, probability)
-        event.severity = "critical" if "critical" in {old_severity, severity} else "warning"
+        event.consecutive_below = 0
+        event.risk_probability = probability
+        event.severity = severity
         event.article_id = primary_candidate[1].id
         event.story_cluster_id = cluster_id
         event.primary_type = resolved_primary_type
         event.summary = cluster.representative_title if cluster else primary_candidate[1].title
         event.model_version = EVENT_ENGINE_VERSION
-        event.opened_at = min(event.opened_at, min(evidence_times))
-        event.last_seen_at = max(event.last_seen_at, max(evidence_times))
-        event.last_evidence_at = max(event.last_evidence_at or max(evidence_times), max(evidence_times))
+        event.opened_at = qualification_time
+        event.last_seen_at = max(evidence_times)
+        event.last_evidence_at = max(evidence_times)
         if latest_window is not None:
             event.feature_window_id = latest_window.id
-            event.anomaly_score = max(event.anomaly_score, float(latest_window.anomaly_score or 0.0))
+            event.anomaly_score = float(latest_window.anomaly_score or 0.0)
 
-    new_official = False
-    revision_delta = 0
-    for assessment, article, cluster_link in evidence_rows:
-        type_match = float((assessment.type_scores or {}).get(resolved_primary_type, 0.0))
-        representativeness = 1.0 if cluster_link.is_representative else _clamp(cluster_link.similarity)
-        evidence_score = _clamp(
-            0.30 * assessment.risk_probability
-            + 0.25 * assessment.relevance_score
-            + 0.20 * type_match
-            + 0.15 * assessment.source_credibility
-            + 0.10 * representativeness
+    new_official = _sync_event_evidence(
+        db,
+        event,
+        evidence_rows,
+        resolved_primary_type,
+    )
+
+    desired_type_scores = {
+        risk_type: score
+        for risk_type, score in aggregate_scores.items()
+        if score >= 0.35 or risk_type == resolved_primary_type
+    }
+    existing_types = {
+        link.risk_type: link
+        for link in db.scalars(
+            select(RiskEventType).where(RiskEventType.risk_event_id == event.id)
         )
-        link = db.get(RiskEventArticle, (event.id, article.id))
-        if link is None:
-            link = RiskEventArticle(risk_event_id=event.id, article_id=article.id)
-            db.add(link)
-            revision_delta += 1
-            new_official = new_official or assessment.source_credibility >= 0.90
-        elif abs(float(link.evidence_score or 0.0) - evidence_score) >= 0.05:
-            revision_delta += 1
-        link.evidence_score = round(evidence_score, 6)
-        link.risk_probability = assessment.risk_probability
-        link.relevance_score = assessment.relevance_score
-        link.type_match_score = type_match
-        link.source_credibility = assessment.source_credibility
-        link.representativeness = representativeness
-    if revision_delta:
-        event.evidence_revision += revision_delta
-
-    for risk_type, score in aggregate_scores.items():
-        if score < 0.35 and risk_type != resolved_primary_type:
-            continue
-        link = db.get(RiskEventType, (event.id, risk_type))
+    }
+    for risk_type in set(existing_types) - set(desired_type_scores):
+        db.delete(existing_types[risk_type])
+    for risk_type, score in desired_type_scores.items():
+        link = existing_types.get(risk_type)
         if link is None:
             link = RiskEventType(
                 risk_event_id=event.id,
@@ -538,11 +667,12 @@ def _aggregate_story_event(
             )
             db.add(link)
         else:
-            link.probability = max(link.probability, score)
+            link.probability = score
         link.is_primary = risk_type == resolved_primary_type
 
     material_change = (
         created
+        or old_status in {"closed", "legacy_candidate"}
         or (old_severity != "critical" and event.severity == "critical")
         or probability >= old_probability + 0.10
         or old_primary_type != resolved_primary_type
@@ -601,7 +731,9 @@ def process_company_risk_articles(
             relevance = _clamp(
                 filter_result.relevance_score
                 if filter_result and filter_result.relevance_score is not None
-                else 1.0
+                # Legacy/malformed matches without accepted filter evidence must
+                # never become risk events solely because another model is high.
+                else 0.0
             )
             prepared.append((article, cluster, relevance))
             assessment = db.get(ArticleRiskAssessment, (company.id, article.id))
@@ -633,8 +765,32 @@ def process_company_risk_articles(
                 llm_remaining -= 1
                 llm_attempted += 1
             assessed += 1
-            if assessment.decision == "risk" and assessment.primary_type:
+            if (
+                assessment.decision != "failed"
+                and (
+                    assessment.decision == "risk"
+                    or assessment.relevance_score >= settings.article_filter_relevance_accept_threshold
+                )
+            ):
                 touched.add(assessment.story_cluster_id)
+        if article_ids is None:
+            # A full company pass must also revisit old events whose last evidence
+            # was removed by re-filtering. Incremental collection keeps its small
+            # touched set, while historical reconciliation can refresh/prune
+            # evidence without using risk probability as a closing condition.
+            touched.update(
+                cluster_id
+                for cluster_id in db.scalars(
+                    select(RiskEvent.story_cluster_id).where(
+                        RiskEvent.company_id == company_id,
+                        RiskEvent.event_source == "story_v2",
+                        RiskEvent.event_key.like(f"{EVENT_KEY_PREFIX}:%"),
+                        RiskEvent.status != "legacy_candidate",
+                        RiskEvent.story_cluster_id.is_not(None),
+                    )
+                )
+                if cluster_id is not None
+            )
         for cluster_id in sorted(touched):
             event_id, should_generate = _aggregate_story_event(
                 db, company_id, cluster_id, None, settings
@@ -672,30 +828,125 @@ def enqueue_company_risk_articles(company_id: int, article_ids: list[int]) -> No
     _executor.submit(_run)
 
 
-def close_stale_story_events(company_id: int | None = None, now: datetime | None = None) -> int:
-    """마지막 적격 근거 이후 설정 시간이 지난 활성 story_v2 사건을 닫는다."""
-    settings = get_settings()
+def _reconcile_story_event_lifecycle(
+    db: Session,
+    settings: Settings,
+    *,
+    company_id: int | None = None,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Apply the calendar-only lifecycle and repair old automatic closures."""
     now = now or datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=settings.story_event_inactivity_hours)
-    with SessionLocal() as db:
-        query = select(RiskEvent).where(
-            RiskEvent.event_source == "story_v2",
-            RiskEvent.status.in_(["open", "monitoring", "acknowledged"]),
-            RiskEvent.last_evidence_at.is_not(None),
-            RiskEvent.last_evidence_at < cutoff,
+    cutoff = _story_event_inactivity_cutoff(now, settings.story_event_inactivity_days)
+
+    close_query = select(RiskEvent).where(
+        RiskEvent.event_source == "story_v2",
+        RiskEvent.status.in_(["open", "monitoring", "acknowledged"]),
+        RiskEvent.last_evidence_at.is_not(None),
+        RiskEvent.last_evidence_at < cutoff,
+    )
+    if company_id is not None:
+        close_query = close_query.where(RiskEvent.company_id == company_id)
+    closed_events = list(db.scalars(close_query))
+    for event in closed_events:
+        event.status = "closed"
+        event.closed_at = _story_event_closure_time(
+            event.last_evidence_at,
+            settings.story_event_inactivity_days,
         )
-        if company_id is not None:
-            query = query.where(RiskEvent.company_id == company_id)
-        events = list(db.scalars(query))
-        for event in events:
-            event.status = "closed"
-            event.closed_at = now
-            event.closure_reason = "evidence_inactive"
-            if event.response_generation_status in {"pending", "generating", "deferred"}:
-                event.response_generation_status = "idle"
-                event.response_generation_error = None
+        event.closure_reason = "no_related_articles_3_days"
+        event.consecutive_below = 0
+        if event.response_generation_status in {"pending", "generating", "deferred"}:
+            event.response_generation_status = "idle"
+            event.response_generation_error = None
+
+    eligible_event_ids = (
+        select(RiskEventArticle.risk_event_id)
+        .group_by(RiskEventArticle.risk_event_id)
+        .having(func.count(RiskEventArticle.article_id) >= settings.story_event_min_articles)
+    )
+    reviewed_event_ids = select(RiskEventLabel.risk_event_id).where(
+        RiskEventLabel.status.in_(["confirmed", "adjudicated"])
+    )
+    normalize_query = select(RiskEvent).where(
+        RiskEvent.event_source == "story_v2",
+        RiskEvent.status == "closed",
+        RiskEvent.id.in_(eligible_event_ids),
+        RiskEvent.id.notin_(reviewed_event_ids),
+        RiskEvent.last_evidence_at.is_not(None),
+        RiskEvent.last_evidence_at < cutoff,
+        or_(
+            RiskEvent.closure_reason.is_(None),
+            RiskEvent.closure_reason.in_([
+                "evidence_inactive",
+                "risk_evidence_below_threshold",
+            ]),
+        ),
+    )
+    if company_id is not None:
+        normalize_query = normalize_query.where(RiskEvent.company_id == company_id)
+    normalized_events = list(db.scalars(normalize_query))
+    for event in normalized_events:
+        event.closed_at = _story_event_closure_time(
+            event.last_evidence_at,
+            settings.story_event_inactivity_days,
+        )
+        event.closure_reason = "no_related_articles_3_days"
+        event.consecutive_below = 0
+
+    reopen_query = select(RiskEvent).where(
+        RiskEvent.event_source == "story_v2",
+        RiskEvent.status == "closed",
+        RiskEvent.id.in_(eligible_event_ids),
+        RiskEvent.id.notin_(reviewed_event_ids),
+        RiskEvent.last_evidence_at.is_not(None),
+        RiskEvent.last_evidence_at >= cutoff,
+        or_(
+            RiskEvent.closure_reason.is_(None),
+            RiskEvent.closure_reason.in_([
+                "evidence_inactive",
+                "risk_evidence_below_threshold",
+                "no_related_articles_3_days",
+            ]),
+        ),
+    )
+    if company_id is not None:
+        reopen_query = reopen_query.where(RiskEvent.company_id == company_id)
+    reopened_events = list(db.scalars(reopen_query))
+    for event in reopened_events:
+        event.status = "monitoring"
+        event.closed_at = None
+        event.closure_reason = None
+        event.consecutive_below = 0
+
+    db.flush()
+    return {
+        "closed": len(closed_events),
+        "reopened": len(reopened_events),
+        "normalized": len(normalized_events),
+    }
+
+
+def reconcile_story_event_lifecycle(
+    company_id: int | None = None,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Recalculate current story states from three complete empty Seoul dates."""
+    settings = get_settings()
+    with SessionLocal() as db:
+        result = _reconcile_story_event_lifecycle(
+            db,
+            settings,
+            company_id=company_id,
+            now=now,
+        )
         db.commit()
-        return len(events)
+        return result
+
+
+def close_stale_story_events(company_id: int | None = None, now: datetime | None = None) -> int:
+    """Compatibility wrapper used by the realtime pipeline."""
+    return reconcile_story_event_lifecycle(company_id=company_id, now=now)["closed"]
 
 
 def rebuild_recent_story_events(
@@ -951,6 +1202,7 @@ __all__ = [
     "close_stale_story_events",
     "enqueue_company_risk_articles",
     "process_company_risk_articles",
+    "reconcile_story_event_lifecycle",
     "rebuild_recent_story_events",
     "source_credibility",
     "source_domain",

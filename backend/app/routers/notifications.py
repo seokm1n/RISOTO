@@ -1,10 +1,11 @@
 """Read-only unified notifications for risks and promotion-ready models."""
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
+from app.config import get_settings
 from app.database import get_db
 from app.models import Company, NewsArticle, RiskEvent, RiskEventArticle
 from app.schemas import NotificationItemRead, NotificationListRead
@@ -36,13 +37,25 @@ def list_notifications(
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> NotificationListRead:
-    """Return risk notifications owned by the current user."""
+    """Return one notification per eligible risk story owned by the user."""
+    settings = get_settings()
+    eligible_story_event_ids = (
+        select(RiskEventArticle.risk_event_id)
+        .group_by(RiskEventArticle.risk_event_id)
+        .having(
+            func.count(func.distinct(RiskEventArticle.article_id))
+            >= settings.story_event_min_articles
+        )
+    )
     risk_rows = db.execute(
         select(RiskEvent, Company)
         .join(Company, Company.id == RiskEvent.company_id)
         .where(
             Company.user_id == auth.user_id,
             RiskEvent.status.in_(("open", "monitoring")),
+            RiskEvent.event_source == "story_v2",
+            RiskEvent.story_cluster_id.is_not(None),
+            RiskEvent.id.in_(eligible_story_event_ids),
         )
     ).all()
     risk_items = []
@@ -51,10 +64,10 @@ def list_notifications(
         risk_items.append(NotificationItemRead(
             id=f"risk:{event.id}",
             type="risk",
-            title=f"{company.name} 위험 이벤트",
-            message=article_title
-            or event.summary
-            or f"{event.severity} 수준의 위험 이벤트가 현재 열려 있습니다.",
+            title=f"{company.name} 위험 스토리",
+            message=event.summary
+            or article_title
+            or f"{event.severity} 수준의 위험 스토리가 현재 열려 있습니다.",
             created_at=event.opened_at,
             company_id=company.id,
             risk_event_id=event.id,

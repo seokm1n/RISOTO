@@ -219,6 +219,67 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
         self.assertEqual(active_health.status, "unavailable")
         self.assertNotIn("pipeline", {item.source for item in active_health.sources})
 
+    def test_health_reports_current_failure_and_ignores_deleted_company_incident(self):
+        existing_open = list(
+            self.db.scalars(
+                select(CollectionIncident).where(
+                    CollectionIncident.user_id == self.user_id,
+                    CollectionIncident.status.in_(["open", "retrying"])
+                )
+            )
+        )
+        for incident in existing_open:
+            incident.status = "recovered"
+            incident.recovered_at = datetime.now(timezone.utc)
+            incident.next_retry_at = None
+
+        future_slot = datetime(2101, 1, 1, tzinfo=timezone.utc)
+        real_sources = set(
+            self.db.scalars(
+                select(CollectionAttempt.source)
+                .where(
+                    CollectionAttempt.user_id == self.user_id,
+                    CollectionAttempt.source != "pipeline",
+                )
+                .distinct()
+            )
+        )
+        real_sources.add("youtube_comment")
+        for source in sorted(real_sources - {"youtube_comment"}):
+            self.attempt(self.company_ids[0], source, future_slot, "succeeded")
+        self.attempt(self.company_ids[0], "youtube_comment", future_slot, "failed")
+        self.attempt(self.company_ids[1], "youtube_comment", future_slot, "succeeded")
+
+        self.db.add(
+            CollectionIncident(
+                user_id=self.user_id,
+                fingerprint="d" * 64,
+                status="open",
+                data_quality="unavailable",
+                severity="critical",
+                scheduled_for=future_slot,
+                detected_at=future_slot + timedelta(minutes=1),
+                last_seen_at=future_slot + timedelta(minutes=1),
+                affected_company_ids=[999_999_999],
+                sources=["naver_api_hub"],
+                error_summary="401 Unauthorized",
+                retry_count=0,
+                next_retry_at=None,
+            )
+        )
+        self.db.flush()
+
+        health = collection_health(self.db, self.auth)
+        youtube = next(item for item in health.sources if item.source == "youtube_comment")
+
+        self.assertEqual(health.open_incident_count, 0)
+        self.assertEqual(health.status, "degraded")
+        self.assertEqual(youtube.status, "partial")
+        self.assertEqual(youtube.consecutive_failures, 0)
+        self.assertEqual(youtube.last_error_code, "timeout")
+        self.assertIn("[REDACTED]", youtube.last_error_message)
+        self.assertNotIn("must-not-leak", youtube.last_error_message)
+
 
 if __name__ == "__main__":
     unittest.main()

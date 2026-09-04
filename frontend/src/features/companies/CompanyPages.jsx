@@ -18,7 +18,7 @@ import {
   isValidAnnualRevenue,
 } from "./companyForm";
 
-const COMPETITOR_LABEL = "경쟁사";
+const COMPETITOR_LABEL = "비교 기업";
 
 function KeywordInput({ id, label, usage, hint, values, onChange, onDraftChange, disabled = false }) {
   const [draft, setDraft] = useState("");
@@ -144,7 +144,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
     const confirmed = await confirm({
       kicker: companyRole === "competitor" ? "COMPETITOR REGISTRATION" : "MAIN COMPANY REGISTRATION",
       title: companyRole === "competitor"
-        ? `${form.name.trim()}을(를) 경쟁사(으)로 등록할까요?`
+        ? `${form.name.trim()}을(를) 비교 기업으로 등록할까요?`
         : `${form.name.trim()}을(를) 나의 기업으로 등록할까요?`,
       message: "등록 후 실시간 수집을 시작합니다.",
       confirmLabel: "등록",
@@ -157,7 +157,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
       if (onCreated) await onCreated(response.data);
       if (!onboarding && !registrationOnly) {
         setForm(companyToForm(null)); setKeywordDrafts(emptyKeywordDrafts()); setFormVersion((current) => current + 1); await loadData();
-        setNotice({ type: "success", message: `${response.data.name}을(를) ${targetLabel}(으)로 등록하고 수집을 시작했습니다.` });
+        setNotice({ type: "success", message: `${response.data.name}을(를) ${companyRole === "main" ? "나의 기업으로" : "비교 기업으로"} 등록하고 수집을 시작했습니다.` });
       }
     } catch (error) { setNotice({ type: "error", message: getErrorMessage(error) }); }
     finally { setSubmitting(false); }
@@ -178,11 +178,11 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
       {registrationForm}
     </section>}
     {!onboarding && <section className="registered-section">
-      <p className="company-page-intro">등록된 기업 정보를 수정할 수 있고, 경쟁사를 새로 등록, 삭제할 수 있습니다.</p>
+      <p className="company-page-intro">등록된 기업 정보를 수정할 수 있고, 비교 기업을 새로 등록하거나 삭제할 수 있습니다.</p>
       {loading ? <p className="empty-state">기업 정보를 불러오는 중입니다.</p> : <div className="company-role-sections">
         {[
           { role: "main", title: "나의 기업", kicker: "MY COMPANY", empty: "등록한 나의 기업이 없습니다." },
-          { role: "competitor", title: COMPETITOR_LABEL + " 목록", kicker: "REGISTERED COMPETITORS", empty: `아직 등록한 ${COMPETITOR_LABEL}가 없습니다.` },
+          { role: "competitor", title: COMPETITOR_LABEL + " 목록", kicker: "REGISTERED COMPETITORS", empty: "아직 등록한 비교 기업이 없습니다." },
         ].map((group) => {
           const roleCompanies = companies.filter((company) => company.company_role === group.role);
           return <section className={`company-role-section ${group.role}`} key={group.role}>
@@ -354,9 +354,9 @@ function CompanyRegistrationModal({ onClose, onCreated }) {
   };
 
   return <div className="company-edit-modal">
-    <button className="company-edit-backdrop" type="button" onClick={onClose} aria-label="경쟁사 등록창 닫기" />
+    <button className="company-edit-backdrop" type="button" onClick={onClose} aria-label="비교 기업 등록창 닫기" />
     <section className="company-edit-dialog company-registration-dialog" role="dialog" aria-modal="true" aria-labelledby="company-registration-title">
-      <div className="company-edit-dialog-head"><div><span className="eyebrow">NEW COMPETITOR TARGET</span><h1 id="company-registration-title">경쟁사 등록</h1></div><button className="company-edit-close" type="button" onClick={onClose} aria-label="등록창 닫기">×</button></div>
+      <div className="company-edit-dialog-head"><div><span className="eyebrow">NEW COMPETITOR TARGET</span><h1 id="company-registration-title">비교 기업 등록</h1></div><button className="company-edit-close" type="button" onClick={onClose} aria-label="등록창 닫기">×</button></div>
       <SetupPage companyRole="competitor" registrationOnly onCreated={complete} />
     </section>
   </div>;
