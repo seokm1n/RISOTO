@@ -175,6 +175,20 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         )
         self.assertEqual([item.id for item in needs_response.items], [open_event.id])
 
+        without_needs_response = list_risk_events_page(
+            self.company.id,
+            view="active",
+            page=1,
+            page_size=10,
+            days=None,
+            severity=None,
+            risk_type=None,
+            response="without_needs_action",
+            db=self.db,
+            auth=self.auth,
+        )
+        self.assertEqual([item.id for item in without_needs_response.items], [critical.id, generating.id])
+
         history = list_risk_events_page(
             self.company.id,
             view="history",
@@ -189,6 +203,28 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         )
         self.assertEqual([item.id for item in history.items], [closed.id])
 
+    def test_active_idle_event_requires_response_but_closed_idle_remains_in_history(self):
+        active_idle = self.event(1, status="open", severity="warning", response_status="idle")
+        closed_idle = self.event(2, status="closed", severity="warning", response_status="idle")
+        self.db.commit()
+
+        needs_response = list_risk_events_page(
+            self.company.id, view="active", page=1, page_size=10, days=None,
+            severity=None, risk_type=None, response="needs_action", db=self.db, auth=self.auth,
+        )
+        active_without_needs = list_risk_events_page(
+            self.company.id, view="active", page=1, page_size=10, days=None,
+            severity=None, risk_type=None, response="without_needs_action", db=self.db, auth=self.auth,
+        )
+        history = list_risk_events_page(
+            self.company.id, view="history", page=1, page_size=10, days=None,
+            severity=None, risk_type=None, response="all", db=self.db, auth=self.auth,
+        )
+
+        self.assertIn(active_idle.id, [item.id for item in needs_response.items])
+        self.assertNotIn(active_idle.id, [item.id for item in active_without_needs.items])
+        self.assertIn(closed_idle.id, [item.id for item in history.items])
+
     @patch("app.routers.governance.enqueue_response_draft")
     def test_response_generation_is_idempotent_while_pending(self, enqueue):
         event = self.event(1, status="open", severity="warning", response_status="deferred")
@@ -200,6 +236,16 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         self.assertEqual(first.status, "pending")
         self.assertEqual(second.status, "pending")
         enqueue.assert_called_once_with(event.id, force=False)
+
+    @patch("app.routers.governance.enqueue_response_draft")
+    def test_response_generation_force_restarts_stuck_job(self, enqueue):
+        event = self.event(1, status="open", severity="warning", response_status="generating")
+        self.db.commit()
+
+        result = start_response_generation(event.id, force=True, db=self.db, auth=self.auth)
+
+        self.assertEqual(result.status, "pending")
+        enqueue.assert_called_once_with(event.id, force=True)
 
 
 if __name__ == "__main__":

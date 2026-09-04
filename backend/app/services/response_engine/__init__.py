@@ -14,15 +14,15 @@ from typing import TYPE_CHECKING
 SCHEMA_VERSION = 3
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .service import enqueue_response_draft, generate_response_draft
+    from .service import enqueue_response_draft, generate_response_draft, recover_interrupted_response_drafts
 
 
 def __getattr__(name: str):
-    if name in ("generate_response_draft", "enqueue_response_draft"):
+    if name in ("generate_response_draft", "enqueue_response_draft", "recover_interrupted_response_drafts"):
         from . import service
 
         return getattr(service, name)
     raise AttributeError(name)
 
 
-__all__ = ["SCHEMA_VERSION", "generate_response_draft", "enqueue_response_draft"]
+__all__ = ["SCHEMA_VERSION", "generate_response_draft", "enqueue_response_draft", "recover_interrupted_response_drafts"]

@@ -332,6 +332,9 @@ class ArticleFilteringTests(unittest.TestCase):
                 semantic_model_name="unused",
                 allow_model_download=False,
             ),
+            # 이 테스트는 reranker 없이 NLI 폴백 경로만 검증한다. 운영 아티팩트가
+            # 실제로 반입돼 있어도 이 테스트가 그 경로를 타지 않도록 명시적으로 끈다.
+            precomputed_company_reranker=None,
         )
         self.assertEqual((result.decision, result.reason), ("rejected", "irrelevant"))
         self.assertEqual(result.classifier_kind, "hybrid_klue_nli")
@@ -358,6 +361,9 @@ class ArticleFilteringTests(unittest.TestCase):
                 semantic_model_name="unused",
                 allow_model_download=False,
             ),
+            # 이 테스트는 로컬 topical-relevance 모델 입력 계약만 검증한다. reranker
+            # 아티팩트 유무와 무관하게 predict_relevance가 호출되도록 명시적으로 끈다.
+            precomputed_company_reranker=None,
         )
 
         predict_relevance.assert_called_once_with(

@@ -44,7 +44,9 @@ def _client():
     settings = get_settings()
     if not settings.openai_api_key:
         raise RuntimeError("openai_api_key가 설정되어 있지 않습니다.")
-    return OpenAI(api_key=settings.openai_api_key)
+    # 네트워크 응답이 유실돼 워커가 무기한 ``generating``에 머무르지 않도록
+    # 개별 호출 시간을 제한한다. 실패는 상위 워커에서 ``failed``로 기록된다.
+    return OpenAI(api_key=settings.openai_api_key, timeout=120.0, max_retries=1)
 
 
 def response_model() -> str:

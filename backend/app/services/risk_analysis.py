@@ -158,8 +158,14 @@ def enrich_risk_types_with_nli(
             risk_type: float(np.mean([row[index] for row in rows]))
             for index, risk_type in enumerate(risk_types)
         }
+        # A keyword hit alone used to be enough (max(keyword, 0.6*nli)), which let a
+        # single stray substring match (e.g. "사고" inside an unrelated word, or a
+        # literal but non-incident use of the word) drive the type score to 1.0 even
+        # when NLI clearly disagreed. Scaling the keyword contribution by NLI's own
+        # judgment keeps a keyword-only signal capped unless NLI corroborates it,
+        # while leaving NLI's standalone (keyword-free) contribution unchanged.
         return {
-            risk_type: round(max(float(keyword_scores.get(risk_type, 0.0)), 0.6 * nli_scores[risk_type]), 6)
+            risk_type: round(nli_scores[risk_type] * max(float(keyword_scores.get(risk_type, 0.0)), 0.6), 6)
             for risk_type in risk_types
         }
     except Exception:
@@ -239,9 +245,12 @@ def resolve_article_risk_type_scores_batch(
             max_length=256,
         )
         for article_index, row in zip(candidate_indexes, rows):
+            # See enrich_risk_types_with_nli: NLI now scales the keyword score
+            # instead of being max()'d against it, so a lone keyword hit that
+            # NLI disagrees with no longer forces a high type score.
             scores[article_index] = {
                 risk_type: round(
-                    max(float(scores[article_index].get(risk_type, 0.0)), 0.6 * float(row[type_index])),
+                    float(row[type_index]) * max(float(scores[article_index].get(risk_type, 0.0)), 0.6),
                     6,
                 )
                 for type_index, risk_type in enumerate(risk_types)

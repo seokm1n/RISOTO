@@ -13,6 +13,7 @@ import {
   riskEventTitle,
 } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
+import { resolveSelectedCompany, setSelectedCompanyId as rememberSelectedCompanyId } from "../../shared/selectedCompanySession";
 
 const MAIN_TREND_DAYS = 7;
 const RISK_ARTICLE_LIMIT = 5;
@@ -75,20 +76,68 @@ function averageDailySummaries(groups) {
     }));
 }
 
+function InteractiveDonut({ periodLabel, segments, ariaLabel, tooltipId }) {
+  const [hoveredKey, setHoveredKey] = useState(null);
+  const total = segments.reduce((sum, segment) => sum + Math.max(Number(segment.value) || 0, 0), 0);
+  let cumulativePercent = 0;
+  const slices = segments.map((segment) => {
+    const value = Math.max(Number(segment.value) || 0, 0);
+    const percent = total > 0 ? value / total * 100 : 0;
+    const slice = { ...segment, value, percent, offset: -cumulativePercent };
+    cumulativePercent += percent;
+    return slice;
+  });
+  const hoveredSlice = slices.find((slice) => slice.key === hoveredKey) ?? null;
+
+  return <div className="briefing-pie-wrap">
+    <div className="collection-pie">
+      <svg viewBox="0 0 100 100" role="group" aria-label={ariaLabel} onPointerLeave={() => setHoveredKey(null)}>
+        <circle className="collection-pie-track" cx="50" cy="50" r="40" pathLength="100" />
+        {slices.filter((slice) => slice.value > 0).map((slice) => <circle
+          className={`collection-pie-segment ${slice.className}${hoveredKey === slice.key ? " active" : ""}`}
+          cx="50"
+          cy="50"
+          r="40"
+          pathLength="100"
+          strokeDasharray={`${slice.percent} ${100 - slice.percent}`}
+          strokeDashoffset={slice.offset}
+          transform="rotate(-90 50 50)"
+          tabIndex="0"
+          role="img"
+          aria-label={`${slice.label} ${formatNumber(slice.value)}건`}
+          aria-describedby={hoveredKey === slice.key ? tooltipId : undefined}
+          onPointerEnter={() => setHoveredKey(slice.key)}
+          onPointerLeave={() => setHoveredKey(null)}
+          onFocus={() => setHoveredKey(slice.key)}
+          onBlur={() => setHoveredKey(null)}
+          key={slice.key}
+        />)}
+      </svg>
+      <div aria-hidden="true" />
+    </div>
+    {hoveredSlice && <div className="briefing-pie-tooltip visible" id={tooltipId} role="tooltip">
+      <strong>{periodLabel}</strong>
+      <span>{hoveredSlice.label}<b>{formatNumber(hoveredSlice.value)}건</b></span>
+    </div>}
+  </div>;
+}
+
 function RiskRatioCard({ periodLabel, eligibleCount, riskCount }) {
   const safeEligibleCount = Math.max(Number(eligibleCount) || 0, 0);
   const safeRiskCount = Math.min(Math.max(Number(riskCount) || 0, 0), safeEligibleCount);
   const nonRiskCount = Math.max(safeEligibleCount - safeRiskCount, 0);
   const riskRatio = safeEligibleCount > 0 ? safeRiskCount / safeEligibleCount : 0;
   const nonRiskRatio = safeEligibleCount > 0 ? nonRiskCount / safeEligibleCount : 0;
-  const degrees = Math.min(Math.max(riskRatio * 360, 0), 360);
-  const background = safeEligibleCount > 0
-    ? `conic-gradient(#b65232 0deg ${degrees}deg, #e4c88d ${degrees}deg 360deg)`
-    : "#eee6d8";
   return <article className="briefing-ratio-card">
-    <div className="collection-pie" style={{ background }} role="img" aria-label={`${periodLabel} 판정 가능 스토리 ${safeEligibleCount}건 중 위험 ${safeRiskCount}건, ${formatPercent(riskRatio)}`}>
-      <div aria-hidden="true" />
-    </div>
+    <InteractiveDonut
+      periodLabel={periodLabel}
+      segments={[
+        { key: "risk", label: "위험", value: safeRiskCount, className: "risk" },
+        { key: "normal", label: "비위험", value: nonRiskCount, className: "normal" },
+      ]}
+      ariaLabel={`${periodLabel} 판정 가능 스토리 ${safeEligibleCount}건 중 위험 ${safeRiskCount}건, 비위험 ${nonRiskCount}건`}
+      tooltipId="risk-ratio-tooltip"
+    />
     <dl>
       <div className="risk"><dt><i className="risk" />위험</dt><dd>{formatPercent(riskRatio)} · {formatNumber(safeRiskCount)}건</dd></div>
       <div className="normal"><dt><i className="normal" />비위험</dt><dd>{formatPercent(nonRiskRatio)} · {formatNumber(nonRiskCount)}건</dd></div>
@@ -104,15 +153,17 @@ function SentimentRatioCard({ periodLabel, positiveCount, negativeCount, neutral
   const positiveRatio = total > 0 ? positive / total : 0;
   const negativeRatio = total > 0 ? negative / total : 0;
   const neutralRatio = total > 0 ? neutral / total : 0;
-  const positiveEnd = positiveRatio * 360;
-  const negativeEnd = positiveEnd + negativeRatio * 360;
-  const background = total > 0
-    ? `conic-gradient(#4f8b66 0deg ${positiveEnd}deg, #b65232 ${positiveEnd}deg ${negativeEnd}deg, #e4c88d ${negativeEnd}deg 360deg)`
-    : "#eee6d8";
   return <article className="briefing-ratio-card">
-    <div className="collection-pie" style={{ background }} role="img" aria-label={`${periodLabel} 감성 판정 스토리 ${total}건 중 긍정 ${formatPercent(positiveRatio)}, 부정 ${formatPercent(negativeRatio)}, 중립 ${formatPercent(neutralRatio)}`}>
-      <div aria-hidden="true" />
-    </div>
+    <InteractiveDonut
+      periodLabel={periodLabel}
+      segments={[
+        { key: "positive", label: "긍정", value: positive, className: "positive" },
+        { key: "negative", label: "부정", value: negative, className: "negative" },
+        { key: "neutral", label: "중립", value: neutral, className: "neutral" },
+      ]}
+      ariaLabel={`${periodLabel} 감성 판정 스토리 ${total}건 중 긍정 ${positive}건, 부정 ${negative}건, 중립 ${neutral}건`}
+      tooltipId="sentiment-ratio-tooltip"
+    />
     <dl>
       <div className="positive"><dt><i className="positive" />긍정</dt><dd>{formatPercent(positiveRatio)} · {formatNumber(positive)}건</dd></div>
       <div className="negative"><dt><i className="negative" />부정</dt><dd>{formatPercent(negativeRatio)} · {formatNumber(negative)}건</dd></div>
@@ -124,6 +175,7 @@ function SentimentRatioCard({ periodLabel, positiveCount, negativeCount, neutral
 // 로그인 직후 나의 기업과 등록 기업 평균을 비교하고 최신 위험 근거를 브리핑한다.
 export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponseHistory }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [briefingView, setBriefingView] = useState("company");
   const [ratioView, setRatioView] = useState("risk");
   const [ratioPeriod, setRatioPeriod] = useState("sevenDays");
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
@@ -131,17 +183,16 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
   );
   const mainCompany = companies.find((company) => company.company_role === "main");
   const requestedCompanyId = searchParams.get("companyId") ?? "";
-  const selectedCompany = companies.find((company) => String(company.id) === requestedCompanyId)
-    ?? mainCompany
-    ?? companies[0]
-    ?? null;
+  const selectedCompany = resolveSelectedCompany(companies, requestedCompanyId);
   const selectedCompanyId = selectedCompany?.id ?? null;
   const companyIds = companies.map((company) => company.id).join(",");
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
 
   useEffect(() => {
-    if (!selectedCompanyId || requestedCompanyId === String(selectedCompanyId)) return;
+    if (!selectedCompanyId) return;
+    rememberSelectedCompanyId(selectedCompanyId);
+    if (requestedCompanyId === String(selectedCompanyId)) return;
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("companyId", String(selectedCompanyId));
@@ -150,6 +201,7 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
   }, [requestedCompanyId, selectedCompanyId, setSearchParams]);
 
   const selectCompany = (companyId) => {
+    rememberSelectedCompanyId(companyId);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("companyId", companyId);
@@ -166,7 +218,8 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
   const selectedIndex = companies.findIndex((company) => company.id === selectedCompanyId);
   const dailySummaries = selectedIndex >= 0 ? dailyGroups[selectedIndex] ?? [] : [];
   const averageSummaries = averageDailySummaries(dailyGroups);
-  const trendDisplayDates = dailySummaries
+  const briefingSummaries = briefingView === "average" ? averageSummaries : dailySummaries;
+  const trendDisplayDates = briefingSummaries
     .filter((day) => (day.eligible_risk_story_count ?? 0) > 0 || (day.eligible_negative_story_count ?? 0) > 0)
     .map((day) => day.summary_date);
 
@@ -187,20 +240,20 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
 
   const error = companiesError ? getErrorMessage(companiesError) : null;
   const todayKey = new Date().toLocaleDateString("sv-SE");
-  const todaySummary = dailySummaries.find((day) => day.summary_date === todayKey);
+  const todaySummary = briefingSummaries.find((day) => day.summary_date === todayKey);
   const todayCount = todaySummary?.eligible_story_count ?? 0;
   const todayRiskCount = todaySummary?.eligible_risk_story_count ?? 0;
-  const sevenDayCount = dailySummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0);
-  const sevenDayRiskCount = dailySummaries.reduce((sum, day) => sum + (day.eligible_risk_story_count ?? 0), 0);
+  const sevenDayCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0);
+  const sevenDayRiskCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_risk_story_count ?? 0), 0);
   const todaySentiment = {
     positiveCount: todaySummary?.eligible_positive_story_count ?? 0,
     negativeCount: todaySummary?.eligible_negative_story_count ?? 0,
     neutralCount: todaySummary?.eligible_neutral_story_count ?? 0,
   };
   const sevenDaySentiment = {
-    positiveCount: dailySummaries.reduce((sum, day) => sum + (day.eligible_positive_story_count ?? 0), 0),
-    negativeCount: dailySummaries.reduce((sum, day) => sum + (day.eligible_negative_story_count ?? 0), 0),
-    neutralCount: dailySummaries.reduce((sum, day) => sum + (day.eligible_neutral_story_count ?? 0), 0),
+    positiveCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_positive_story_count ?? 0), 0),
+    negativeCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_negative_story_count ?? 0), 0),
+    neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_neutral_story_count ?? 0), 0),
   };
   const periodLabel = ratioPeriod === "today" ? "1일" : "7일";
   const selectedRiskRatio = ratioPeriod === "today"
@@ -216,20 +269,19 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
     <div className="main-page-shell briefing-shell">
       {error && <div className="notice error">{error}</div>}
       {loading ? <p className="empty-state">브리핑을 불러오는 중입니다.</p> : !selectedCompany ? <p className="empty-state">등록된 기업 정보가 없습니다.</p> : <div className="briefing-grid">
-        <div className="briefing-trends">
-          <section className="panel briefing-trend-panel">
-            <PanelTitle title={selectedCompany.name} description={selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"} />
-            <RiskOverviewTrendChart days={dailySummaries} displayDates={trendDisplayDates} ariaLabel={`${selectedCompany.name} 최근 7일 위험 판정 기사와 부정 기사 비율`} />
-          </section>
-          <section className="panel briefing-trend-panel">
-            <PanelTitle title="전체 평균" description={`등록 기업 ${formatNumber(companies.length)}곳 기준`} />
-            <RiskOverviewTrendChart days={averageSummaries} displayDates={trendDisplayDates} ariaLabel="등록 기업 전체의 최근 7일 평균 위험 판정 기사와 부정 기사 비율" />
-          </section>
-        </div>
-        <div className="briefing-side">
-          <section className="panel briefing-company-panel">
-            <PanelTitle title={selectedCompany.name} description={selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"} />
-            <div className="briefing-company-ratio-section">
+        <section className="panel briefing-overview-panel">
+          <div className="briefing-overview-head">
+            <PanelTitle
+              title={briefingView === "average" ? "전체 평균" : selectedCompany.name}
+              description={briefingView === "average" ? `등록 기업 ${formatNumber(companies.length)}곳 기준` : selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}
+            />
+            <div className="briefing-view-tabs" role="tablist" aria-label="브리핑 비교 기준">
+              <button id="briefing-company-tab" type="button" role="tab" aria-selected={briefingView === "company"} aria-controls="briefing-overview-charts" className={briefingView === "company" ? "active" : ""} onClick={() => setBriefingView("company")}>{selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}</button>
+              <button id="briefing-average-tab" type="button" role="tab" aria-selected={briefingView === "average"} aria-controls="briefing-overview-charts" className={briefingView === "average" ? "active" : ""} onClick={() => setBriefingView("average")}>전체 평균</button>
+            </div>
+          </div>
+          <div id="briefing-overview-charts" className="briefing-overview-charts" role="tabpanel" aria-labelledby={`briefing-${briefingView}-tab`}>
+            <section className="briefing-ratio-pane" aria-label="위험 및 감성 비율">
               <div className="briefing-ratio-head">
                 <div className="briefing-ratio-tabs" role="tablist" aria-label="비율 종류">
                   <button type="button" role="tab" aria-selected={ratioView === "risk"} className={ratioView === "risk" ? "active" : ""} onClick={() => setRatioView("risk")}>위험 비율</button>
@@ -245,26 +297,34 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
                   ? <RiskRatioCard periodLabel={periodLabel} {...selectedRiskRatio} />
                   : <SentimentRatioCard periodLabel={periodLabel} {...selectedSentimentRatio} />}
               </div>
-            </div>
-          </section>
-          <section className="panel briefing-risk-articles">
-            <div className="briefing-risk-head"><PanelTitle title="최근 위험 사건" description="자세히 보기를 누르면 위험 판정 또는 종료 이력을 확인할 수 있습니다." /></div>
-            <div className="briefing-risk-list">{riskyStories.length ? riskyStories.map((risk) => {
-              const isClosed = risk.status === "closed";
-              const activityDate = riskActivityDate(risk);
-              const openRisk = () => isClosed
-                ? onOpenResponseHistory(selectedCompanyId, risk.id)
-                : onOpenCompany(selectedCompanyId, risk.id);
-              return <button className="briefing-risk-card" type="button" onClick={openRisk} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
-                <div className="briefing-risk-meta"><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><span>{RISK_TYPE_LABELS[risk.primary_type] ?? risk.primary_type ?? "위험"}</span><span className={`briefing-risk-state ${isClosed ? "closed" : "active"}`}>{isClosed ? "종료" : "활성"}</span></div>
-                <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
-                <p>기사 {formatNumber(risk.evidence_article_count)}건 · 출처 {formatNumber(risk.source_count)}곳</p>
-                <footer><small>위험도 {formatRiskProbability(risk.risk_probability)} · {isClosed ? "종료" : "최근"} {formatDate(activityDate)}</small><span className="briefing-risk-action" aria-hidden="true">자세히 보기</span></footer>
-              </button>;
-            }) : <p className="panel-empty">표시할 위험 사건이 없습니다.</p>}</div>
-            <div className="briefing-risk-more"><button type="button" aria-label={`${selectedCompany.name} 활성 위험 판정 더보기`} onClick={() => onOpenRiskPage(selectedCompanyId)}>더보기</button></div>
-          </section>
-        </div>
+            </section>
+            <section className="briefing-trend-pane" aria-label="최근 7일 위험 및 부정 비율 추이">
+              <div className="briefing-chart-heading"><strong>최근 7일 추이</strong><small>날짜별 위험·부정 비율</small></div>
+              <RiskOverviewTrendChart
+                days={briefingSummaries}
+                displayDates={trendDisplayDates}
+                ariaLabel={briefingView === "average" ? "등록 기업 전체의 최근 7일 평균 위험 판정 기사와 부정 기사 비율" : `${selectedCompany.name} 최근 7일 위험 판정 기사와 부정 기사 비율`}
+              />
+            </section>
+          </div>
+        </section>
+        <section className="panel briefing-risk-articles">
+          <div className="briefing-risk-head"><PanelTitle title="최근 위험 사건" description="자세히 보기를 누르면 위험 판정 또는 종료 이력을 확인할 수 있습니다." /></div>
+          <div className="briefing-risk-list">{riskyStories.length ? riskyStories.map((risk) => {
+            const isClosed = risk.status === "closed";
+            const activityDate = riskActivityDate(risk);
+            const openRisk = () => isClosed
+              ? onOpenResponseHistory(selectedCompanyId, risk.id)
+              : onOpenCompany(selectedCompanyId, risk.id);
+            return <button className="briefing-risk-card" type="button" onClick={openRisk} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
+              <div className="briefing-risk-meta"><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><span>{RISK_TYPE_LABELS[risk.primary_type] ?? risk.primary_type ?? "위험"}</span><span className={`briefing-risk-state ${isClosed ? "closed" : "active"}`}>{isClosed ? "종료" : "활성"}</span></div>
+              <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
+              <p>기사 {formatNumber(risk.evidence_article_count)}건 · 출처 {formatNumber(risk.source_count)}곳</p>
+              <footer><small>위험도 {formatRiskProbability(risk.risk_probability)} · {isClosed ? "종료" : "최근"} {formatDate(activityDate)}</small><span className="briefing-risk-action" aria-hidden="true">자세히 보기</span></footer>
+            </button>;
+          }) : <p className="panel-empty">표시할 위험 사건이 없습니다.</p>}</div>
+          <div className="briefing-risk-more"><button type="button" aria-label={`${selectedCompany.name} 활성 위험 판정 더보기`} onClick={() => onOpenRiskPage(selectedCompanyId)}>더보기</button></div>
+        </section>
       </div>}
     </div>
   </section>;

@@ -13,6 +13,7 @@ import {
 import { api, getErrorMessage } from "../../api";
 import AdminDashboardPage from "../admin/AdminDashboardPage";
 import MyPage from "../account/MyPage";
+import AnalysisManagementPage from "../analysis/AnalysisManagementPage";
 import AnalysisPipelinePage from "../analysis/AnalysisPipelinePage";
 import CollectionPage from "../collection/CollectionPage";
 import CompanyAdministrationPage from "../companies/CompanyPages";
@@ -20,15 +21,14 @@ import MainPage from "../home/MainPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
 import ArticleReviewPage from "../reviews/ArticleReviewPage";
-import RiskManagementPage from "../risk-management/RiskManagementPage";
 import { AppNoticeDialog, useAppConfirm } from "../../shared/components";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
+import { clearSelectedCompanyId } from "../../shared/selectedCompanySession";
 
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "AI 리스크 브리핑", path: "/main" },
   { id: "statistics", label: "분석 파이프라인", path: "/analysis/collection" },
-  { id: "risk-management", label: "대응", path: "/risk-management" },
   { id: "collection", label: "수집 관리", path: "/collection" },
   { id: "companies", label: "기업 관리", path: "/companies" },
 ];
@@ -38,6 +38,7 @@ const ADMIN_NAV_ITEMS = [
   { id: "admin-collection", label: "수집 관리", path: "/admin/collection" },
   { id: "admin-operations", label: "운영 관리", path: "/admin/operations" },
   { id: "admin-review", label: "기사 검수", path: "/admin/reviews" },
+  { id: "admin-risk-review", label: "위험 사건 검수", path: "/admin/risk-review" },
 ];
 
 const PAGE_TITLES = {
@@ -51,6 +52,7 @@ const PAGE_TITLES = {
   "admin-collection": "수집 관리",
   "admin-operations": "운영 관리",
   "admin-review": "기사 검수",
+  "admin-risk-review": "위험 사건 검수",
 };
 
 const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
@@ -62,6 +64,7 @@ const pageFromPath = (pathname) => {
   if (pathname === "/admin/collection") return "admin-collection";
   if (pathname === "/admin/operations") return "admin-operations";
   if (pathname === "/admin/reviews") return "admin-review";
+  if (pathname === "/admin/risk-review") return "admin-risk-review";
   if (pathname === "/operations" || pathname === "/models") return "admin-operations";
   if (pathname === "/reviews") return "admin-review";
   if (pathname === "/collection") return "collection";
@@ -88,7 +91,8 @@ function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
 }
 
 function RiskManagementRoute() {
-  return <RiskManagementPage canReview />;
+  const location = useLocation();
+  return <Navigate to={`/analysis/response${location.search}`} replace />;
 }
 
 function LegacyAnalysisStatisticsRedirect() {
@@ -125,6 +129,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
   const [notificationError, setNotificationError] = useState(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState(() => new Set());
+  const [markingAllNotificationsRead, setMarkingAllNotificationsRead] = useState(false);
   const [logoutNoticeOpen, setLogoutNoticeOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const { confirm, confirmationDialog } = useAppConfirm();
@@ -153,13 +158,21 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     return () => { active = false; };
   }, [blocker.state, confirm]);
 
+  const applyNotificationPayload = useCallback((payload) => {
+    const items = payload?.items ?? [];
+    setNotifications({ ...EMPTY_NOTIFICATIONS, ...payload, items });
+    setReadNotificationIds(new Set(
+      items.filter((item) => item.is_read).map((item) => item.id),
+    ));
+  }, []);
+
   const loadNotifications = useCallback(async () => {
     try {
       const response = await api.get("/notifications");
-      setNotifications({ ...EMPTY_NOTIFICATIONS, ...response.data, items: response.data?.items ?? [] });
+      applyNotificationPayload(response.data);
       setNotificationError(null);
     } catch (requestError) { setNotificationError(getErrorMessage(requestError)); }
-  }, []);
+  }, [applyNotificationPayload]);
   useEffect(() => {
     loadNotifications(); const timer = window.setInterval(loadNotifications, 30000);
     return () => window.clearInterval(timer);
@@ -191,7 +204,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     const params = new URLSearchParams({ view: "history", days: "all" });
     if (companyId) params.set("companyId", String(companyId));
     if (riskEventId) params.set("eventId", String(riskEventId));
-    goTo(`/risk-management?${params}`, options);
+    goTo(`/analysis/response?${params}`, options);
   }, [goTo]);
 
   const requestLogout = async () => {
@@ -206,7 +219,8 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       if (!confirmed) return;
     }
     if (isAdmin) {
-      onLogout();
+      await onLogout();
+      clearSelectedCompanyId();
       return;
     }
     setLogoutNoticeOpen(true);
@@ -216,6 +230,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     setLoggingOut(true);
     try {
       await onLogout();
+      clearSelectedCompanyId();
     } finally {
       setLoggingOut(false);
     }
@@ -226,16 +241,40 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     onOpenCompany: openAnalysisStatistics,
   };
   const allowedNotificationItems = (notifications.items ?? []).filter((item) => item.type === "risk");
-  const notificationTotal = allowedNotificationItems.length;
-  const markAllNotificationsRead = () => {
-    setReadNotificationIds(new Set(allowedNotificationItems.map((item) => item.id)));
+  const notificationUnreadTotal = allowedNotificationItems.filter((item) => !readNotificationIds.has(item.id)).length;
+  const markAllNotificationsRead = async () => {
+    if (!notificationUnreadTotal || markingAllNotificationsRead) return;
+    setMarkingAllNotificationsRead(true);
+    try {
+      const response = await api.post("/notifications/read-all");
+      applyNotificationPayload(response.data);
+      setNotificationError(null);
+    } catch (requestError) {
+      setNotificationError(getErrorMessage(requestError));
+    } finally {
+      setMarkingAllNotificationsRead(false);
+    }
   };
   const openRiskNotification = (item) => {
-    setReadNotificationIds((current) => {
-      const next = new Set(current);
-      next.add(item.id);
-      return next;
-    });
+    const wasRead = readNotificationIds.has(item.id);
+    if (!wasRead) {
+      setReadNotificationIds((current) => new Set([...current, item.id]));
+      if (item.risk_event_id) {
+        api.post(`/notifications/risk/${item.risk_event_id}/read`)
+          .then((response) => {
+            applyNotificationPayload(response.data);
+            setNotificationError(null);
+          })
+          .catch((requestError) => {
+            setReadNotificationIds((current) => {
+              const next = new Set(current);
+              next.delete(item.id);
+              return next;
+            });
+            setNotificationError(getErrorMessage(requestError));
+          });
+      }
+    }
     if (item.company_id) openAnalysisStatistics(item.company_id, item.risk_event_id);
   };
 
@@ -245,7 +284,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
       <div className="topbar-actions">
         {!isAdmin && mainCompany && <span className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} role="status" aria-live="polite" aria-label={mainCollectionRunning ? "실시간 수집중" : "수집 중지"} title={mainCollectionRunning ? "실시간 수집중" : "수집 중지"}><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 수집중" : "수집 중지"}</span></span>}
-        <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`위험 알림 ${notificationTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationTotal > 99 ? "99+" : notificationTotal}</span>}</button>
+        <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`읽지 않은 위험 알림 ${notificationUnreadTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationUnreadTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationUnreadTotal > 99 ? "99+" : notificationUnreadTotal}</span>}</button>
         <button className={`account-button ${page === "account" ? "active" : ""}`} type="button" onClick={() => goTo("/account")} title={`${session.user.email} · 마이페이지`} aria-current={page === "account" ? "page" : undefined}><span>{session.user.email}</span><strong>마이페이지</strong></button>
         <button className="logout-button" type="button" onClick={requestLogout}>로그아웃</button>
       </div>
@@ -257,6 +296,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/admin/collection" element={<AdminDashboardPage view="collection" />} />
       <Route path="/admin/operations" element={<ModelManagementPage />} />
       <Route path="/admin/reviews" element={<ArticleReviewPage />} />
+      <Route path="/admin/risk-review" element={<AnalysisManagementPage notifications={notifications} notificationError={notificationError} onRiskNotificationOpen={openRiskNotification} />} />
       <Route path="/operations" element={<Navigate to="/admin/operations" replace />} />
       <Route path="/models" element={<Navigate to="/admin/operations" replace />} />
       <Route path="/reviews" element={<Navigate to="/admin/reviews" replace />} />
@@ -271,7 +311,6 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/main" element={<AnalysisStatisticsRoute />} />
-      <Route path="/analysis/response" element={<Navigate to="/risk-management" replace />} />
       <Route path="/analysis/:stage" element={<AnalysisPipelinePage />} />
       <Route path="/risk-management" element={<RiskManagementRoute />} />
       <Route path="/companies/overview" element={<Navigate to="/companies/main" replace />} />
@@ -282,7 +321,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="*" element={<Navigate to="/main" replace />} />
     </>}</Routes>
 
-    <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} readIds={readNotificationIds} onMarkAllRead={markAllNotificationsRead} onRiskOpen={openRiskNotification} />
+    <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} readIds={readNotificationIds} markingAllRead={markingAllNotificationsRead} onMarkAllRead={markAllNotificationsRead} onRiskOpen={openRiskNotification} />
     {confirmationDialog}
     {logoutNoticeOpen && <AppNoticeDialog kicker="COLLECTION NOTICE" title="로그아웃 후에도 수집은 계속됩니다" confirmLabel="로그아웃" cancelLabel="취소" onClose={() => setLogoutNoticeOpen(false)} onConfirm={confirmLogout} busy={loggingOut}>
       <p>로그아웃하거나 브라우저를 닫아도 백엔드가 실행 중이면 등록한 기업의 실시간 수집은 계속됩니다.</p>

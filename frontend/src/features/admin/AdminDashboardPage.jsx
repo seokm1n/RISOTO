@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
-import { Metric, PanelTitle, useAppConfirm } from "../../shared/components";
+import { Metric, PanelTitle } from "../../shared/components";
 import {
   DATA_QUALITY_LABELS,
   INCIDENT_STATUS_LABELS,
@@ -116,9 +116,7 @@ function AdminIncidentList({ incidents, companies }) {
 function CollectionAdminView() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(null);
   const [notice, setNotice] = useState(null);
-  const { confirm, confirmationDialog } = useAppConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,39 +130,17 @@ function CollectionAdminView() {
 
   useEffect(() => { load(); }, [load]);
 
-  const changeAll = async (action) => {
-    const label = action === "pause" ? "정지" : "재개";
-    const confirmed = await confirm({
-      kicker: "COLLECTION CONTROL",
-      title: `모든 회원의 수집을 ${label}할까요?`,
-      message: "모든 일반 회원이 등록한 기업에 적용됩니다.",
-      confirmLabel: label,
-      tone: action === "pause" ? "danger" : "default",
-    });
-    if (!confirmed) return;
-    setBusy(action); setNotice(null);
-    try {
-      const response = await api.post(`/admin/collection/monitoring/${action}`);
-      await load();
-      setNotice({ type: "success", message: `${response.data.updated_count}개 기업의 수집을 ${label}했습니다.` });
-    } catch (requestError) { setNotice({ type: "error", message: getErrorMessage(requestError) }); }
-    finally { setBusy(null); }
-  };
-
   const maxDaily = Math.max(...(data?.daily ?? []).flatMap((item) => [item.story_count, item.risk_count]), 1);
-  const statusText = data?.active_companies ? "수집 진행 중" : "수집 중지됨";
 
   return <section className="workspace admin-workspace">
     <AdminHead kicker="COLLECTION MANAGEMENT / 02" title="수집 관리" description="전체 회원의 수집 현황과 수집원 상태를 한 곳에서 확인합니다." />
     {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
     {loading && !data ? <p className="empty-state">전체 수집 현황을 불러오는 중입니다.</p> : <>
       <div className="metric-grid dashboard-metrics admin-metrics"><Metric label="수집중" value={data?.active_companies ?? 0} /><Metric label="전체 등록 기업수" value={data?.total_companies ?? 0} /><Metric label="전체 수집량" value={data?.collected_count ?? 0} /><Metric label="전체 위험량" value={data?.risk_count ?? 0} tone={data?.risk_count ? "danger" : "success"} /></div>
-      <section className="panel admin-collection-control"><div className="admin-panel-heading"><PanelTitle kicker="ALL COLLECTION STATUS" title={statusText} /><div className="admin-control-actions"><button className="monitor-control stop" type="button" onClick={() => changeAll("pause")} disabled={Boolean(busy)}>{busy === "pause" ? "정지 중..." : "전체 정지"}</button><button className="monitor-control start" type="button" onClick={() => changeAll("resume")} disabled={Boolean(busy)}>{busy === "resume" ? "재개 중..." : "전체 재개"}</button></div></div><p>전체 수집을 변경하면 모든 일반 회원의 등록 기업에 적용됩니다.</p></section>
       <div className="admin-collection-grid"><section className="panel"><PanelTitle kicker="COLLECTION VOLUME / 14 DAYS" title="전체 수집량·위험량" /><div className="admin-daily-chart" role="img" aria-label="최근 14일 전체 수집량과 위험량"><div className="admin-daily-bars">{(data?.daily ?? []).map((item) => <div className="admin-daily-bar" key={item.day} title={`${item.day} · 수집 ${item.story_count}건 · 위험 ${item.risk_count}건`}><i style={{ height: `${Math.max(item.story_count ? 8 : 3, item.story_count / maxDaily * 100)}%` }} /><b style={{ height: `${Math.max(item.risk_count ? 8 : 3, item.risk_count / maxDaily * 100)}%` }} /><span>{new Date(item.day).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}</span></div>)}</div><div className="admin-chart-legend"><span><i className="collection" />수집량</span><span><i className="risk" />위험량</span></div></div></section><section className="panel"><PanelTitle kicker="COLLECTION PROVIDERS" title="수집 API 관리" /><div className="admin-provider-list">{(data?.providers ?? []).map((provider) => <div key={provider.source}><span>{provider.source}</span><strong className={provider.status === "연결됨" ? "connected" : "disconnected"}>{provider.status}</strong></div>)}</div></section></div>
       <section className="panel admin-company-overview"><PanelTitle kicker="ALL REGISTERED COMPANIES" title="기업별 수집 현황" /><div className="admin-company-table-wrap"><table className="admin-company-table"><thead><tr><th>기업</th><th>소유 회원</th><th>구분</th><th>상태</th><th>수집량</th><th>위험량</th><th>마지막 수집</th></tr></thead><tbody>{(data?.companies ?? []).map((company) => <tr key={company.id}><td><strong>{company.name}</strong></td><td>{company.owner_email}</td><td>{company.company_role === "main" ? "나의 기업" : "비교 기업"}</td><td><span className={`admin-status-pill ${company.monitoring_status}`}>{MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</span></td><td>{formatNumber(company.article_count)}건</td><td>{formatNumber(company.risk_count)}건</td><td>{formatDate(company.last_collected_at)}</td></tr>)}</tbody></table></div></section>
       <section className="panel admin-incidents-panel"><PanelTitle kicker="RECENT COLLECTION INCIDENTS" title="최근 수집 장애" /><AdminIncidentList incidents={data?.incidents} companies={data?.companies} /></section>
     </>}
-    {confirmationDialog}
   </section>;
 }
 
