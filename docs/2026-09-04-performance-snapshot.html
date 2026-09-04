@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>RISOTO 모델 성능 스냅샷 - 2026-09-04</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1a1d23; --sub: #5b6472;
+    --line: #e4e7eb; --blue: #3b6fd1; --blue-lt: #b9cbf0;
+    --green: #1f9d55; --red: #d64545; --amber: #d68a1f; --purple: #7a5cd6;
+    --grid: #eef0f3;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,"Segoe UI",Pretendard,sans-serif; line-height:1.55; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 24px 80px; }
+  header.top { margin-bottom: 32px; }
+  header.top h1 { font-size: 26px; margin: 0 0 6px; }
+  header.top .meta { color: var(--sub); font-size: 14px; }
+  h2.section { font-size: 18px; margin: 44px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--ink); }
+  h2.section .n { color: var(--sub); font-weight: 500; margin-right: 6px; }
+  p.lead { color: var(--sub); font-size: 14px; margin: -6px 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; margin-bottom: 16px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+  @media (max-width: 720px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  .callout { border-radius: 8px; padding: 12px 16px; font-size: 14px; margin: 10px 0; }
+  .callout.warn { background:#fdf3e3; border:1px solid #f0d9a8; color:#7a5510; }
+  .callout.bad { background:#fbe9e9; border:1px solid #f0bcbc; color:#8a2b2b; }
+  .callout.good { background:#e9f7ee; border:1px solid #b9e3c6; color:#186336; }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--sub); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .02em; }
+  svg text { font-family: inherit; }
+  .legend { display:flex; gap:16px; font-size:12px; color:var(--sub); margin-top:6px; }
+  .legend span.dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  table.reg { width:100%; border-collapse: collapse; font-size: 13px; }
+  table.reg th, table.reg td { text-align:left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  table.reg th { color: var(--sub); font-weight: 600; font-size: 12px; }
+  .badge { display:inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge.production { background:#e9f7ee; color:#186336; }
+  .badge.candidate { background:#fdf3e3; color:#7a5510; }
+  .kpi-row { display:flex; gap: 22px; flex-wrap: wrap; }
+  .kpi { min-width: 110px; }
+  .kpi .val { font-size: 26px; font-weight: 700; }
+  .kpi .lbl { font-size: 12px; color: var(--sub); }
+  code { background:#eef0f3; padding: 1px 5px; border-radius:4px; font-size: 12px; }
+  footer { margin-top: 50px; color: var(--sub); font-size: 12px; border-top: 1px solid var(--line); padding-top: 16px; }
+  .model-card h4 { margin: 0 0 4px; font-size: 14px; }
+  .model-card .path { color: var(--sub); font-size: 11px; margin-bottom: 10px; }
+  .cov-mock { color: var(--amber); font-weight: 600; }
+  .cov-none { color: var(--sub); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>RISOTO 모델 성능 스냅샷</h1>
+    <div class="meta">2026-09-04 · article_filtering.py 관련성 가중치 수정 반영 후 실측 · human_relevance_labels.csv(600건) + 운영 DB 실측 기준</div>
+  </header>
+
+  <div class="callout good">
+    <b>요약:</b> 관련성 필터 수정은 실제로 효과가 있었습니다 (정밀도 36%→68%, 정확도 60%→81%). 반면 광고 탐지는 이번에 처음 실측했는데 재현율이 23%로 낮고, review_required 대기열에 5,185건이 평균 86시간째 쌓여 있으며, 응답 초안 64건 중 사람이 승인/반려한 건 0건입니다.
+  </div>
+
+  <h2 class="section"><span class="n">1</span>관련성 필터 — 수정 전/후 비교</h2>
+  <p class="lead">동일한 578건(사람 라벨, uncertain 22건 제외)을 같은 방식으로 재채점. "이전"은 라벨링 당시 저장된 decision/relevance_score, "이후"는 현재 코드로 재실행한 결과.</p>
+  <div class="card">
+    <div class="chart-title">정밀도 · 재현율 · 정확도 · AUC</div>
+    <div id="chart-relevance"></div>
+    <div class="legend"><span><span class="dot" style="background:#b9cbf0"></span>수정 전</span><span><span class="dot" style="background:#3b6fd1"></span>수정 후</span></div>
+  </div>
+  <div class="grid3">
+    <div class="card kpi"><div class="val" style="color:var(--green)">+32.1%p</div><div class="lbl">정밀도 개선 (36.1%→68.2%)</div></div>
+    <div class="card kpi"><div class="val" style="color:var(--amber)">-3.2%p</div><div class="lbl">재현율 하락 (61.4%→58.2%)</div></div>
+    <div class="card kpi"><div class="val" style="color:var(--green)">+21.5%p</div><div class="lbl">정확도 개선 (59.7%→81.1%)</div></div>
+  </div>
+  <p class="lead">오탐(FP)이 172건→43건으로 4분의 1로 줄었고, 그 대가로 놓친 것(FN)은 61건→66건으로 5건 늘었습니다. 정밀도 이득이 재현율 손실보다 훨씬 커서 순효과는 뚜렷한 개선입니다.</p>
+
+  <h2 class="section"><span class="n">2</span>광고 탐지 — 최초 실측</h2>
+  <p class="lead">advertisement_label(yes/no) 578건 기준. 지금까지 한 번도 사람 라벨로 검증된 적이 없었습니다.</p>
+  <div class="card">
+    <div class="chart-title">정밀도 · 재현율 · AUC</div>
+    <div id="chart-ads"></div>
+  </div>
+  <div class="callout bad">
+    광고 110건 중 25건만 잡아냈습니다(재현율 22.7%). 잡아낸 것 중에는 76%가 실제 광고라 오탐은 적은 편(정밀도 75.8%)이지만, <b>광고 기사 10건 중 8건이 그대로 통과</b>하고 있습니다. AD_PATTERNS 정규식 가중치가 실측 없이 정해진 값이라는 점이 원인으로 보입니다.
+  </div>
+
+  <h2 class="section"><span class="n">3</span>review_required 대기열</h2>
+  <p class="lead">article_filter_results 전체 (운영 DB, 필터 버전 무관 누적치).</p>
+  <div class="card">
+    <div class="chart-title">판정별 건수</div>
+    <div id="chart-queue"></div>
+  </div>
+  <div class="callout warn">
+    review_required(관련성) 5,185건이 평균 <b>86시간(3.6일)</b>째 대기 중입니다. 이 테이블에는 "사람이 처리했다"를 표시할 컬럼 자체가 없어서, 검수 담당자가 실제로 이 큐를 보고 있는지 코드만으로는 확인할 수 없었습니다. 관련성 필터를 더 보수적으로 만들수록(이번 수정 포함) 이 큐는 계속 커집니다 — 큐를 실제로 사람이 소진하는 흐름이 없다면 정밀도 개선의 의미가 줄어듭니다.
+  </div>
+
+  <h2 class="section"><span class="n">4</span>위험 이벤트 현황</h2>
+  <div class="grid2">
+    <div class="card">
+      <div class="chart-title">상태 × 심각도</div>
+      <div id="chart-risk-status"></div>
+    </div>
+    <div class="card">
+      <div class="chart-title">유형별 분포 (전체 6,595건 누적)</div>
+      <div id="chart-risk-type"></div>
+    </div>
+  </div>
+  <p class="lead">전체 6,595건 중 5,818건(88%)이 <code>legacy_candidate</code>(구 window_v1 파이프라인 잔존분) 또는 <code>closed</code>입니다. 현재 살아있는(open/monitoring) 사건은 38건뿐 — story_v2 전환이 실제로 진행 중임을 보여줍니다.</p>
+
+  <h2 class="section"><span class="n">5</span>응답 초안 — 검증·승인 현황</h2>
+  <div class="grid2">
+    <div class="card">
+      <div class="chart-title">검증 결과 (전체 64건)</div>
+      <div id="chart-draft-verify"></div>
+    </div>
+    <div class="card kpi">
+      <div class="kpi-row">
+        <div class="kpi"><div class="val" style="color:var(--red)">0 / 64</div><div class="lbl">승인/반려된 초안</div></div>
+        <div class="kpi"><div class="val" style="color:var(--amber)">7 / 64</div><div class="lbl">검증 실패 (11%)</div></div>
+      </div>
+      <p style="font-size:13px;color:var(--sub);margin-top:14px;">검증 실패해도 재생성 1회 후 그대로 후보에 포함되어 나갑니다(<code>status="검증실패"</code> 표시만). 승인 워크플로(item #4, 이번엔 범위 밖)가 실제로 쓰이기 전까지는 이 표시를 아무도 걸러내지 못합니다.</p>
+    </div>
+  </div>
+
+  <h2 class="section"><span class="n">6</span>현재 운영 중인 전체 모델</h2>
+  <p class="lead">model_versions 테이블 기준 production/candidate 상태 전체. 자체 보고 지표이며 항목별로 신뢰도가 다릅니다.</p>
+  <div class="grid2" id="model-cards"></div>
+
+  <h2 class="section"><span class="n">7</span>참고 — pytest 테스트 커버리지</h2>
+  <p class="lead">"현재 쓰이는 모델"을 pytest 스위트 기준으로도 확인했습니다. 결론: <b>실제 가중치를 로드/실행하는 테스트가 하나도 없습니다.</b> 전부 결정적 스텁으로 대체되어 전처리·DB 연동 로직만 검증됩니다.</p>
+  <div class="card">
+    <table class="reg">
+      <tr><th>모델</th><th>구현 위치</th><th>pytest에서</th></tr>
+      <tr><td>company_reranker (cross-encoder)</td><td>services/company_reranker.py</td><td class="cov-mock">precomputed_company_reranker=None 로 우회</td></tr>
+      <tr><td>fine_tuned_text (filter/relevance/topical/sentiment)</td><td>services/fine_tuned_text.py</td><td class="cov-mock">라벨 매핑 함수만 테스트, 모델 미로드</td></tr>
+      <tr><td>KLUE-RoBERTa NLI</td><td>services/klue_nli.py</td><td class="cov-mock">FakeNli 스텁(고정 로짓)</td></tr>
+      <tr><td>문장 임베딩 (근접중복/스토리 클러스터링)</td><td>services/article_filtering.py, story_clustering.py</td><td class="cov-none">테스트 전무 (mock조차 없음)</td></tr>
+      <tr><td>LightGBM 위험탐지 / IsolationForest</td><td>training/risk_models.py</td><td class="cov-mock">StubIsolationForest, 가짜 joblib 아티팩트</td></tr>
+      <tr><td>response_engine LLM (gpt-5.6-luna) / 임베딩</td><td>services/response_engine/_llm.py, rag/embed.py</td><td class="cov-mock">structured_call / call_llm_label 모킹</td></tr>
+    </table>
+  </div>
+
+  <h2 class="section"><span class="n">8</span>다음으로 볼 만한 것</h2>
+  <div class="card">
+    <ol style="margin:0; padding-left:20px; font-size:14px;">
+      <li>광고 탐지 재현율 23% — AD_PATTERNS 가중치를 이 578건 기준으로 다시 튜닝하거나, company_reranker처럼 학습 기반 모델로 교체 검토</li>
+      <li>review_required 큐에 "처리됨" 상태/컬럼이 없음 — 검수 워크플로 자체를 만들지, 큐를 정기적으로 자동 재채점할지 결정 필요</li>
+      <li>production LightGBM(<code>lightgbm_auto_v3</code>)에 저장된 검증 지표가 없음(<code>metrics: {"source": "exports"}</code>) — 지금 서빙 중인 모델의 실제 성능을 아무도 기록해두지 않은 상태</li>
+      <li>company_reranker가 학습에 없던 기업에서 정밀도/재현율이 33%까지 떨어짐(unseen_company_validation) — 신규 기업 등록 시 주의 필요</li>
+    </ol>
+  </div>
+
+  <footer>evaluate_current_state.py 실행 결과 기반 · backend/training_data/current_state_eval.json 원본 데이터 · DB는 읽기 전용으로만 조회함</footer>
+</div>
+
+<script>
+const DATA = {"relevance_and_ads": {"relevance_before_fix": {"n": 578, "tp": 97, "fp": 172, "fn": 61, "tn": 248, "precision": 0.3606, "recall": 0.6139, "accuracy": 0.5969, "auc": 0.729}, "relevance_after_fix": {"n": 578, "tp": 92, "fp": 43, "fn": 66, "tn": 377, "precision": 0.6815, "recall": 0.5823, "accuracy": 0.8114, "auc": 0.8096}, "advertising_current": {"n": 578, "tp": 25, "fp": 8, "fn": 85, "tn": 460, "precision": 0.7576, "recall": 0.2273, "accuracy": 0.8391, "auc": 0.6398}, "skipped_rows": 0, "total_rows": 600, "body_only_examples": [{"title": "펩시 제로슈거 라임향", "label": "irrelevant", "old_score": 0.004971, "new_score": 0.25225, "old_decision": "review_required", "new_decision": "review_required"}, {"title": "[팝업] HK LUNAR 오픈 하우스", "label": "irrelevant", "old_score": 0.608909, "new_score": 0.252293, "old_decision": "review_required", "new_decision": "rejected"}, {"title": "새로워진 아이코스 일루마 i 원 키트", "label": "irrelevant", "old_score": 0.098499, "new_score": 0.252304, "old_decision": "rejected", "new_decision": "rejected"}, {"title": "휴온스글로벌 주가 기세등등… 자회사 톡신 제제 글로벌 승인 기대감 부...", "label": "irrelevant", "old_score": 0.940414, "new_score": 0.252315, "old_decision": "accepted", "new_decision": "rejected"}, {"title": "하츠투하츠, '15-LOVE' 후속 활동 돌입…테니스 콘셉트 제대로 살렸다", "label": "irrelevant", "old_score": 0.063954, "new_score": 0.252535, "old_decision": "rejected", "new_decision": "rejected"}]}, "review_queue": {"by_decision_reason": [{"decision": "rejected", "reason": "irrelevant", "n": 52666, "avg_age_hours": "83.5810713209027329"}, {"decision": "accepted", "reason": "accepted", "n": 34389, "avg_age_hours": "109.5389700861081628"}, {"decision": "rejected", "reason": "duplicate", "n": 9060, "avg_age_hours": "48.4665401995266434"}, {"decision": "accepted", "reason": "duplicate", "n": 8705, "avg_age_hours": "78.2616736874784926"}, {"decision": "review_required", "reason": "irrelevant", "n": 5185, "avg_age_hours": "86.1680308919940534"}, {"decision": "rejected", "reason": "advertisement", "n": 1065, "avg_age_hours": "29.5247691726025039"}, {"decision": "review_required", "reason": "advertisement", "n": 365, "avg_age_hours": "83.4671823398926941"}]}, "risk_events": {"total": 6595, "by_status_severity": [{"status": "legacy_candidate", "severity": "critical", "n": 3702}, {"status": "closed", "severity": "critical", "n": 2414}, {"status": "legacy_candidate", "severity": "warning", "n": 181}, {"status": "closed", "severity": "warning", "n": 156}, {"status": "legacy_candidate", "severity": "low", "n": 80}, {"status": "monitoring", "severity": "critical", "n": 26}, {"status": "legacy_candidate", "severity": "medium", "n": 23}, {"status": "monitoring", "severity": "warning", "n": 11}, {"status": "dismissed", "severity": "warning", "n": 1}, {"status": "open", "severity": "critical", "n": 1}], "by_primary_type": [{"primary_type": "safety_accident", "n": 907}, {"primary_type": "legal_regulatory", "n": 822}, {"primary_type": "reputation_consumer", "n": 791}, {"primary_type": "security_privacy", "n": 703}, {"primary_type": "product_quality", "n": 315}, {"primary_type": "supply_operations", "n": 264}, {"primary_type": "labor_hr", "n": 230}, {"primary_type": "financial_governance", "n": 81}]}, "response_drafts": {"by_verify_status": [{"verify_status": "생성완료", "n": 43}, {"verify_status": "영향없음_종료", "n": 10}, {"verify_status": "검증실패", "n": 7}, {"verify_status": null, "n": 4}], "by_approval_state": [{"approval_state": "draft", "n": 64}]}, "model_registry": {"model_versions": [{"task": "risk_detector", "version": "risk-lgbm-20260904T052405Z", "status": "candidate", "base_model": null, "metrics": {"train_pr_auc": 0.6715183361942292, "train_macro_f1": 0.6373285258897552, "train_f2": 0.7927247769389156, "train_recall": 0.9914163090128756, "train_daily_false_alarms_per_company": 1.5233160621761659, "train_company_1_daily_false_alarms": 3.3157894736842106, "train_company_2_daily_false_alarms": 0.7843137254901961, "train_company_3_daily_false_alarms": 0.0, "train_company_4_daily_false_alarms": 0.0, "train_company_5_daily_false_alarms": 5.846153846153846, "train_company_6_daily_false_alarms": 0.0, "train_company_7_daily_false_alarms": 5.666666666666667, "train_company_8_daily_false_alarms": 0.0, "train_company_9_daily_false_alarms": 0.8205128205128205, "validation_pr_auc": 0.0, "validation_macro_f1": 0.33687943262411346, "validation_f2": 0.0, "validation_recall": 0.0, "validation_daily_false_alarms_per_company": 5.111111111111111, "validation_company_1_daily_false_alarms": 10.5, "validation_company_2_daily_false_alarms": 11.5, "validation_company_3_daily_false_alarms": 0.5, "validation_company_4_daily_false_alarms": 0.0, "validation_company_5_daily_false_alarms": 8.0, "validation_company_6_daily_false_alarms": 0.25, "test_pr_auc": 0.0, "test_macro_f1": 0.3377926421404682, "test_f2": 0.0, "test_recall": 0.0, "test_daily_false_alarms_per_company": 6.466666666666667, "test_company_1_daily_false_alarms": 17.5, "test_company_2_daily_false_alarms": 14.5, "test_company_3_daily_false_alarms": 0.0, "test_company_4_daily_false_alarms": 0.5, "test_company_5_daily_false_alarms": 9.666666666666666, "test_company_6_daily_false_alarms": 0.0, "test_company_7_daily_false_alarms": 3.0, "test_company_8_daily_false_alarms": 0.0}, "training_counts": {"positive_events": 23, "negative_events": 81, "labeled_windows": 1206}, "promoted_at": null}, {"task": "article_relevance", "version": "article-relevance-csv-20260826T014006Z", "status": "production", "base_model": "klue/roberta-base", "metrics": {"validation_accuracy": 0.8974358974358975, "validation_macro_f1": 0.8970674486803518, "validation_precision_filter": 0.8448275862068966, "validation_recall_filter": 0.9423076923076923, "validation_precision_normal": 0.9491525423728814, "validation_recall_normal": 0.8615384615384616, "validation_confusion_matrix": [[56, 9], [3, 49]], "test_accuracy": 0.9051724137931034, "test_macro_f1": 0.9045981308411215, "test_precision_filter": 0.8571428571428571, "test_recall_filter": 0.9411764705882353, "test_precision_normal": 0.95, "test_recall_normal": 0.8769230769230769, "test_confusion_matrix": [[57, 8], [3, 48]]}, "training_counts": {"validation": {"total": 117}, "test": {"total": 116}, "train": {"total": 539}}, "promoted_at": "2026-08-26T13:20:01.772182+09:00"}, {"task": "isolation_forest", "version": "iforest-20260826T034154Z", "status": "production", "base_model": null, "metrics": {"training_windows": 1400, "excluded_confirmed_risk_windows": 233, "score_p95": -0.019384724096717564, "score_p99": 0.04838862906339898}, "training_counts": {"windows": 1400, "companies": 10}, "promoted_at": "2026-08-26T12:41:54.807743+09:00"}, {"task": "topical_relevance", "version": "topical-relevance-csv-20260826T043300Z", "status": "production", "base_model": "klue/roberta-base", "metrics": {"validation_accuracy": 0.6712328767123288, "validation_macro_f1": 0.6681818181818182, "validation_precision_relevant": 0.525, "validation_recall_relevant": 0.8076923076923077, "validation_precision_irrelevant": 0.8484848484848485, "validation_recall_irrelevant": 0.5957446808510638, "validation_confusion_matrix": [[28, 19], [5, 21]], "test_accuracy": 0.6666666666666666, "test_macro_f1": 0.6657158138705652, "test_precision_relevant": 0.5227272727272727, "test_recall_relevant": 0.8518518518518519, "test_precision_irrelevant": 0.8709677419354839, "test_recall_irrelevant": 0.5625, "test_confusion_matrix": [[27, 21], [4, 23]]}, "training_counts": {"validation": {"total": 73}, "test": {"total": 75}, "train": {"total": 343}}, "promoted_at": "2026-08-26T13:36:53.108924+09:00"}, {"task": "risk_detector", "version": "lightgbm_auto_v3", "status": "production", "base_model": null, "metrics": {"source": "exports"}, "training_counts": {}, "promoted_at": "2026-08-28T17:16:06.466730+09:00"}, {"task": "company_relevance_reranker", "version": "company-reranker-20260903T013454Z", "status": "production", "base_model": "BAAI/bge-reranker-v2-m3", "metrics": {"human_validation": {"total": 146, "accuracy": 0.7876712328767124, "f1_relevant": 0.6436781609195402, "precision_relevant": 0.6363636363636364, "recall_relevant": 0.6511627906976745, "precision_irrelevant": 0.8529411764705882, "recall_irrelevant": 0.8446601941747572, "pr_auc": 0.6710444805715841, "confusion_matrix": [[87, 16], [15, 28]], "roc_auc": 0.8258071799503273}, "unseen_company_validation": {"total": 130, "accuracy": 0.7538461538461538, "f1_relevant": 0.3333333333333333, "precision_relevant": 0.3333333333333333, "recall_relevant": 0.3333333333333333, "precision_irrelevant": 0.8490566037735849, "recall_irrelevant": 0.8490566037735849, "pr_auc": 0.3205788777031715, "confusion_matrix": [[90, 16], [16, 8]], "roc_auc": 0.6908411949685535}, "unseen_company_test": {"total": 604, "accuracy": 0.7913907284768212, "f1_relevant": 0.7260869565217392, "precision_relevant": 0.8391959798994975, "recall_relevant": 0.6398467432950191, "precision_irrelevant": 0.7679012345679013, "recall_irrelevant": 0.9067055393586005, "pr_auc": 0.8158685138556581, "confusion_matrix": [[311, 32], [94, 167]], "roc_auc": 0.8642360063894194}, "human_test": {"total": 75, "accuracy": 0.8133333333333334, "f1_relevant": 0.7307692307692307, "precision_relevant": 0.76, "recall_relevant": 0.7037037037037037, "precision_irrelevant": 0.84, "recall_irrelevant": 0.875, "pr_auc": 0.7728548054011533, "confusion_matrix": [[42, 6], [8, 19]], "roc_auc": 0.8522376543209876}}, "training_counts": {"train": {"total": 3342, "relevant": 1034, "irrelevant_or_incidental": 2308, "companies": 8}, "validation": {"total": 130, "relevant": 24, "irrelevant_or_incidental": 106, "companies": 2}, "test": {"total": 604, "relevant": 261, "irrelevant_or_incidental": 343, "companies": 2}, "human_train": {"total": 270, "relevant": 106, "irrelevant_or_incidental": 164, "companies": 7}, "human_validation": {"total": 146, "relevant": 43, "irrelevant_or_incidental": 103, "companies": 9}, "human_test": {"total": 75, "relevant": 27, "irrelevant_or_incidental": 48, "companies": 9}}, "promoted_at": "2026-09-03T10:59:16.353448+09:00"}]}};
+
+function bar(container, series, opts) {
+  const { labels, groups, colors, unit } = opts;
+  const w = 900, barH = 22, gap = 10, groupGap = 26, leftPad = 190, rightPad = 60, topPad = 8;
+  const n = labels.length, g = groups.length;
+  const groupH = g * (barH + gap) + groupGap;
+  const h = topPad*2 + n * groupH;
+  let max = 0;
+  series.forEach(row => row.forEach(v => { if (v !== null && v > max) max = v; }));
+  max = Math.max(max, 0.01) * 1.12;
+  const scaleW = w - leftPad - rightPad;
+  let svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" xmlns="http://www.w3.org/2000/svg">`;
+  labels.forEach((label, li) => {
+    const y0 = topPad + li * groupH;
+    svg += `<text x="${leftPad-12}" y="${y0 + (groupH-groupGap)/2 + 4}" text-anchor="end" font-size="13" fill="#1a1d23" font-weight="600">${label}</text>`;
+    groups.forEach((gname, gi) => {
+      const v = series[li][gi];
+      const y = y0 + gi * (barH + gap);
+      const bw = v === null ? 0 : (v / max) * scaleW;
+      svg += `<rect x="${leftPad}" y="${y}" width="${scaleW}" height="${barH}" fill="#f1f2f4"/>`;
+      if (v !== null) {
+        svg += `<rect x="${leftPad}" y="${y}" width="${bw}" height="${barH}" fill="${colors[gi]}" rx="3"/>`;
+        svg += `<text x="${leftPad + bw + 8}" y="${y + barH/2 + 4}" font-size="12" fill="#1a1d23">${(v*100).toFixed(1)}${unit||'%'}</text>`;
+      } else {
+        svg += `<text x="${leftPad + 8}" y="${y + barH/2 + 4}" font-size="12" fill="#9aa1ab">N/A</text>`;
+      }
+    });
+  });
+  svg += `</svg>`;
+  document.getElementById(container).innerHTML = svg;
+}
+
+function countBar(container, rows, opts) {
+  const { key, valueKey, color, w=900, barH=24, gap=10, leftPad=230, rightPad=90 } = opts;
+  const max = Math.max(...rows.map(r => r[valueKey])) * 1.12;
+  const h = rows.length * (barH+gap) + 10;
+  let svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" xmlns="http://www.w3.org/2000/svg">`;
+  rows.forEach((r, i) => {
+    const y = i*(barH+gap)+5;
+    const bw = (r[valueKey]/max) * (w-leftPad-rightPad);
+    svg += `<text x="${leftPad-12}" y="${y+barH/2+4}" text-anchor="end" font-size="12" fill="#1a1d23">${r[key]}</text>`;
+    svg += `<rect x="${leftPad}" y="${y}" width="${w-leftPad-rightPad}" height="${barH}" fill="#f1f2f4"/>`;
+    svg += `<rect x="${leftPad}" y="${y}" width="${bw}" height="${barH}" fill="${color}" rx="3"/>`;
+    svg += `<text x="${leftPad+bw+8}" y="${y+barH/2+4}" font-size="12" fill="#1a1d23">${r[valueKey].toLocaleString()}</text>`;
+  });
+  svg += `</svg>`;
+  document.getElementById(container).innerHTML = svg;
+}
+
+// 1) relevance before/after
+{
+  const b = DATA.relevance_and_ads.relevance_before_fix;
+  const a = DATA.relevance_and_ads.relevance_after_fix;
+  bar('chart-relevance',
+    [[b.precision,a.precision],[b.recall,a.recall],[b.accuracy,a.accuracy],[b.auc,a.auc]],
+    { labels: ['정밀도','재현율','정확도','AUC'], groups:['old','new'], colors:['#b9cbf0','#3b6fd1'] });
+}
+// 2) ads
+{
+  const ad = DATA.relevance_and_ads.advertising_current;
+  bar('chart-ads',
+    [[ad.precision],[ad.recall],[ad.auc]],
+    { labels: ['정밀도','재현율','AUC'], groups:['cur'], colors:['#d64545'] });
+}
+// 3) queue
+{
+  const rows = DATA.review_queue.by_decision_reason.map(r => ({ label: `${r.decision} / ${r.reason}`, n: r.n }));
+  countBar('chart-queue', rows, { key:'label', valueKey:'n', color:'#7a5cd6' });
+}
+// 4) risk status
+{
+  const rows = DATA.risk_events.by_status_severity.map(r => ({ label: `${r.status} / ${r.severity}`, n: r.n }));
+  countBar('chart-risk-status', rows, { key:'label', valueKey:'n', color:'#3b6fd1', leftPad:200 });
+}
+{
+  const rows = DATA.risk_events.by_primary_type.map(r => ({ label: r.primary_type, n: r.n }));
+  countBar('chart-risk-type', rows, { key:'label', valueKey:'n', color:'#1f9d55', leftPad:170 });
+}
+// 5) draft verify
+{
+  const rows = DATA.response_drafts.by_verify_status.map(r => ({ label: r.verify_status || '(기록없음)', n: r.n }));
+  countBar('chart-draft-verify', rows, { key:'label', valueKey:'n', color:'#d68a1f', leftPad:140, w:520 });
+}
+
+// 6) model cards
+{
+  const nice = {
+    company_relevance_reranker: { title: '관련성 리랭커 (company_reranker)', desc: 'BAAI/bge-reranker-v2-m3 기반, 현재 필터 1순위 모델' },
+    article_relevance: { title: '구 관련성 분류기 (klue-roberta)', desc: '리랭커 도입 후 폴백 경로로만 사용됨' },
+    topical_relevance: { title: 'topical_relevance (동명이인 가드)', desc: '"무관" 확신할 때만 감점하는 안전장치' },
+    isolation_forest: { title: 'IsolationForest 이상탐지', desc: '분류 지표 없음, 점수 백분위만 존재' },
+    risk_detector: { title: 'LightGBM 위험탐지', desc: '' },
+  };
+  const el = document.getElementById('model-cards');
+  DATA.model_registry.model_versions.forEach(m => {
+    const info = nice[m.task] || { title: m.task, desc: '' };
+    const badge = m.status === 'production' ? '<span class="badge production">production</span>' : '<span class="badge candidate">candidate</span>';
+    let lines = [];
+    const mm = m.metrics || {};
+    if (m.task === 'company_relevance_reranker') {
+      const hv = mm.human_test || mm.human_validation;
+      if (hv) lines.push(`human_test 정밀도 ${(hv.precision_relevant*100).toFixed(1)}% · 재현율 ${(hv.recall_relevant*100).toFixed(1)}% · AUC ${hv.roc_auc.toFixed(3)}`);
+      if (mm.unseen_company_validation) lines.push(`미학습 기업: 정밀도/재현율 ${(mm.unseen_company_validation.precision_relevant*100).toFixed(1)}% (급락)`);
+    } else if (m.task === 'article_relevance') {
+      lines.push(`test 정확도 ${(mm.test_accuracy*100).toFixed(1)}% · F1 ${(mm.test_macro_f1*100).toFixed(1)}%`);
+    } else if (m.task === 'topical_relevance') {
+      lines.push(`test 정밀도(관련) ${(mm.test_precision_relevant*100).toFixed(1)}% · 재현율 ${(mm.test_recall_relevant*100).toFixed(1)}%`);
+    } else if (m.task === 'isolation_forest') {
+      lines.push(`score p95 ${mm.score_p95.toFixed(4)} / p99 ${mm.score_p99.toFixed(4)} (분류 지표 없음)`);
+    } else if (m.task === 'risk_detector') {
+      if (mm.source === 'exports') {
+        lines.push(`저장된 검증 지표 없음 (exports로 반입된 아티팩트)`);
+      } else {
+        lines.push(`train recall ${(mm.train_recall*100).toFixed(1)}% / validation recall ${(mm.validation_recall*100).toFixed(1)}%`);
+        lines.push(`※ 시간순 분할이라 validation/test 양성이 0건 — 이 숫자는 신뢰 불가 (사람 라벨 out-of-fold 재측정: AUC 0.9956 / recall 83.7%, HUMAN_LABELS.md 참고)`);
+      }
+    }
+    el.innerHTML += `<div class="card model-card">
+      <h4>${info.title} ${badge}</h4>
+      <div class="path">${m.version}${m.base_model ? ' · ' + m.base_model : ''}</div>
+      ${lines.map(l => `<div style="font-size:13px;margin-top:4px;">${l}</div>`).join('')}
+      ${info.desc ? `<div style="font-size:12px;color:var(--sub);margin-top:8px;">${info.desc}</div>` : ''}
+    </div>`;
+  });
+}
+</script>
+</body>
+</html>

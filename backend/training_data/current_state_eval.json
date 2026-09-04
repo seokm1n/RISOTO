@@ -1,0 +1,561 @@
+{
+  "relevance_and_ads": {
+    "relevance_before_fix": {
+      "n": 578,
+      "tp": 97,
+      "fp": 172,
+      "fn": 61,
+      "tn": 248,
+      "precision": 0.3606,
+      "recall": 0.6139,
+      "accuracy": 0.5969,
+      "auc": 0.729
+    },
+    "relevance_after_fix": {
+      "n": 578,
+      "tp": 92,
+      "fp": 43,
+      "fn": 66,
+      "tn": 377,
+      "precision": 0.6815,
+      "recall": 0.5823,
+      "accuracy": 0.8114,
+      "auc": 0.8096
+    },
+    "advertising_current": {
+      "n": 578,
+      "tp": 25,
+      "fp": 8,
+      "fn": 85,
+      "tn": 460,
+      "precision": 0.7576,
+      "recall": 0.2273,
+      "accuracy": 0.8391,
+      "auc": 0.6398
+    },
+    "skipped_rows": 0,
+    "total_rows": 600,
+    "body_only_examples": [
+      {
+        "title": "펩시 제로슈거 라임향",
+        "label": "irrelevant",
+        "old_score": 0.004971,
+        "new_score": 0.25225,
+        "old_decision": "review_required",
+        "new_decision": "review_required"
+      },
+      {
+        "title": "[팝업] HK LUNAR 오픈 하우스",
+        "label": "irrelevant",
+        "old_score": 0.608909,
+        "new_score": 0.252293,
+        "old_decision": "review_required",
+        "new_decision": "rejected"
+      },
+      {
+        "title": "새로워진 아이코스 일루마 i 원 키트",
+        "label": "irrelevant",
+        "old_score": 0.098499,
+        "new_score": 0.252304,
+        "old_decision": "rejected",
+        "new_decision": "rejected"
+      },
+      {
+        "title": "휴온스글로벌 주가 기세등등… 자회사 톡신 제제 글로벌 승인 기대감 부...",
+        "label": "irrelevant",
+        "old_score": 0.940414,
+        "new_score": 0.252315,
+        "old_decision": "accepted",
+        "new_decision": "rejected"
+      },
+      {
+        "title": "하츠투하츠, '15-LOVE' 후속 활동 돌입…테니스 콘셉트 제대로 살렸다",
+        "label": "irrelevant",
+        "old_score": 0.063954,
+        "new_score": 0.252535,
+        "old_decision": "rejected",
+        "new_decision": "rejected"
+      }
+    ]
+  },
+  "review_queue": {
+    "by_decision_reason": [
+      {
+        "decision": "rejected",
+        "reason": "irrelevant",
+        "n": 52666,
+        "avg_age_hours": "83.5810713209027329"
+      },
+      {
+        "decision": "accepted",
+        "reason": "accepted",
+        "n": 34389,
+        "avg_age_hours": "109.5389700861081628"
+      },
+      {
+        "decision": "rejected",
+        "reason": "duplicate",
+        "n": 9060,
+        "avg_age_hours": "48.4665401995266434"
+      },
+      {
+        "decision": "accepted",
+        "reason": "duplicate",
+        "n": 8705,
+        "avg_age_hours": "78.2616736874784926"
+      },
+      {
+        "decision": "review_required",
+        "reason": "irrelevant",
+        "n": 5185,
+        "avg_age_hours": "86.1680308919940534"
+      },
+      {
+        "decision": "rejected",
+        "reason": "advertisement",
+        "n": 1065,
+        "avg_age_hours": "29.5247691726025039"
+      },
+      {
+        "decision": "review_required",
+        "reason": "advertisement",
+        "n": 365,
+        "avg_age_hours": "83.4671823398926941"
+      }
+    ]
+  },
+  "risk_events": {
+    "total": 6595,
+    "by_status_severity": [
+      {
+        "status": "legacy_candidate",
+        "severity": "critical",
+        "n": 3702
+      },
+      {
+        "status": "closed",
+        "severity": "critical",
+        "n": 2414
+      },
+      {
+        "status": "legacy_candidate",
+        "severity": "warning",
+        "n": 181
+      },
+      {
+        "status": "closed",
+        "severity": "warning",
+        "n": 156
+      },
+      {
+        "status": "legacy_candidate",
+        "severity": "low",
+        "n": 80
+      },
+      {
+        "status": "monitoring",
+        "severity": "critical",
+        "n": 26
+      },
+      {
+        "status": "legacy_candidate",
+        "severity": "medium",
+        "n": 23
+      },
+      {
+        "status": "monitoring",
+        "severity": "warning",
+        "n": 11
+      },
+      {
+        "status": "dismissed",
+        "severity": "warning",
+        "n": 1
+      },
+      {
+        "status": "open",
+        "severity": "critical",
+        "n": 1
+      }
+    ],
+    "by_primary_type": [
+      {
+        "primary_type": "safety_accident",
+        "n": 907
+      },
+      {
+        "primary_type": "legal_regulatory",
+        "n": 822
+      },
+      {
+        "primary_type": "reputation_consumer",
+        "n": 791
+      },
+      {
+        "primary_type": "security_privacy",
+        "n": 703
+      },
+      {
+        "primary_type": "product_quality",
+        "n": 315
+      },
+      {
+        "primary_type": "supply_operations",
+        "n": 264
+      },
+      {
+        "primary_type": "labor_hr",
+        "n": 230
+      },
+      {
+        "primary_type": "financial_governance",
+        "n": 81
+      }
+    ]
+  },
+  "response_drafts": {
+    "by_verify_status": [
+      {
+        "verify_status": "생성완료",
+        "n": 43
+      },
+      {
+        "verify_status": "영향없음_종료",
+        "n": 10
+      },
+      {
+        "verify_status": "검증실패",
+        "n": 7
+      },
+      {
+        "verify_status": null,
+        "n": 4
+      }
+    ],
+    "by_approval_state": [
+      {
+        "approval_state": "draft",
+        "n": 64
+      }
+    ]
+  },
+  "model_registry": {
+    "model_versions": [
+      {
+        "task": "risk_detector",
+        "version": "risk-lgbm-20260904T052405Z",
+        "status": "candidate",
+        "base_model": null,
+        "metrics": {
+          "train_pr_auc": 0.6715183361942292,
+          "train_macro_f1": 0.6373285258897552,
+          "train_f2": 0.7927247769389156,
+          "train_recall": 0.9914163090128756,
+          "train_daily_false_alarms_per_company": 1.5233160621761659,
+          "train_company_1_daily_false_alarms": 3.3157894736842106,
+          "train_company_2_daily_false_alarms": 0.7843137254901961,
+          "train_company_3_daily_false_alarms": 0.0,
+          "train_company_4_daily_false_alarms": 0.0,
+          "train_company_5_daily_false_alarms": 5.846153846153846,
+          "train_company_6_daily_false_alarms": 0.0,
+          "train_company_7_daily_false_alarms": 5.666666666666667,
+          "train_company_8_daily_false_alarms": 0.0,
+          "train_company_9_daily_false_alarms": 0.8205128205128205,
+          "validation_pr_auc": 0.0,
+          "validation_macro_f1": 0.33687943262411346,
+          "validation_f2": 0.0,
+          "validation_recall": 0.0,
+          "validation_daily_false_alarms_per_company": 5.111111111111111,
+          "validation_company_1_daily_false_alarms": 10.5,
+          "validation_company_2_daily_false_alarms": 11.5,
+          "validation_company_3_daily_false_alarms": 0.5,
+          "validation_company_4_daily_false_alarms": 0.0,
+          "validation_company_5_daily_false_alarms": 8.0,
+          "validation_company_6_daily_false_alarms": 0.25,
+          "test_pr_auc": 0.0,
+          "test_macro_f1": 0.3377926421404682,
+          "test_f2": 0.0,
+          "test_recall": 0.0,
+          "test_daily_false_alarms_per_company": 6.466666666666667,
+          "test_company_1_daily_false_alarms": 17.5,
+          "test_company_2_daily_false_alarms": 14.5,
+          "test_company_3_daily_false_alarms": 0.0,
+          "test_company_4_daily_false_alarms": 0.5,
+          "test_company_5_daily_false_alarms": 9.666666666666666,
+          "test_company_6_daily_false_alarms": 0.0,
+          "test_company_7_daily_false_alarms": 3.0,
+          "test_company_8_daily_false_alarms": 0.0
+        },
+        "training_counts": {
+          "positive_events": 23,
+          "negative_events": 81,
+          "labeled_windows": 1206
+        },
+        "promoted_at": null
+      },
+      {
+        "task": "article_relevance",
+        "version": "article-relevance-csv-20260826T014006Z",
+        "status": "production",
+        "base_model": "klue/roberta-base",
+        "metrics": {
+          "validation_accuracy": 0.8974358974358975,
+          "validation_macro_f1": 0.8970674486803518,
+          "validation_precision_filter": 0.8448275862068966,
+          "validation_recall_filter": 0.9423076923076923,
+          "validation_precision_normal": 0.9491525423728814,
+          "validation_recall_normal": 0.8615384615384616,
+          "validation_confusion_matrix": [
+            [
+              56,
+              9
+            ],
+            [
+              3,
+              49
+            ]
+          ],
+          "test_accuracy": 0.9051724137931034,
+          "test_macro_f1": 0.9045981308411215,
+          "test_precision_filter": 0.8571428571428571,
+          "test_recall_filter": 0.9411764705882353,
+          "test_precision_normal": 0.95,
+          "test_recall_normal": 0.8769230769230769,
+          "test_confusion_matrix": [
+            [
+              57,
+              8
+            ],
+            [
+              3,
+              48
+            ]
+          ]
+        },
+        "training_counts": {
+          "validation": {
+            "total": 117
+          },
+          "test": {
+            "total": 116
+          },
+          "train": {
+            "total": 539
+          }
+        },
+        "promoted_at": "2026-08-26T13:20:01.772182+09:00"
+      },
+      {
+        "task": "isolation_forest",
+        "version": "iforest-20260826T034154Z",
+        "status": "production",
+        "base_model": null,
+        "metrics": {
+          "training_windows": 1400,
+          "excluded_confirmed_risk_windows": 233,
+          "score_p95": -0.019384724096717564,
+          "score_p99": 0.04838862906339898
+        },
+        "training_counts": {
+          "windows": 1400,
+          "companies": 10
+        },
+        "promoted_at": "2026-08-26T12:41:54.807743+09:00"
+      },
+      {
+        "task": "topical_relevance",
+        "version": "topical-relevance-csv-20260826T043300Z",
+        "status": "production",
+        "base_model": "klue/roberta-base",
+        "metrics": {
+          "validation_accuracy": 0.6712328767123288,
+          "validation_macro_f1": 0.6681818181818182,
+          "validation_precision_relevant": 0.525,
+          "validation_recall_relevant": 0.8076923076923077,
+          "validation_precision_irrelevant": 0.8484848484848485,
+          "validation_recall_irrelevant": 0.5957446808510638,
+          "validation_confusion_matrix": [
+            [
+              28,
+              19
+            ],
+            [
+              5,
+              21
+            ]
+          ],
+          "test_accuracy": 0.6666666666666666,
+          "test_macro_f1": 0.6657158138705652,
+          "test_precision_relevant": 0.5227272727272727,
+          "test_recall_relevant": 0.8518518518518519,
+          "test_precision_irrelevant": 0.8709677419354839,
+          "test_recall_irrelevant": 0.5625,
+          "test_confusion_matrix": [
+            [
+              27,
+              21
+            ],
+            [
+              4,
+              23
+            ]
+          ]
+        },
+        "training_counts": {
+          "validation": {
+            "total": 73
+          },
+          "test": {
+            "total": 75
+          },
+          "train": {
+            "total": 343
+          }
+        },
+        "promoted_at": "2026-08-26T13:36:53.108924+09:00"
+      },
+      {
+        "task": "risk_detector",
+        "version": "lightgbm_auto_v3",
+        "status": "production",
+        "base_model": null,
+        "metrics": {
+          "source": "exports"
+        },
+        "training_counts": {},
+        "promoted_at": "2026-08-28T17:16:06.466730+09:00"
+      },
+      {
+        "task": "company_relevance_reranker",
+        "version": "company-reranker-20260903T013454Z",
+        "status": "production",
+        "base_model": "BAAI/bge-reranker-v2-m3",
+        "metrics": {
+          "human_validation": {
+            "total": 146,
+            "accuracy": 0.7876712328767124,
+            "f1_relevant": 0.6436781609195402,
+            "precision_relevant": 0.6363636363636364,
+            "recall_relevant": 0.6511627906976745,
+            "precision_irrelevant": 0.8529411764705882,
+            "recall_irrelevant": 0.8446601941747572,
+            "pr_auc": 0.6710444805715841,
+            "confusion_matrix": [
+              [
+                87,
+                16
+              ],
+              [
+                15,
+                28
+              ]
+            ],
+            "roc_auc": 0.8258071799503273
+          },
+          "unseen_company_validation": {
+            "total": 130,
+            "accuracy": 0.7538461538461538,
+            "f1_relevant": 0.3333333333333333,
+            "precision_relevant": 0.3333333333333333,
+            "recall_relevant": 0.3333333333333333,
+            "precision_irrelevant": 0.8490566037735849,
+            "recall_irrelevant": 0.8490566037735849,
+            "pr_auc": 0.3205788777031715,
+            "confusion_matrix": [
+              [
+                90,
+                16
+              ],
+              [
+                16,
+                8
+              ]
+            ],
+            "roc_auc": 0.6908411949685535
+          },
+          "unseen_company_test": {
+            "total": 604,
+            "accuracy": 0.7913907284768212,
+            "f1_relevant": 0.7260869565217392,
+            "precision_relevant": 0.8391959798994975,
+            "recall_relevant": 0.6398467432950191,
+            "precision_irrelevant": 0.7679012345679013,
+            "recall_irrelevant": 0.9067055393586005,
+            "pr_auc": 0.8158685138556581,
+            "confusion_matrix": [
+              [
+                311,
+                32
+              ],
+              [
+                94,
+                167
+              ]
+            ],
+            "roc_auc": 0.8642360063894194
+          },
+          "human_test": {
+            "total": 75,
+            "accuracy": 0.8133333333333334,
+            "f1_relevant": 0.7307692307692307,
+            "precision_relevant": 0.76,
+            "recall_relevant": 0.7037037037037037,
+            "precision_irrelevant": 0.84,
+            "recall_irrelevant": 0.875,
+            "pr_auc": 0.7728548054011533,
+            "confusion_matrix": [
+              [
+                42,
+                6
+              ],
+              [
+                8,
+                19
+              ]
+            ],
+            "roc_auc": 0.8522376543209876
+          }
+        },
+        "training_counts": {
+          "train": {
+            "total": 3342,
+            "relevant": 1034,
+            "irrelevant_or_incidental": 2308,
+            "companies": 8
+          },
+          "validation": {
+            "total": 130,
+            "relevant": 24,
+            "irrelevant_or_incidental": 106,
+            "companies": 2
+          },
+          "test": {
+            "total": 604,
+            "relevant": 261,
+            "irrelevant_or_incidental": 343,
+            "companies": 2
+          },
+          "human_train": {
+            "total": 270,
+            "relevant": 106,
+            "irrelevant_or_incidental": 164,
+            "companies": 7
+          },
+          "human_validation": {
+            "total": 146,
+            "relevant": 43,
+            "irrelevant_or_incidental": 103,
+            "companies": 9
+          },
+          "human_test": {
+            "total": 75,
+            "relevant": 27,
+            "irrelevant_or_incidental": 48,
+            "companies": 9
+          }
+        },
+        "promoted_at": "2026-09-03T10:59:16.353448+09:00"
+      }
+    ]
+  }
+}

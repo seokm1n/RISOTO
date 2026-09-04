@@ -22,6 +22,7 @@
 | 5 | 법령 기한 매핑표 채우기 | ⚠️ **재진단**: 이미 잘 구축되어 있음. 실제 문제는 다른 곳 |
 | 6 | `case_records` 채우기 | ❌ 미착수 — 별도 세션 필요한 규모의 작업 |
 | 7 | reranker 회귀 테스트 2개 수정 | ✅ 완료 |
+| 8 | 관련성 필터 title/body 가중치 수정 + 전체 성능 실측 | ✅ 완료 — 그래프 리포트 참고 |
 | - | (발견) company_reranker 마운트 경로 문제 | ✅ 긴급 수정 완료 |
 
 ---
@@ -182,6 +183,32 @@ out-of-fold 방식으로 제대로 측정한 결과입니다 — 위 문제(시�
 
 ---
 
+## 8. (신규, 같은 날 후속) 관련성 필터 title/body 가중치 수정 + 전체 성능 실측
+
+1번 항목 끝에 추가된 팀원의 `HUMAN_LABELS.md` 실측(정밀도 48.7%, 통과분의 60%가 본문 전용
+언급)을 바탕으로 `article_filtering.py::classify_article`을 고쳤습니다. 제목에 기업/제품명이
+없고 본문에만 있는 경우, reranker 점수를 그대로 믿지 않고 0.55로 캡을 씌워 자동 통과 대신
+`review_required`로 보내게 했습니다 (`wongyeong` 브랜치, 커밋 `ae21e44`).
+
+이 수정이 실제로 효과가 있는지 같은 578건을 현재 코드로 재실행해서 확인했고, 겸사겸사 지금까지
+한 번도 실측 안 된 광고 탐지, review_required 적체, 위험 이벤트/응답 초안 현황, 운영 중인 전체
+모델 지표까지 한 번에 뽑아서 그래프로 정리했습니다.
+
+**결과 요약** (그래프 전체는 `docs/2026-09-04-performance-snapshot.html` 참고):
+
+- 관련성 필터: 정밀도 36.1%→68.2%, 정확도 59.7%→81.1%, AUC 0.729→0.810. 재현율은 61.4%→58.2%로
+  소폭만 하락. (주의: 이 문서의 "36.1%"는 이번 재측정에서 relevant만 양성/incidental+irrelevant를
+  음성으로 둔 엄격한 기준이라 팀원이 보고한 48.7%와 분모가 달라 직접 비교는 어렵습니다. 방법론은
+  같게 두고 수정 전/후만 비교했습니다.)
+- 광고 탐지 최초 실측: 정밀도 75.8% / **재현율 22.7%** — 광고 기사 10건 중 8건이 그냥 통과합니다.
+  AD_PATTERNS 가중치가 실측 없이 정해진 값이라 다음 손볼 후보입니다.
+- review_required 큐: 관련성 사유로만 5,185건이 평균 86시간째 대기 중. 이 테이블(`article_filter_results`)에는
+  "처리됨" 표시 컬럼이 없어서 실제로 사람이 소진하고 있는지 코드로는 확인 불가 — 확인 필요.
+- 응답 초안: 64건 중 승인/반려된 것 **0건**, 검증 실패 7건(11%)은 표시만 되고 그대로 나감 (item #4가
+  왜 필요한지 보여주는 숫자라 이번엔 그대로 남겨둠).
+- production LightGBM(`lightgbm_auto_v3`)은 `model_versions.metrics`에 저장된 검증 지표가
+  전혀 없습니다 — exports로 반입만 되고 측정된 적이 없는 상태.
+
 ## 오늘 변경된 파일
 
 ```
@@ -190,6 +217,10 @@ backend/app/services/story_risk.py          (지난 세션: severity 리셋 버�
 backend/app/services/risk_ground_truth.py   (지난 세션: severity 리셋 버그 수정)
 frontend/src/features/app/WorkspaceApp.jsx  (지난 세션: 위험 사건 검수 탭 연결)
 backend/tests/test_article_filtering.py     (이번: reranker mock 경로 수정)
+backend/app/services/article_filtering.py   (이번: 본문 전용 언급 relevance cap, wongyeong 브랜치)
+backend/scripts/evaluate_current_state.py   (신규: 관련성/광고/큐/위험/초안/모델 실측 스크립트)
+backend/training_data/current_state_eval.json (신규: 위 스크립트 실행 결과 원본)
+docs/2026-09-04-performance-snapshot.html   (신규: 그래프 포함 공유용 리포트)
 exports/model_artifacts/                    (이번: company-reranker 아티팩트 복구,
                                               risk-lgbm-20260904T052405Z 신규 후보 추가)
 ```
@@ -205,3 +236,7 @@ risk_ground_truth/article_filtering/company_reranker) 통과 확인.
 3. **`case_records`(판례 DB) 착수 여부를 논의해주세요** — 별도 스프린트급 작업입니다.
 4. **response_engine 체크리스트 생성 프롬프트 검토** — 법령 매핑표는 이미 좋은데 생성이 못
    따라가는 상황입니다.
+5. **review_required 큐 처리 흐름을 정해주세요** — 5,185건이 처리 여부 표시조차 없이 쌓여
+   있습니다. 사람이 볼지, 주기적으로 재채점할지 결정이 필요합니다.
+6. **광고 탐지 가중치를 `human_relevance_labels.csv` 기준으로 다시 튜닝해주세요** — 재현율
+   22.7%는 광고 8건 중 8건이 새로 들어와도 대부분 못 잡는다는 뜻입니다.
