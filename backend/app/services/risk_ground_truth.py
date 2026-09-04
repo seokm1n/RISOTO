@@ -98,6 +98,8 @@ def apply_authoritative_risk_label(
 
     if not label.is_risk:
         event.primary_type = None
+        event.risk_probability = 0.0
+        event.severity = "warning"
         event.status = "dismissed"
         event.closed_at = label.event_end or now
         event.consecutive_below = 0

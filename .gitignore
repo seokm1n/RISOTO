@@ -30,6 +30,8 @@ pnpm-debug.log*
 *.log
 *.pid
 backend/local_models/
+backend/model_artifacts/
+backend/ground_truth_labels.sql
 exports/
 
 # IDE and operating system
