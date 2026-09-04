@@ -649,7 +649,7 @@ def process_company_risk_articles(
         from app.services.response_engine import enqueue_response_draft
 
         for event_id in sorted(enqueue_ids):
-            enqueue_response_draft(event_id)
+            enqueue_response_draft(event_id, auto=True)
     return {
         "assessed": assessed,
         "llm_attempted": llm_attempted,
@@ -942,7 +942,7 @@ def rebuild_recent_story_events(
         from app.services.response_engine import enqueue_response_draft
 
         for event_id in active_ids:
-            enqueue_response_draft(event_id)
+            enqueue_response_draft(event_id, auto=True)
     totals["drafts_enqueued"] = len(active_ids) if enqueue_drafts else 0
     return totals
 
