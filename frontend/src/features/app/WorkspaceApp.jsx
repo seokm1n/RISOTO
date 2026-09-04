@@ -21,15 +21,14 @@ import MainPage from "../home/MainPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
 import ArticleReviewPage from "../reviews/ArticleReviewPage";
-import RiskManagementPage from "../risk-management/RiskManagementPage";
 import { AppNoticeDialog, useAppConfirm } from "../../shared/components";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
+import { clearSelectedCompanyId } from "../../shared/selectedCompanySession";
 
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "AI 리스크 브리핑", path: "/main" },
   { id: "statistics", label: "분석 파이프라인", path: "/analysis/collection" },
-  { id: "risk-management", label: "대응", path: "/risk-management" },
   { id: "collection", label: "수집 관리", path: "/collection" },
   { id: "companies", label: "기업 관리", path: "/companies" },
 ];
@@ -92,7 +91,8 @@ function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
 }
 
 function RiskManagementRoute() {
-  return <RiskManagementPage canReview />;
+  const location = useLocation();
+  return <Navigate to={`/analysis/response${location.search}`} replace />;
 }
 
 function LegacyAnalysisStatisticsRedirect() {
@@ -195,7 +195,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     const params = new URLSearchParams({ view: "history", days: "all" });
     if (companyId) params.set("companyId", String(companyId));
     if (riskEventId) params.set("eventId", String(riskEventId));
-    goTo(`/risk-management?${params}`, options);
+    goTo(`/analysis/response?${params}`, options);
   }, [goTo]);
 
   const requestLogout = async () => {
@@ -210,7 +210,8 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       if (!confirmed) return;
     }
     if (isAdmin) {
-      onLogout();
+      await onLogout();
+      clearSelectedCompanyId();
       return;
     }
     setLogoutNoticeOpen(true);
@@ -220,6 +221,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     setLoggingOut(true);
     try {
       await onLogout();
+      clearSelectedCompanyId();
     } finally {
       setLoggingOut(false);
     }
@@ -276,7 +278,6 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
       <Route path="/companies/main" element={<AnalysisStatisticsRoute />} />
-      <Route path="/analysis/response" element={<Navigate to="/risk-management" replace />} />
       <Route path="/analysis/:stage" element={<AnalysisPipelinePage />} />
       <Route path="/risk-management" element={<RiskManagementRoute />} />
       <Route path="/companies/overview" element={<Navigate to="/companies/main" replace />} />

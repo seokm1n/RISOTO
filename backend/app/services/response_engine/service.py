@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import html
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
@@ -47,6 +48,8 @@ MAX_FEEDBACK_RETRIES = 1
 
 logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="response-engine")
+_active_job_ids: set[int] = set()
+_active_jobs_lock = threading.Lock()
 
 
 def _detection_scores(event: RiskEvent) -> dict[str, float] | str:
@@ -601,6 +604,7 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False, auto: bool =
     # 끄지 않는다. 생성 경로가 story_risk와 risk_analysis 두 갈래이고 서로 배타적이라
     # (한쪽을 끄면 다른 쪽이 켜진다) 각 호출부가 아니라 여기 한 곳에서 판단한다.
     if auto and not get_settings().response_draft_auto_enabled:
+        _set_status("deferred")
         logger.info(
             "대응방안 자동 생성이 꺼져 있어 건너뜁니다 (risk_event=%s). "
             "RESPONSE_DRAFT_AUTO_ENABLED=true로 켜거나 수동 생성을 쓰세요.",
@@ -608,34 +612,81 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False, auto: bool =
         )
         return
 
+    # 같은 프로세스에서는 DB 종류와 무관하게 중복 작업을 막는다. PostgreSQL의
+    # advisory lock은 여러 API 프로세스 사이의 중복까지 추가로 막는다.
+    with _active_jobs_lock:
+        if risk_event_id in _active_job_ids:
+            logger.info("response draft 생성이 이미 진행 중입니다 (risk_event=%s)", risk_event_id)
+            return
+        _active_job_ids.add(risk_event_id)
+
     def _run() -> None:
-        lock_key = f"response-draft:{risk_event_id}"
-        with SessionLocal() as db:
-            if db.get_bind().dialect.name == "postgresql":
-                acquired = db.scalar(
-                    text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"),
-                    {"key": lock_key},
-                )
-                if not acquired:
-                    logger.info(
-                        "response draft 생성 건너뜀 - 다른 워커가 처리 중 (risk_event=%s)",
-                        risk_event_id,
-                    )
-                    return
-            else:
-                acquired = False
-            try:
-                _set_status("generating")
-                generate_response_draft(risk_event_id, force=force)
-            except Exception as exc:
-                logger.exception("response draft 생성 실패 (risk_event=%s)", risk_event_id)
-                _set_status("failed", f"{type(exc).__name__}: 대응방안 자동 생성에 실패했습니다.")
-            finally:
-                if acquired:
-                    db.execute(
-                        text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"),
+        try:
+            lock_key = f"response-draft:{risk_event_id}"
+            with SessionLocal() as db:
+                if db.get_bind().dialect.name == "postgresql":
+                    acquired = db.scalar(
+                        text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"),
                         {"key": lock_key},
                     )
-                    db.commit()
+                    if not acquired:
+                        logger.info(
+                            "response draft 생성 건너뜀 - 다른 워커가 처리 중 (risk_event=%s)",
+                            risk_event_id,
+                        )
+                        return
+                else:
+                    acquired = False
+                try:
+                    _set_status("generating")
+                    generate_response_draft(risk_event_id, force=force)
+                except Exception as exc:
+                    logger.exception("response draft 생성 실패 (risk_event=%s)", risk_event_id)
+                    _set_status("failed", f"{type(exc).__name__}: 대응방안 자동 생성에 실패했습니다.")
+                finally:
+                    if acquired:
+                        db.execute(
+                            text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"),
+                            {"key": lock_key},
+                        )
+                        db.commit()
+        finally:
+            with _active_jobs_lock:
+                _active_job_ids.discard(risk_event_id)
 
-    _executor.submit(_run)
+    try:
+        _executor.submit(_run)
+    except Exception:
+        with _active_jobs_lock:
+            _active_job_ids.discard(risk_event_id)
+        raise
+
+
+def recover_interrupted_response_drafts() -> int:
+    """서버 중단으로 DB에 남은 생성 상태를 시작 시 다시 처리한다."""
+    active_statuses = ("open", "monitoring", "acknowledged")
+    with SessionLocal() as db:
+        events = list(db.scalars(
+            select(RiskEvent).where(
+                RiskEvent.event_source == "story_v2",
+                RiskEvent.status.in_(active_statuses),
+                RiskEvent.response_generation_status.in_(("pending", "generating")),
+            ).order_by(
+                (RiskEvent.severity == "critical").desc(),
+                RiskEvent.risk_probability.desc().nullslast(),
+            )
+        ))
+        if not get_settings().response_draft_auto_enabled:
+            for event in events:
+                event.response_generation_status = "deferred"
+                event.response_generation_error = None
+            db.commit()
+            return len(events)
+        event_ids = [event.id for event in events]
+        for event in events:
+            event.response_generation_status = "pending"
+            event.response_generation_error = None
+        db.commit()
+    for event_id in event_ids:
+        enqueue_response_draft(event_id, auto=True)
+    return len(event_ids)
