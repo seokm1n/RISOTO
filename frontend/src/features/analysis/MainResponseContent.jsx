@@ -49,6 +49,25 @@ function bandsOf(checklist) {
   return buckets.filter((b) => b.items.length > 0);
 }
 
+// 판단 근거는 수치가 몰려 있는 대목이라 접어 둔다. 위쪽 설명은 쉬운 말로 읽히게 두고,
+// 숫자로 확인하고 싶은 사람만 펼치게 한다.
+function JudgmentBasis({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="draft-basis">
+      <button
+        type="button"
+        className="draft-inline-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {open ? "판단 근거 접기" : "판단 근거 (수치) 보기"}
+      </button>
+      {open && <p className="draft-body">{text}</p>}
+    </div>
+  );
+}
+
 // 1. 현재 상황 및 대응 방향
 function SituationSection({ report }) {
   const points = report?.summary_points ?? [];
@@ -68,7 +87,7 @@ function SituationSection({ report }) {
           ))}
         </ul>
       )}
-      {report?.judgment_basis && <p className="draft-body">{report.judgment_basis}</p>}
+      {report?.judgment_basis && <JudgmentBasis text={report.judgment_basis} />}
 
       {directions.length > 0 && (
         <div className="draft-directions">
@@ -311,7 +330,10 @@ export default function MainResponseContent({ content }) {
       {scenarios.length > 1 && (
         <div className="draft-stance-tabs" role="tablist">
           {scenarios.map((sc, i) => {
-            const label = STANCE_LABELS[sc.stance] ?? sc.stance ?? `${i + 1}번째 안`;
+            // 모델이 지은 짧은 이름을 쓴다. 예전 초안에는 이 필드가 없으므로 stance
+            // 라벨로 폴백한다 - 없다고 탭이 비면 무엇을 고르는지 알 수 없다.
+            const headline =
+              sc.report?.scenario_headline || STANCE_LABELS[sc.stance] || sc.stance;
             return (
               <button
                 type="button"
@@ -321,7 +343,8 @@ export default function MainResponseContent({ content }) {
                 aria-selected={i === active}
                 onClick={() => setActive(i)}
               >
-                {label}
+                <span className="draft-stance-no">{i + 1}안</span>
+                {headline && <span className="draft-stance-name">{headline}</span>}
                 {sc.stance && sc.stance === selected && <em>기본</em>}
               </button>
             );

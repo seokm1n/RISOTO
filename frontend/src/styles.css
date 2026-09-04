@@ -2009,3 +2009,20 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .draft-appendix .scenario-toggle { justify-self: start; border: 1px solid #cbc8bd; border-radius: 999px; background: transparent; color: #746d68; padding: 5px 13px; font-size: .66rem; font-weight: 800; cursor: pointer; }
 .draft-appendix .scenario-toggle:hover, .draft-appendix .scenario-toggle[aria-expanded="true"] { border-color: #a84f32; color: #a84f32; }
 .draft-appendix-body { display: grid; gap: 13px; }
+
+/* 자동 줄바꿈. 긴 한국어 문장·URL·법령명이 컨테이너를 밀어내 가로 스크롤이 생기던 것을
+   막는다. min-width:0이 없으면 grid/flex 자식이 내용 너비만큼 벌어져 줄바꿈이 안 걸린다. */
+.response-draft-v3, .response-draft-hold { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.response-draft-v3 *, .response-draft-hold * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.response-draft-v3 p, .response-draft-v3 li, .response-draft-v3 strong, .response-draft-v3 span,
+.response-draft-hold p, .response-draft-hold dd { white-space: normal; }
+.response-draft-v3 a { overflow-wrap: anywhere; }
+
+/* 관점 탭. "1안 · 쉬운 이름" 두 조각으로 읽히게 한다. */
+.draft-stance-no { font-variant-numeric: tabular-nums; opacity: .7; }
+.draft-stance-name { font-weight: 800; }
+
+/* 본문 안에 끼우는 작은 펼치기 버튼(판단 근거 등). 카드 버튼보다 눈에 덜 띄어야 한다. */
+.draft-inline-toggle { justify-self: start; border: 0; background: transparent; color: #a84f32; padding: 0; font-size: .66rem; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.draft-inline-toggle:hover { color: #8e3f26; }
+.response-draft-v3 .draft-basis { display: grid; gap: 6px; justify-items: start; }
