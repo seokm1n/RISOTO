@@ -3,7 +3,9 @@ import { useNavigate, useParams, useSearchParams } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
 import { Pagination, PanelTitle } from "../../shared/components";
+import { resolveSelectedCompany, setSelectedCompanyId as rememberSelectedCompanyId } from "../../shared/selectedCompanySession";
 import { CollectedArticlesDialog } from "../collection/CollectionPage";
+import RiskManagementPage from "../risk-management/RiskManagementPage";
 import {
   DATA_QUALITY_LABELS,
   FILTER_REASON_LABELS,
@@ -26,12 +28,14 @@ const STAGES = [
   { id: "stories", step: "03", label: "스토리 군집화", kicker: "STORY CLUSTERING", description: "여러 출처의 유사 기사가 어떤 하나의 스토리로 묶였는지 확인합니다." },
   { id: "sentiment", step: "04", label: "감성분석", kicker: "SENTIMENT ANALYSIS", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
   { id: "risk", step: "05", label: "위험판정", kicker: "RISK DETECTION", description: "스토리별 위험도와 유형, 사건 발생 근거를 확인합니다." },
+  { id: "response", step: "06", label: "대응", kicker: "RESPONSE MANAGEMENT", description: "활성 위험 사건의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
 ];
 const STAGE_IDS = new Set(STAGES.map((stage) => stage.id));
 const FILTER_PAGE_SIZE = 5;
 const COLLECTION_PAGE_SIZE = 5;
 const STORY_PAGE_SIZE = 5;
 const SENTIMENT_PAGE_SIZE = 5;
+const RISK_EVIDENCE_PAGE_SIZE = 5;
 
 function seoulDateValue(value = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -51,8 +55,12 @@ function seoulDateRange(value) {
 }
 
 const safeNumber = (value) => Math.max(Number(value) || 0, 0);
-function Stat({ label, value, note, tone = "" }) {
-  return <article className={`pipeline-stat ${tone}`}><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</article>;
+function Stat({ label, value, note, tone = "", active = false, onClick }) {
+  const className = `pipeline-stat ${tone}${onClick ? " selectable" : ""}${active ? " active" : ""}`;
+  const content = <><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</>;
+  return onClick
+    ? <button className={className} type="button" aria-pressed={active} onClick={onClick}>{content}</button>
+    : <article className={className}>{content}</article>;
 }
 
 function CollectionStage({ data, date, page, onDateChange, onPageChange, onOpenWindow }) {
@@ -163,12 +171,24 @@ function SentimentStage({ data }) {
   </div>;
 }
 
-function RiskStage({ data, selectedRiskId, onSelect }) {
+function RiskStage({ data, selectedRiskId, view, onSelect, onViewChange, onOpenResponse }) {
   const events = data.risks?.items ?? [];
   const selected = events.find((risk) => risk.id === selectedRiskId) ?? events[0] ?? null;
+  const [evidencePage, setEvidencePage] = useState(1);
+  const evidenceArticles = selected?.evidence_articles ?? [];
+  const evidencePageCount = Math.max(1, Math.ceil(evidenceArticles.length / RISK_EVIDENCE_PAGE_SIZE));
+  const visibleEvidencePage = Math.min(evidencePage, evidencePageCount);
+  const visibleEvidenceArticles = evidenceArticles.slice(
+    (visibleEvidencePage - 1) * RISK_EVIDENCE_PAGE_SIZE,
+    visibleEvidencePage * RISK_EVIDENCE_PAGE_SIZE,
+  );
+  useEffect(() => { setEvidencePage(1); }, [selected?.id]);
+  const activeCount = Math.max((data.risks?.summary?.active ?? 0) - (data.risks?.summary?.needs_response ?? 0), 0);
+  const titles = { active: "활성 위험 사건", history: "종료 위험 사건", needs_response: "대응 필요 사건" };
+  const emptyMessages = { active: "현재 활성 위험 사건이 없습니다.", history: "종료된 위험 사건이 없습니다.", needs_response: "대응이 필요한 위험 사건이 없습니다." };
   return <div className="pipeline-stage-content">
-    <div className="pipeline-stat-grid"><Stat label="활성 사건" value={`${formatNumber(data.risks?.summary?.active)}건`} note="현재 추적 중" /><Stat label="긴급" value={`${formatNumber(data.risks?.summary?.critical)}건`} note="즉시 확인" tone="danger" /><Stat label="대응 필요" value={`${formatNumber(data.risks?.summary?.needs_response)}건`} note="보류·실패" tone="warning" /><Stat label="종료 이력" value={`${formatNumber(data.risks?.summary?.history)}건`} note="누적" /></div>
-    <div className="pipeline-split"><section className="panel pipeline-panel"><PanelTitle kicker="RISK EVENTS" title="위험 판정 결과" /><div className="risk-list selectable">{events.map((risk) => <button className={`risk-event-list-item ${selected?.id === risk.id ? "selected" : ""}`} type="button" onClick={() => onSelect(risk.id)} key={risk.id}><RiskEventListContent risk={risk} /></button>)}</div>{!events.length && <p className="panel-empty">활성 위험 사건이 없습니다.</p>}</section><section className="panel pipeline-panel pipeline-risk-evidence"><PanelTitle kicker="DETECTION DETAIL" title="판정 상세와 근거" />{selected ? <><div className="pipeline-risk-head"><div><span className={`severity ${selected.severity}`}>{selected.severity === "critical" ? "긴급" : "주의"}</span><h3>{riskEventTitle(selected)}</h3></div><strong>{formatRiskProbability(selected.risk_probability)}</strong></div><div className="risk-type-list">{(selected.risk_types ?? []).map((type) => <span className={type.is_primary ? "primary" : ""} key={type.risk_type}>{RISK_TYPE_LABELS[type.risk_type] ?? type.risk_type} {formatPercent(type.probability)}</span>)}</div><div className="pipeline-evidence-list">{(selected.evidence_articles ?? []).map((article) => <a href={article.url} target="_blank" rel="noreferrer" key={article.article_id}><span>{article.evidence_role === "trigger" ? "위험 근거" : "관련 보도"}</span><strong>{article.title}</strong><small>{article.source_domain || article.source || "출처 미상"} · 근거 점수 {formatPercent(article.evidence_score)}</small></a>)}</div></> : <p className="panel-empty">확인할 위험 사건을 선택해 주세요.</p>}</section></div>
+    <div className="pipeline-stat-grid risk-stage-stat-grid"><Stat label="활성" value={`${formatNumber(activeCount)}건`} note="대응 필요 제외" active={view === "active"} onClick={() => onViewChange("active")} /><Stat label="종료" value={`${formatNumber(data.risks?.summary?.history)}건`} note="전체 종료 사건" active={view === "history"} onClick={() => onViewChange("history")} /><Stat label="대응 필요" value={`${formatNumber(data.risks?.summary?.needs_response)}건`} note="미생성·보류·실패" tone="warning" active={view === "needs_response"} onClick={() => onViewChange("needs_response")} /></div>
+    <div className="pipeline-split"><section className="panel pipeline-panel"><PanelTitle kicker="RISK EVENTS" title={titles[view]} /><div className="risk-list selectable">{events.map((risk) => <button className={`risk-event-list-item ${selected?.id === risk.id ? "selected" : ""}`} type="button" onClick={() => onSelect(risk.id)} key={risk.id}><RiskEventListContent risk={risk} /></button>)}</div>{!events.length && <p className="panel-empty">{emptyMessages[view]}</p>}</section><section className="panel pipeline-panel pipeline-risk-evidence"><div className="pipeline-panel-heading pipeline-risk-detail-heading"><PanelTitle kicker="DETECTION DETAIL" title="판정 상세" />{selected && <button className="secondary-button" type="button" onClick={() => onOpenResponse(selected)}>대응 보기</button>}</div>{selected ? <><div className="pipeline-risk-head"><div><span className={`severity ${selected.severity}`}>{selected.severity === "critical" ? "긴급" : "주의"}</span><h3>{riskEventTitle(selected)}</h3></div><strong>{formatRiskProbability(selected.risk_probability)}</strong></div><div className="risk-type-list">{(selected.risk_types ?? []).map((type) => <span className={type.is_primary ? "primary" : ""} key={type.risk_type}>{RISK_TYPE_LABELS[type.risk_type] ?? type.risk_type} {formatPercent(type.probability)}</span>)}</div><div className="pipeline-evidence-list">{visibleEvidenceArticles.map((article) => <a href={article.url} target="_blank" rel="noreferrer" key={article.article_id}><span>{article.evidence_role === "trigger" ? "위험 근거" : "관련 보도"}</span><strong>{article.title}</strong><small>{article.source_domain || article.source || "출처 미상"} · 근거 점수 {formatPercent(article.evidence_score)}</small></a>)}</div><Pagination page={visibleEvidencePage} pageSize={RISK_EVIDENCE_PAGE_SIZE} total={evidenceArticles.length} onChange={setEvidencePage} /></> : <p className="panel-empty">확인할 위험 사건을 선택해 주세요.</p>}</section></div>
   </div>;
 }
 
@@ -189,6 +209,8 @@ export default function AnalysisPipelinePage() {
   const requestSequence = useRef(0);
   const selectedCompanyId = searchParams.get("companyId") ?? "";
   const selectedRiskId = Number(searchParams.get("eventId")) || null;
+  const requestedRiskView = searchParams.get("view") ?? "active";
+  const riskView = ["active", "history", "needs_response"].includes(requestedRiskView) ? requestedRiskView : "active";
 
   useEffect(() => {
     let active = true;
@@ -196,9 +218,9 @@ export default function AnalysisPipelinePage() {
       if (!active) return;
       const next = response.data ?? [];
       setCompanies(next);
-      const requested = next.find((company) => String(company.id) === selectedCompanyId);
-      const fallback = next.find((company) => company.company_role === "main") ?? next[0];
-      if (!requested && fallback) setSearchParams((current) => { const params = new URLSearchParams(current); params.set("companyId", String(fallback.id)); return params; }, { replace: true });
+      const selected = resolveSelectedCompany(next, selectedCompanyId);
+      if (selected) rememberSelectedCompanyId(selected.id);
+      if (selected && String(selected.id) !== selectedCompanyId) setSearchParams((current) => { const params = new URLSearchParams(current); params.set("companyId", String(selected.id)); return params; }, { replace: true });
     }).catch((requestError) => active && setError(getErrorMessage(requestError)));
     return () => { active = false; };
   }, [selectedCompanyId, setSearchParams]);
@@ -209,6 +231,10 @@ export default function AnalysisPipelinePage() {
     if (!silent) setLoading(true);
     try {
       let result;
+      if (stageId === "response") {
+        setData({}); setError(null); setLoading(false);
+        return;
+      }
       if (stageId === "collection") {
         const range = seoulDateRange(collectionDate);
         const [monitoring, latestWindows, windows, jobs] = await Promise.all([
@@ -227,35 +253,48 @@ export default function AnalysisPipelinePage() {
         const [articles, daily] = await Promise.all([api.get(`/companies/${selectedCompanyId}/articles?page=1&page_size=${size}&days=7`), api.get(`/companies/${selectedCompanyId}/daily-summaries?days=7`)]);
         result = { articles: articles.data, daily: daily.data };
       } else {
-        const risks = await api.get(`/companies/${selectedCompanyId}/risk-events/page?view=active&page=1&page_size=100&response=all`);
+        const apiView = riskView === "history" ? "history" : "active";
+        const responseFilter = riskView === "needs_response" ? "needs_action" : riskView === "active" ? "without_needs_action" : "all";
+        const risks = await api.get(`/companies/${selectedCompanyId}/risk-events/page?view=${apiView}&page=1&page_size=100&response=${responseFilter}`);
         result = { risks: risks.data };
       }
       if (requestId !== requestSequence.current) return;
       setData(result); setError(null);
     } catch (requestError) { if (requestId === requestSequence.current) setError(getErrorMessage(requestError)); }
     finally { if (requestId === requestSequence.current) setLoading(false); }
-  }, [collectionDate, filterDecision, page, selectedCompanyId, stageId]);
+  }, [collectionDate, filterDecision, page, riskView, selectedCompanyId, stageId]);
 
   useEffect(() => { load(); const timer = window.setInterval(() => load({ silent: true }), 30000); return () => { window.clearInterval(timer); requestSequence.current += 1; }; }, [load]);
   useEffect(() => { setPage(1); setData({}); }, [selectedCompanyId, stageId]);
 
   const updateRiskSelection = (eventId) => setSearchParams((current) => { const params = new URLSearchParams(current); if (eventId) params.set("eventId", String(eventId)); else params.delete("eventId"); return params; });
+  const updateRiskView = (view) => setSearchParams((current) => { const params = new URLSearchParams(current); params.set("view", view); params.delete("eventId"); return params; });
+  const openRiskResponse = (risk) => {
+    const responseView = risk.status === "closed" ? "history" : ["idle", "deferred", "failed"].includes(risk.response_generation_status) ? "needs_response" : "active";
+    const riskIndex = (data.risks?.items ?? []).findIndex((item) => item.id === risk.id);
+    const params = new URLSearchParams({ companyId: String(selectedCompanyId), eventId: String(risk.id), view: responseView });
+    if (responseView === "history") params.set("days", "all");
+    if (riskIndex >= 0) params.set("page", String(Math.floor(riskIndex / 10) + 1));
+    navigate(`/analysis/response?${params}`);
+  };
+  const selectCompany = (companyId) => { rememberSelectedCompanyId(companyId); setSearchParams({ companyId }); };
   const moveStage = (nextStage) => { const query = selectedCompanyId ? `?companyId=${encodeURIComponent(selectedCompanyId)}` : ""; navigate(`/analysis/${nextStage}${query}`); };
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   const selectedCompany = companies.find((company) => String(company.id) === selectedCompanyId) ?? null;
 
   return <section className="analysis-pipeline-shell">
-    <aside className="analysis-pipeline-sidebar"><div><span className="eyebrow">ANALYSIS PIPELINE</span><h2>분석 파이프라인</h2><p>수집부터 위험판정까지 단계별 결과를 확인합니다.</p></div><nav aria-label="분석 파이프라인">{STAGES.map((item, index) => <button type="button" className={stageId === item.id ? "active" : ""} aria-current={stageId === item.id ? "page" : undefined} onClick={() => moveStage(item.id)} key={item.id}><span>{item.step}</span><strong>{item.label}</strong>{index < STAGES.length - 1 && <i aria-hidden="true" />}</button>)}</nav></aside>
+    <aside className="analysis-pipeline-sidebar"><div><span className="eyebrow">ANALYSIS PIPELINE</span><h2>분석 파이프라인</h2><p>수집부터 위험판정과 대응까지 단계별 결과를 확인합니다.</p></div><nav aria-label="분석 파이프라인">{STAGES.map((item, index) => <button type="button" className={stageId === item.id ? "active" : ""} aria-current={stageId === item.id ? "page" : undefined} onClick={() => moveStage(item.id)} key={item.id}><span>{item.step}</span><strong>{item.label}</strong>{index < STAGES.length - 1 && <i aria-hidden="true" />}</button>)}</nav></aside>
     <main className="workspace analysis-statistics-workspace analysis-pipeline-workspace">
-      <header className="pipeline-heading"><div><span className="eyebrow">{stage.kicker} · STEP {stage.step}</span><h1>{stage.label}</h1><p>{stage.description}</p></div><label><span>분석 기업</span><select value={selectedCompanyId} onChange={(event) => setSearchParams({ companyId: event.target.value })}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}</select></label></header>
+      <header className="pipeline-heading"><div><span className="eyebrow">{stage.kicker}</span><h1>{stage.label}</h1><p>{stage.description}</p></div><label><span>분석 기업</span><select value={selectedCompanyId} onChange={(event) => selectCompany(event.target.value)}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}</select></label></header>
       {error && <div className="notice error">{error}</div>}
-      {loading && !Object.keys(data).length ? <p className="empty-state">{stage.label} 데이터를 불러오는 중입니다.</p> : !companies.length ? <p className="empty-state">먼저 기업을 등록해 주세요.</p> : <>
+      {stageId !== "response" && loading && !Object.keys(data).length ? <p className="empty-state">{stage.label} 데이터를 불러오는 중입니다.</p> : !companies.length ? <p className="empty-state">먼저 기업을 등록해 주세요.</p> : <>
         {stageId === "collection" && <CollectionStage data={data} date={collectionDate} page={page} onDateChange={(value) => { if (!value) return; setCollectionDate(value); setPage(1); }} onPageChange={setPage} onOpenWindow={setArticleWindow} />}
         {stageId === "filtering" && <FilteringStage data={data} filterDecision={filterDecision} onDecisionChange={(value) => { setFilterDecision(value); setPage(1); }} page={page} onPageChange={setPage} />}
         {stageId === "stories" && <StoryStage key={selectedCompanyId} data={data} />}
         {stageId === "sentiment" && <SentimentStage key={selectedCompanyId} data={data} />}
-        {stageId === "risk" && <RiskStage data={data} selectedRiskId={selectedRiskId} onSelect={updateRiskSelection} />}
+        {stageId === "risk" && <RiskStage data={data} selectedRiskId={selectedRiskId} view={riskView} onSelect={updateRiskSelection} onViewChange={updateRiskView} onOpenResponse={openRiskResponse} />}
+        {stageId === "response" && <RiskManagementPage canReview initialCompanyId={selectedCompanyId} embedded />}
       </>}
     </main>
     {articleWindow && selectedCompany && <CollectedArticlesDialog company={selectedCompany} windowRange={{ start: articleWindow.window_start, end: articleWindow.window_end }} onClose={() => setArticleWindow(null)} />}

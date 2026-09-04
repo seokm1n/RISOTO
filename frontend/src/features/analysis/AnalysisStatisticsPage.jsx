@@ -206,7 +206,7 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
 
   const v3Draft = drafts.find((draft) => draft.schema_version === 3);
   const latest = v3Draft ?? drafts[0]; const content = latest?.content;
-  const canGenerate = ["deferred", "failed"].includes(generationStatus);
+  const canGenerate = ["idle", "pending", "generating", "deferred", "failed"].includes(generationStatus);
   const statusCopy = {
     pending: ["대응방안 자동 생성 중", "사건 근거를 바탕으로 생성을 준비하고 있습니다."],
     generating: ["대응방안 자동 생성 중", "근거를 검토해 대응방안을 작성하고 있습니다."],
@@ -222,7 +222,8 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const generate = async () => {
     setLoading(true); setError(null);
     try {
-      const response = await api.post(`/risk-events/${risk.id}/response-generation`);
+      const force = ["pending", "generating"].includes(generationStatus) ? "?force=true" : "";
+      const response = await api.post(`/risk-events/${risk.id}/response-generation${force}`);
       setGenerationStatus(response.data?.status ?? "pending");
       onGenerationStarted?.();
     } catch (requestError) { setError(getErrorMessage(requestError)); }
@@ -239,12 +240,12 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
     <p>위험도 {formatRiskProbability(risk.risk_probability)} · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? triggerEvidence.length)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳 · 마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at)}</p>
     <div className="risk-type-list">{orderedTypes.map((item, index) => <span className={item.is_primary || index === 0 ? "primary" : ""} key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
     <div className="evidence-groups">
-      <section><div className="evidence-group-head"><strong>위험 발생 근거</strong><span>{formatNumber(triggerEvidence.length)}건</span></div>{triggerEvidence.length ? triggerEvidence.map((article) => <EvidenceArticle article={article} key={article.article_id} />) : <small>위험 판정을 통과한 근거 기사가 없습니다.</small>}</section>
+      <section><details className="evidence-collapsible"><summary className="evidence-group-head"><strong>위험 발생 근거</strong><span>{formatNumber(triggerEvidence.length)}건</span></summary><div className="evidence-group-content">{triggerEvidence.length ? triggerEvidence.map((article) => <EvidenceArticle article={article} key={article.article_id} />) : <small>위험 판정을 통과한 근거 기사가 없습니다.</small>}</div></details></section>
       <section><div className="evidence-group-head"><strong>같은 사건의 관련 보도</strong><span>{formatNumber(contextEvidence.length)}건</span></div>{contextEvidence.length ? contextEvidence.map((article) => <EvidenceArticle article={article} key={article.article_id} />) : <small>추가 관련 보도가 없습니다.</small>}</section>
     </div>
     <div className={`draft-generation-toolbar ${generationStatus}`}>
       <div><strong>{statusCopy[0]}</strong><small>{statusCopy[1]}</small></div>
-      {canReview && canGenerate && <button className="secondary-button" type="button" onClick={generate} disabled={loading}>{loading ? "요청 중..." : generationStatus === "deferred" ? "대응방안 생성" : "다시 시도"}</button>}
+      {canReview && canGenerate && <button className="secondary-button" type="button" onClick={generate} disabled={loading}>{loading ? "요청 중..." : ["pending", "generating"].includes(generationStatus) ? "생성 다시 시작" : ["idle", "deferred"].includes(generationStatus) ? "대응방안 생성" : "다시 시도"}</button>}
     </div>
     {error && <div className="notice error">{error}</div>}
     {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{content.status === "근거부족_보류" ? <div className="draft-review readonly"><span>근거 연결 후 다시 생성해 주세요.</span></div> : canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}

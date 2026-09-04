@@ -501,7 +501,7 @@ def list_risk_events_page(
         "supply_operations",
         "reputation_consumer",
     ] | None = None,
-    response: Literal["all", "needs_action", "in_progress", "generated", "none"] = "all",
+    response: Literal["all", "needs_action", "without_needs_action", "in_progress", "generated", "none"] = "all",
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> RiskEventPageRead:
@@ -562,7 +562,8 @@ def list_risk_events_page(
             )
         )
     response_statuses = {
-        "needs_action": ("deferred", "failed"),
+        "needs_action": ("idle", "deferred", "failed"),
+        "without_needs_action": ("pending", "generating", "generated"),
         "in_progress": ("pending", "generating"),
         "generated": ("generated",),
         "none": ("idle",),
@@ -596,7 +597,7 @@ def list_risk_events_page(
         ),
         needs_response=summary_count(
             RiskEvent.status.in_(active_statuses),
-            RiskEvent.response_generation_status.in_(("deferred", "failed")),
+            RiskEvent.response_generation_status.in_(("idle", "deferred", "failed")),
         ),
         history=summary_count(RiskEvent.status == "closed"),
     )

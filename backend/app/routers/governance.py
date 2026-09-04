@@ -300,7 +300,7 @@ def start_response_generation(
         )
 
     current_status = event.response_generation_status
-    if current_status in {"pending", "generating"}:
+    if current_status in {"pending", "generating"} and not force:
         db.commit()
         return ResponseGenerationAcceptedRead(
             risk_event_id=event.id,
@@ -316,7 +316,7 @@ def start_response_generation(
     event.response_generation_status = "pending"
     event.response_generation_error = None
     db.commit()
-    enqueue_response_draft(event.id, force=force or current_status == "failed")
+    enqueue_response_draft(event.id, force=force or current_status in {"failed", "pending", "generating"})
     return ResponseGenerationAcceptedRead(
         risk_event_id=event.id,
         status="pending",

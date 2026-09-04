@@ -25,6 +25,7 @@ from app.routers import (
 from app.schemas import HealthResponse
 from app.services.monitoring_pipeline import realtime_monitoring_loop
 from app.services.risk_analysis import import_exported_models
+from app.services.response_engine import recover_interrupted_response_drafts
 
 
 settings = get_settings()
@@ -37,6 +38,7 @@ async def lifespan(_app: FastAPI):
         with SessionLocal() as db:
             import_exported_models(db, settings)
             db.commit()
+    recover_interrupted_response_drafts()
     stop_event = asyncio.Event()
     monitoring_task = asyncio.create_task(realtime_monitoring_loop(stop_event))
     try:

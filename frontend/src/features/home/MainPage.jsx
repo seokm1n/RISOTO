@@ -13,6 +13,7 @@ import {
   riskEventTitle,
 } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
+import { resolveSelectedCompany, setSelectedCompanyId as rememberSelectedCompanyId } from "../../shared/selectedCompanySession";
 
 const MAIN_TREND_DAYS = 7;
 const RISK_ARTICLE_LIMIT = 5;
@@ -131,17 +132,16 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
   );
   const mainCompany = companies.find((company) => company.company_role === "main");
   const requestedCompanyId = searchParams.get("companyId") ?? "";
-  const selectedCompany = companies.find((company) => String(company.id) === requestedCompanyId)
-    ?? mainCompany
-    ?? companies[0]
-    ?? null;
+  const selectedCompany = resolveSelectedCompany(companies, requestedCompanyId);
   const selectedCompanyId = selectedCompany?.id ?? null;
   const companyIds = companies.map((company) => company.id).join(",");
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
 
   useEffect(() => {
-    if (!selectedCompanyId || requestedCompanyId === String(selectedCompanyId)) return;
+    if (!selectedCompanyId) return;
+    rememberSelectedCompanyId(selectedCompanyId);
+    if (requestedCompanyId === String(selectedCompanyId)) return;
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("companyId", String(selectedCompanyId));
@@ -150,6 +150,7 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
   }, [requestedCompanyId, selectedCompanyId, setSearchParams]);
 
   const selectCompany = (companyId) => {
+    rememberSelectedCompanyId(companyId);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("companyId", companyId);
