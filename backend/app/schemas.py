@@ -462,6 +462,46 @@ class RiskEventPageRead(BaseModel):
     summary: RiskEventSummaryRead
 
 
+class RiskJudgmentRead(RiskEventRead):
+    """위험 사건과 비위험 스토리를 같은 판정 화면에서 표현한다."""
+
+    classification: Literal["risk", "non_risk"]
+    risk_event_id: int | None = None
+
+
+class RiskJudgmentSummaryRead(BaseModel):
+    """스토리 단위 위험·비위험 판정 건수와 위험 사건 상태별 건수."""
+
+    risk: int
+    non_risk: int
+    active: int
+    history: int
+
+
+class RiskJudgmentPageRead(BaseModel):
+    """위험판정 단계의 분류별 목록과 전체 요약."""
+
+    items: list[RiskJudgmentRead]
+    total: int
+    page: int
+    page_size: int
+    summary: RiskJudgmentSummaryRead
+
+
+class ArticleFilterLlmReviewRead(BaseModel):
+    """LLM이 검토 필요 기사를 통과 또는 제외로 확정한 결과."""
+
+    id: int
+    raw_article_id: int
+    decision: Literal["accepted", "rejected"]
+    reason: Literal["accepted", "duplicate", "advertisement", "irrelevant"]
+    explanation: str
+    confidence: float
+    provider: str
+    model_name: str
+    reviewed_at: datetime
+
+
 class FeatureWindowRead(BaseModel):
     """기업의 수집 품질·집계 지표·공통 모델 결과를 나타내는 15분 창."""
 

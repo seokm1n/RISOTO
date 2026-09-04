@@ -110,78 +110,71 @@ const RESPONSE_STATUS_LABELS = {
 };
 
 // 위험 이벤트 목록에서 스토리 제목, 다중 유형, 근거와 대응 상태를 보여준다.
-export function RiskEventListContent({ risk }) {
+export function RiskEventListContent({ risk, judgmentCompact = false }) {
   const title = riskEventTitle(risk);
+  const isNonRisk = risk.classification === "non_risk";
   const types = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
   const primaryType = types.find((item) => item.is_primary) ?? types.find((item) => item.risk_type === risk.primary_type) ?? types[0];
   const secondaryTypes = types.filter((item) => item !== primaryType);
   return <>
     <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
-    <div className="risk-event-type-row">{primaryType ? <span className="primary">{RISK_TYPE_LABELS[primaryType.risk_type] ?? primaryType.risk_type}</span> : <span>분류 중</span>}{secondaryTypes.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}</div>
-    <small className="risk-event-context">위험도 {formatRiskProbability(risk.risk_probability)} · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? 0)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳</small>
-    <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>
+    <div className="risk-event-type-row">{isNonRisk ? <span className="non-risk">비위험</span> : <>{primaryType ? <span className="primary">{RISK_TYPE_LABELS[primaryType.risk_type] ?? primaryType.risk_type}</span> : <span>분류 중</span>}{secondaryTypes.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}</>}</div>
+    <small className="risk-event-context">위험도 {formatRiskProbability(risk.risk_probability)}{judgmentCompact ? <> · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건</> : <> · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? 0)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳</>}</small>
+    {!judgmentCompact && <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>}
   </>;
 }
 
 const HORIZON_LABELS = { immediate: "즉시", within_24h: "24시간 이내", within_7d: "7일 이내" };
 
 function ActionGroups({ actions }) {
-  return Object.entries(actions ?? {}).map(([horizon, items]) => <section className="scenario-actions" key={horizon}>
-    <h5>{HORIZON_LABELS[horizon] ?? horizon}</h5>
-    {(items ?? []).map((item, index) => <div className="scenario-action" key={`${horizon}-${index}`}><p>{typeof item === "string" ? item : item.action}</p>{typeof item !== "string" && item.evidence_urls?.map((url, urlIndex) => <a href={url} target="_blank" rel="noreferrer" key={url}>근거 {urlIndex + 1}</a>)}</div>)}
-  </section>);
+  const groups = Object.entries(actions ?? {}).filter(([, items]) => items?.length > 0);
+  const count = groups.reduce((total, [, items]) => total + items.length, 0);
+  if (!groups.length) return null;
+  let order = 0;
+  return <section className="response-workboard response-legacy-workboard">
+    <header className="response-section-heading"><div><span>실행 계획</span><h4>지금부터 해야 할 일</h4></div><strong>{count}개 과제</strong></header>
+    <div className="response-time-groups">{groups.map(([horizon, items]) => <article className="response-time-group" key={horizon}>
+      <header><strong>{HORIZON_LABELS[horizon] ?? horizon.replaceAll("_", " ")}</strong><span>{items.length}개</span></header>
+      <ol>{items.map((item, index) => {
+        order += 1;
+        const action = typeof item === "string" ? item : item.action;
+        return <li key={`${horizon}-${index}`}><span className="response-task-number">{String(order).padStart(2, "0")}</span><div className="response-task-copy"><strong>{action}</strong></div><span className="response-task-due">{HORIZON_LABELS[horizon] ?? "시점 확인"}</span></li>;
+      })}</ol>
+    </article>)}</div>
+  </section>;
+}
+
+function LegacyResponseContent({ content, riskTitle, isCompetitorImpact }) {
+  const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
+  const [active, setActive] = useState(0);
+  const current = scenarios[active] ?? scenarios[0];
+  const overviewItems = current ? [
+    ["판단 전제", current.assumption],
+    ["예상 영향", current.possible_impact],
+    ["영향 경로", current.transmission_path],
+  ].filter(([, value]) => value) : [];
+
+  return <div className="response-draft response-draft-v3 response-operations-view response-legacy-view">
+    <section className="response-command-card standard"><div className="response-command-copy"><span className="response-ui-kicker">AI 대응 가이드</span><div className="response-command-title"><span className="response-priority-pill standard">대응안</span><h4>{riskTitle || content.risk_summary || "위험 사건 대응"}</h4></div><p>{isCompetitorImpact ? "동종 기업 이슈가 우리 기업에 미칠 영향과 준비 항목입니다." : "위험 확산을 줄이기 위한 우선 대응 항목입니다."}</p></div><dl className="response-command-facts"><div><dt>대응 대상</dt><dd>{isCompetitorImpact ? "동종 기업 영향" : "우리 기업 사건"}</dd></div></dl></section>
+    {scenarios.length > 1 && <section className="response-option-panel" aria-label="대응안 선택"><header className="response-section-heading compact"><div><span>대응 방향 선택</span><h4>확인할 대응안을 선택하세요</h4></div><strong>{scenarios.length}개 안</strong></header><div className="response-option-tabs" role="tablist">{scenarios.map((scenario, index) => <button type="button" role="tab" className={`response-option-tab${active === index ? " active" : ""}`} aria-selected={active === index} onClick={() => setActive(index)} key={`${scenario.title ?? "scenario"}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{scenario.title || `${index + 1}번째 대응안`}</strong></button>)}</div></section>}
+    {current && <div className="response-plan-content"><section className="response-overview-panel"><header className="response-section-heading"><div><span>상황 요약</span><h4>{current.title || "선택한 대응안"}</h4></div></header>{overviewItems.length > 0 && <div className="response-legacy-overview">{overviewItems.map(([label, value]) => <article key={label}><h5>{label}</h5><p>{value}</p></article>)}</div>}{current.early_indicators?.length > 0 && <article className="response-legacy-indicators"><h5>조기 관찰 지표</h5><div className="response-metric-chips">{current.early_indicators.map((indicator, index) => <span key={`${indicator}-${index}`}>{indicator}</span>)}</div></article>}</section><ActionGroups actions={current.recommended_actions} /></div>}
+    {!current && <ActionGroups actions={content.recommended_actions} />}
+    {content.uncertainty && <aside className="response-quality-alert neutral"><strong>판단 시 유의할 점</strong><p>{content.uncertainty}</p></aside>}
+  </div>;
 }
 
 function ResponseDraftContent({ draft, riskTitle }) {
   const content = draft.content ?? {};
-  // v3(schema_version 3)는 v2와 겹치는 키가 하나도 없다. 아래 v2 렌더링을 그대로 두고
-  // 앞에서 갈라야, 라우터가 아직 v2를 부르는 동안 화면이 바뀌지 않는다.
   if (draft.schema_version === 3 && draft.generation_kind !== "competitor_impact") {
-    return <MainResponseContent content={content} />;
+    return <MainResponseContent key={draft.id} content={content} />;
   }
-  // 동종 경로는 구조가 또 다르다(scenarios가 없고 impact·recommendation을 읽는다).
-  // content_kind가 아니라 generation_kind로 가르는 이유: 근거부족_보류 content에는
-  // content_kind가 없어서, 그 조건으로 잡으면 기사 0건인 동종 초안이 샌다.
   if (draft.schema_version === 3 && draft.generation_kind === "competitor_impact") {
-    return <PeerRecommendationContent content={content} />;
+    return <PeerRecommendationContent key={draft.id} content={content} />;
   }
-  const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
-  const isCompetitorImpact = draft.generation_kind === "competitor_impact";
-  return <div className="response-draft">
-    <div className="response-draft-head"><div><span className="eyebrow">RESPONSE DRAFT · REVIEW REQUIRED</span><strong className="risk-event-display-title">{riskTitle || content.risk_summary}</strong></div><span className={`draft-kind ${isCompetitorImpact ? "competitor" : "main"}`}>{isCompetitorImpact ? "비교 기업 → 나의 기업 영향" : "나의 기업 직접 대응"}</span></div>
-    {scenarios.length ? <div className="response-scenario-list">{scenarios.map((scenario, index) => <article className="response-scenario" key={`${scenario.title ?? "scenario"}-${index}`}>
-      <header><span>경우 {String(index + 1).padStart(2, "0")}</span><h4>{scenario.title || `${index + 1}번째 대응안`}</h4></header>
-      {scenario.assumption && <p><strong>전제</strong>{scenario.assumption}</p>}
-      {scenario.possible_impact && <p><strong>나의 기업 예상 영향</strong>{scenario.possible_impact}</p>}
-      {scenario.transmission_path && <p><strong>영향 전파 경로</strong>{scenario.transmission_path}</p>}
-      {scenario.rationale && <p><strong>선택 근거</strong>{scenario.rationale}</p>}
-      {scenario.early_indicators?.length > 0 && <div className="early-indicators"><strong>조기 관찰 지표</strong><ul>{scenario.early_indicators.map((indicator) => <li key={indicator}>{indicator}</li>)}</ul></div>}
-      <ActionGroups actions={scenario.recommended_actions} />
-    </article>)}</div> : <ActionGroups actions={content.recommended_actions} />}
-    {content.uncertainty && <p className="uncertainty">불확실성: {content.uncertainty}</p>}
-  </div>;
+  return <LegacyResponseContent key={draft.id} content={content} riskTitle={riskTitle} isCompetitorImpact={draft.generation_kind === "competitor_impact"} />;
 }
 
-function EvidenceArticle({ article }) {
-  return <article className="evidence-article">
-    <div className="evidence-article-summary">
-      <div><a href={article.url} target="_blank" rel="noreferrer">{article.title}</a><small>{article.source_domain || article.source || "출처 미상"} · {formatDate(article.published_at)}</small></div>
-      <strong>{formatPercent(article.evidence_score)}</strong>
-    </div>
-    <details>
-      <summary>근거 점수 상세</summary>
-      <dl>
-        <div><dt>위험도</dt><dd>{formatPercent(article.risk_probability)}</dd></div>
-        <div><dt>관련성</dt><dd>{formatPercent(article.relevance_score)}</dd></div>
-        <div><dt>유형 일치</dt><dd>{formatPercent(article.type_match_score)}</dd></div>
-        <div><dt>출처 신뢰도</dt><dd>{formatPercent(article.source_credibility)}</dd></div>
-        <div><dt>대표성</dt><dd>{formatPercent(article.representativeness)}</dd></div>
-      </dl>
-    </details>
-  </article>;
-}
-
-// 위험 이벤트의 근거·유형과 관리 승인이 필요한 대응 초안을 한곳에 표시한다.
+// 위험 이벤트의 유형과 관리 승인이 필요한 대응 초안을 표시한다.
 export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const riskId = risk?.id ?? null;
   const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
@@ -208,15 +201,13 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const latest = v3Draft ?? drafts[0]; const content = latest?.content;
   const canGenerate = ["idle", "pending", "generating", "deferred", "failed"].includes(generationStatus);
   const statusCopy = {
-    pending: ["대응방안 자동 생성 중", "사건 근거를 바탕으로 생성을 준비하고 있습니다."],
-    generating: ["대응방안 자동 생성 중", "근거를 검토해 대응방안을 작성하고 있습니다."],
-    generated: ["대응방안 생성 완료", "아래 대응방안을 검토하고 승인하거나 반려할 수 있습니다."],
+    pending: ["대응방안 자동 생성 중", "사건 내용을 바탕으로 생성을 준비하고 있습니다."],
+    generating: ["대응방안 자동 생성 중", "사건을 검토해 대응방안을 작성하고 있습니다."],
+    generated: ["대응방안 생성 완료", "아래에서 우선 실행 항목과 담당 부서, 기한을 확인할 수 있습니다."],
     deferred: ["대응방안 생성 보류", "전체 이력 재구성 사건입니다. 필요한 사건만 개별 생성할 수 있습니다."],
     failed: ["대응방안 생성 실패", risk.response_generation_error || "생성에 실패했습니다. 다시 시도할 수 있습니다."],
     idle: ["대응방안 없음", "이 사건에는 생성된 대응방안이 없습니다."],
   }[generationStatus] ?? ["대응방안 없음", "이 사건에는 생성된 대응방안이 없습니다."];
-  const triggerEvidence = (risk.evidence_articles ?? []).filter((article) => article.evidence_role === "trigger");
-  const contextEvidence = (risk.evidence_articles ?? []).filter((article) => article.evidence_role !== "trigger");
   const orderedTypes = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
 
   const generate = async () => {
@@ -237,12 +228,7 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   };
   return <div className="risk-detail">
     <div className="risk-detail-head"><div><h3><strong className="risk-event-display-title">{riskEventTitle(risk)}</strong></h3></div><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span></div>
-    <p>위험도 {formatRiskProbability(risk.risk_probability)} · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? triggerEvidence.length)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳 · 마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at)}</p>
     <div className="risk-type-list">{orderedTypes.map((item, index) => <span className={item.is_primary || index === 0 ? "primary" : ""} key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
-    <div className="evidence-groups">
-      <section><details className="evidence-collapsible"><summary className="evidence-group-head"><strong>위험 발생 근거</strong><span>{formatNumber(triggerEvidence.length)}건</span></summary><div className="evidence-group-content">{triggerEvidence.length ? triggerEvidence.map((article) => <EvidenceArticle article={article} key={article.article_id} />) : <small>위험 판정을 통과한 근거 기사가 없습니다.</small>}</div></details></section>
-      <section><div className="evidence-group-head"><strong>같은 사건의 관련 보도</strong><span>{formatNumber(contextEvidence.length)}건</span></div>{contextEvidence.length ? contextEvidence.map((article) => <EvidenceArticle article={article} key={article.article_id} />) : <small>추가 관련 보도가 없습니다.</small>}</section>
-    </div>
     <div className={`draft-generation-toolbar ${generationStatus}`}>
       <div><strong>{statusCopy[0]}</strong><small>{statusCopy[1]}</small></div>
       {canReview && canGenerate && <button className="secondary-button" type="button" onClick={generate} disabled={loading}>{loading ? "요청 중..." : ["pending", "generating"].includes(generationStatus) ? "생성 다시 시작" : ["idle", "deferred"].includes(generationStatus) ? "대응방안 생성" : "다시 시도"}</button>}
