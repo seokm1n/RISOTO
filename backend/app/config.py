@@ -85,6 +85,11 @@ class Settings(BaseSettings):
 
     # 기사·스토리 중심 운영 사건 엔진. 15분 특징은 확산 신호와 대시보드용으로 유지한다.
     story_risk_engine_enabled: bool = True
+    # 위험 이벤트 발생 시 대응방안을 자동 생성할지. LLM을 부르므로 비용이 붙는다.
+    # 자동 경로에만 걸리고 담당자가 버튼으로 요청하는 수동 생성은 이 값과 무관하다.
+    # 생성 경로가 story_risk와 risk_analysis 두 갈래인데 서로 배타적이라(한쪽을 끄면
+    # 다른 쪽이 켜진다) 엔진 스위치로는 멈출 수 없어 전용 스위치를 둔다.
+    response_draft_auto_enabled: bool = True
     article_risk_candidate_threshold: float = 0.65
     article_risk_high_threshold: float = 0.80
     article_risk_uncertain_low: float = 0.35
