@@ -192,6 +192,8 @@ PARTIAL_FAILURE_CONSECUTIVE_THRESHOLD=2
 
 ```text
 GET  /api/v1/notifications
+POST /api/v1/notifications/read-all
+POST /api/v1/notifications/risk/{risk_event_id}/read
 GET  /api/v1/risk-detection-status
 GET  /api/v1/collection-health
 GET  /api/v1/collection-incidents
@@ -201,8 +203,9 @@ GET  /api/v1/companies/{id}/daily-summaries
 GET  /api/v1/companies/{id}/risk-events
 ```
 
-화면 상단의 종 배지는 읽지 않은 알림 수가 아니라 현재 확인이 필요한 위험 사건
-(`open`, `monitoring`) 수입니다. 종을 누르면 운영 관리의 위험 알림 영역으로 이동합니다.
+화면 상단의 종 배지는 현재 읽지 않은 위험 알림 수를 표시합니다. 알림 패널에서 개별
+알림을 열거나 `모두 읽음`을 누르면 배지가 즉시 갱신되며, 읽음 상태는 사용자별로
+서버에 저장되어 새로고침하거나 다시 로그인해도 유지됩니다.
 
 신규 기업은 기사 50건과 비어 있지 않은 유효 특징 창 40개가 모일 때까지
 `PREPARING`으로 수집만 수행합니다. 조건을 충족해도 자동 활성화하지 않습니다.
