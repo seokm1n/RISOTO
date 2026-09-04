@@ -718,11 +718,13 @@ class NotificationItemRead(BaseModel):
     risk_event_id: int | None = None
     model_id: int | None = None
     model_task: str | None = None
+    is_read: bool = False
 
 
 class NotificationListRead(BaseModel):
     items: list[NotificationItemRead]
     total: int
+    unread_count: int
     risk_count: int
     model_promotion_count: int
 

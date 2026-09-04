@@ -20,7 +20,7 @@ from app.models import (
     RiskEventArticle,
     StoryCluster,
 )
-from app.routers.notifications import list_notifications
+from app.routers.notifications import _mark_risk_events_read, list_notifications
 from app.services.model_governance import evaluate_model_promotion
 from tests.auth_helpers import auth_for_company
 
@@ -323,6 +323,8 @@ class NotificationDatabaseTests(unittest.TestCase):
             start,
         )
         self.assertEqual(response.total, len(response.items))
+        self.assertEqual(response.unread_count, response.total)
+        self.assertTrue(all(not item.is_read for item in response.items))
         self.assertEqual(
             response.risk_count,
             sum(item.type == "risk" for item in response.items),
@@ -338,6 +340,17 @@ class NotificationDatabaseTests(unittest.TestCase):
         self.assertEqual(open_event.status, "open")
         self.assertEqual(eligible.status, "candidate")
         self.assertEqual(eligible.thresholds, {"unchanged": True})
+
+        _mark_risk_events_read(self.db, self.auth.user_id, [open_event.id])
+        _mark_risk_events_read(self.db, self.auth.user_id, [open_event.id])
+        self.db.flush()
+        read_response = list_notifications(self.db, self.auth)
+        read_item = next(
+            item for item in read_response.items
+            if item.risk_event_id == open_event.id
+        )
+        self.assertTrue(read_item.is_read)
+        self.assertEqual(read_response.unread_count, read_response.total - 1)
 
 
 if __name__ == "__main__":
