@@ -523,6 +523,13 @@ def _aggregate_story_event(
         retained_type = event.primary_type or primary_type
         if retained_type is not None:
             _sync_event_evidence(db, event, evidence_rows, retained_type)
+        if not evidence_rows and (event.risk_probability or event.primary_type):
+            # No article currently backs this event at all: leaving the last
+            # computed severity/probability in place would keep displaying it
+            # as an active high-severity alert with zero supporting evidence.
+            event.risk_probability = 0.0
+            event.severity = "warning"
+            event.primary_type = None
         latest_evidence = (
             max(_article_time(row[1]) for row in evidence_rows)
             if evidence_rows

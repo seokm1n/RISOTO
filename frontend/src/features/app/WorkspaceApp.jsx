@@ -13,6 +13,7 @@ import {
 import { api, getErrorMessage } from "../../api";
 import AdminDashboardPage from "../admin/AdminDashboardPage";
 import MyPage from "../account/MyPage";
+import AnalysisManagementPage from "../analysis/AnalysisManagementPage";
 import AnalysisPipelinePage from "../analysis/AnalysisPipelinePage";
 import CollectionPage from "../collection/CollectionPage";
 import CompanyAdministrationPage from "../companies/CompanyPages";
@@ -37,6 +38,7 @@ const ADMIN_NAV_ITEMS = [
   { id: "admin-collection", label: "수집 관리", path: "/admin/collection" },
   { id: "admin-operations", label: "운영 관리", path: "/admin/operations" },
   { id: "admin-review", label: "기사 검수", path: "/admin/reviews" },
+  { id: "admin-risk-review", label: "위험 사건 검수", path: "/admin/risk-review" },
 ];
 
 const PAGE_TITLES = {
@@ -50,6 +52,7 @@ const PAGE_TITLES = {
   "admin-collection": "수집 관리",
   "admin-operations": "운영 관리",
   "admin-review": "기사 검수",
+  "admin-risk-review": "위험 사건 검수",
 };
 
 const numericParam = (value) => /^\d+$/.test(value ?? "") ? value : null;
@@ -61,6 +64,7 @@ const pageFromPath = (pathname) => {
   if (pathname === "/admin/collection") return "admin-collection";
   if (pathname === "/admin/operations") return "admin-operations";
   if (pathname === "/admin/reviews") return "admin-review";
+  if (pathname === "/admin/risk-review") return "admin-risk-review";
   if (pathname === "/operations" || pathname === "/models") return "admin-operations";
   if (pathname === "/reviews") return "admin-review";
   if (pathname === "/collection") return "collection";
@@ -292,6 +296,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/admin/collection" element={<AdminDashboardPage view="collection" />} />
       <Route path="/admin/operations" element={<ModelManagementPage />} />
       <Route path="/admin/reviews" element={<ArticleReviewPage />} />
+      <Route path="/admin/risk-review" element={<AnalysisManagementPage notifications={notifications} notificationError={notificationError} onRiskNotificationOpen={openRiskNotification} />} />
       <Route path="/operations" element={<Navigate to="/admin/operations" replace />} />
       <Route path="/models" element={<Navigate to="/admin/operations" replace />} />
       <Route path="/reviews" element={<Navigate to="/admin/reviews" replace />} />
