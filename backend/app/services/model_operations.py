@@ -204,6 +204,39 @@ def build_training_readiness(db: Session, settings: Settings | None = None) -> d
         trainer_command="docker compose --profile training run --rm trainer filter --epochs 4",
     )
 
+    reranker_latest = _latest_model(db, "company_relevance_reranker")
+    reranker_counts = {
+        "relevant": relevance["relevant"],
+        "irrelevant_or_incidental": relevance["irrelevant"] + relevance["incidental"],
+    }
+    reranker_blockers: list[str] = []
+    if sum(reranker_counts.values()) < 1500:
+        reranker_blockers.append(
+            "학습 가능한 관련성 라벨 최소 1,500건 필요 "
+            f"({sum(reranker_counts.values())}/1500)"
+        )
+    for label, count in reranker_counts.items():
+        if count < 300:
+            reranker_blockers.append(f"{label} 클래스 최소 300건 필요 ({count}/300)")
+    reranker_result = _task_result(
+        task="company_relevance_reranker",
+        latest=reranker_latest,
+        confirmed_total=sum(reranker_counts.values()),
+        new_since_latest=_new_article_labels(
+            db,
+            reranker_latest,
+            ArticleLabel.relevance_label.in_(FILTER_RELEVANCE_LABELS),
+        ),
+        increment_required=settings.retrain_min_new_article_labels,
+        class_counts=reranker_counts,
+        minimums_met=not reranker_blockers,
+        blockers=reranker_blockers,
+        trainer_command=(
+            "docker compose --profile training run --rm trainer "
+            "company-reranker --epochs 2 --batch-size 2 --human-weight 1"
+        ),
+    )
+
     sentiment_latest = _latest_model(db, "sentiment")
     sentiment_total = sum(sentiment.values())
     sentiment_blockers: list[str] = []
@@ -300,7 +333,13 @@ def build_training_readiness(db: Session, settings: Settings | None = None) -> d
         "checked_at": checked_at,
         "article_labels_total": article_total,
         "risk_event_labels_total": sum(risk_counts.values()),
-        "tasks": [filter_result, sentiment_result, risk_type_result, risk_result],
+        "tasks": [
+            filter_result,
+            reranker_result,
+            sentiment_result,
+            risk_type_result,
+            risk_result,
+        ],
     }
 
 

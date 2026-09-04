@@ -195,11 +195,11 @@ def _template_content(
     }
 
     if generation_kind == COMPETITOR_IMPACT:
-        source_name = getattr(source_company, "name", "경쟁사")
+        source_name = getattr(source_company, "name", "비교 기업")
         main_name = getattr(target_main_company, "name", "메인 기업")
         common["scenarios"] = [
             {
-                "title": "경쟁사 위험의 직접 전이",
+                "title": "비교 기업 위험의 직접 전이",
                 "assumption": f"{source_name}과 {main_name}의 고객군·공급망 또는 판매 채널이 일부 겹친다.",
                 "possible_impact": f"{main_name}에도 같은 문제에 관한 고객 문의와 거래처 점검 요구가 증가할 수 있다.",
                 "transmission_path": f"{source_name} 사건 보도 → 업종 전체 불안 확대 → 메인 기업 제품·운영에 대한 검증 요구 증가",
@@ -600,7 +600,7 @@ def _generation_context(db, source_company: Company) -> tuple[Company, str]:
 
     user_id = getattr(source_company, "user_id", None)
     if user_id is None:
-        raise ValueError("경쟁사의 소유 사용자를 찾을 수 없습니다.")
+        raise ValueError("비교 기업의 소유 사용자를 찾을 수 없습니다.")
     target_main_company = db.scalar(
         select(Company)
         .where(

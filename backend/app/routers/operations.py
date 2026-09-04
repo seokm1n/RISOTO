@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
@@ -20,6 +20,8 @@ from app.models import (
     CompanyFeatureWindow,
     NewsArticle,
     RiskEvent,
+    RiskEventArticle,
+    StoryClusterArticle,
 )
 from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.schemas import (
@@ -30,6 +32,7 @@ from app.schemas import (
     DailySummaryRead,
     FeatureWindowRead,
 )
+from app.services.collection_health import sanitize_error
 from app.services.period_aggregation import seoul_day_bucket, seoul_period_start
 
 
@@ -140,6 +143,7 @@ def collection_health(
         latest = attempts[0] if attempts else None
         latest_success = next((item for item in attempts if item.status == "succeeded"), None)
         latest_group = window_groups[0] if window_groups else []
+        latest_failure = next((item for item in latest_group if item.status == "failed"), None)
         latest_failed = any(item.status == "failed" for item in latest_group)
         latest_succeeded = any(item.status == "succeeded" for item in latest_group)
         source_items.append(
@@ -154,8 +158,13 @@ def collection_health(
                 last_attempt_at=latest.completed_at if latest else None,
                 last_success_at=latest_success.completed_at if latest_success else None,
                 consecutive_failures=consecutive,
+                last_error_code=latest_failure.error_code if latest_failure else None,
+                last_error_message=sanitize_error(latest_failure.error_message) if latest_failure else None,
             )
         )
+    current_company_ids = set(
+        db.scalars(select(Company.id).where(Company.user_id == auth.user_id))
+    )
     open_incident_rows = list(
         db.scalars(
             select(CollectionIncident).where(
@@ -164,6 +173,14 @@ def collection_health(
             )
         )
     )
+    # Keep system-wide incidents, but do not let incidents belonging only to
+    # deleted companies affect the user's current collection status.
+    open_incident_rows = [
+        incident
+        for incident in open_incident_rows
+        if not incident.affected_company_ids
+        or current_company_ids.intersection(incident.affected_company_ids)
+    ]
     open_incidents = len(open_incident_rows)
     if any(item.data_quality == "unavailable" for item in open_incident_rows):
         status = "unavailable"
@@ -246,6 +263,14 @@ def list_daily_summaries(
         ).mappings()
     }
 
+    eligible_story_event_ids = (
+        select(RiskEventArticle.risk_event_id)
+        .group_by(RiskEventArticle.risk_event_id)
+        .having(
+            func.count(func.distinct(RiskEventArticle.article_id))
+            >= settings.story_event_min_articles
+        )
+    )
     risk_day = seoul_day_bucket(RiskEvent.opened_at).label("day")
     risk_rows = {
         row[0].date(): row[1]
@@ -255,8 +280,217 @@ def list_daily_summaries(
                 RiskEvent.company_id == company_id,
                 RiskEvent.opened_at >= cutoff,
                 RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+                RiskEvent.event_source == "story_v2",
+                RiskEvent.story_cluster_id.is_not(None),
+                RiskEvent.id.in_(eligible_story_event_ids),
             )
             .group_by(risk_day)
+        )
+    }
+
+    company_story_first = (
+        select(
+            StoryClusterArticle.story_cluster_id.label("story_cluster_id"),
+            func.min(article_time).label("first_seen_at"),
+        )
+        .select_from(CompanyArticleMatch)
+        .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+        .join(
+            StoryClusterArticle,
+            StoryClusterArticle.article_id == NewsArticle.id,
+        )
+        .where(CompanyArticleMatch.company_id == company_id)
+        .group_by(StoryClusterArticle.story_cluster_id)
+        .subquery()
+    )
+    story_first_day = seoul_day_bucket(company_story_first.c.first_seen_at).label("day")
+    story_rows = {
+        row[0].date(): row[1]
+        for row in db.execute(
+            select(
+                story_first_day,
+                func.count(company_story_first.c.story_cluster_id),
+            )
+            .select_from(company_story_first)
+            .where(company_story_first.c.first_seen_at >= cutoff)
+            .group_by(story_first_day)
+        )
+    }
+
+    recognized_sentiments = ["positive", "긍정", "neutral", "중립", "negative", "부정"]
+    positive_story_value = case(
+        (NewsArticle.positive_probability.is_not(None), NewsArticle.positive_probability),
+        (sentiment.in_(["positive", "긍정"]), 1.0),
+        (sentiment.in_(recognized_sentiments), 0.0),
+        else_=None,
+    )
+    neutral_story_value = case(
+        (NewsArticle.neutral_probability.is_not(None), NewsArticle.neutral_probability),
+        (sentiment.in_(["neutral", "중립"]), 1.0),
+        (sentiment.in_(recognized_sentiments), 0.0),
+        else_=None,
+    )
+    negative_story_value = case(
+        (NewsArticle.negative_probability.is_not(None), NewsArticle.negative_probability),
+        (sentiment.in_(["negative", "부정"]), 1.0),
+        (sentiment.in_(recognized_sentiments), 0.0),
+        else_=None,
+    )
+    story_sentiment_scores = (
+        select(
+            StoryClusterArticle.story_cluster_id.label("story_cluster_id"),
+            func.avg(positive_story_value).label("positive_probability"),
+            func.avg(neutral_story_value).label("neutral_probability"),
+            func.avg(negative_story_value).label("negative_probability"),
+        )
+        .select_from(CompanyArticleMatch)
+        .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+        .join(
+            StoryClusterArticle,
+            StoryClusterArticle.article_id == NewsArticle.id,
+        )
+        .where(CompanyArticleMatch.company_id == company_id)
+        .group_by(StoryClusterArticle.story_cluster_id)
+        .subquery()
+    )
+    positive_story_condition = (
+        story_sentiment_scores.c.positive_probability
+        > story_sentiment_scores.c.neutral_probability
+    ) & (
+        story_sentiment_scores.c.positive_probability
+        > story_sentiment_scores.c.negative_probability
+    )
+    negative_story_condition = (
+        story_sentiment_scores.c.negative_probability
+        > story_sentiment_scores.c.positive_probability
+    ) & (
+        story_sentiment_scores.c.negative_probability
+        > story_sentiment_scores.c.neutral_probability
+    )
+    has_story_sentiment = (
+        story_sentiment_scores.c.positive_probability.is_not(None)
+        & story_sentiment_scores.c.neutral_probability.is_not(None)
+        & story_sentiment_scores.c.negative_probability.is_not(None)
+    )
+    # 동률은 과도하게 긍정·부정으로 단정하지 않고 중립으로 분류한다.
+    neutral_story_condition = (
+        has_story_sentiment
+        & ~positive_story_condition
+        & ~negative_story_condition
+    )
+
+    # 위험·부정 추이를 같은 모집단으로 비교하기 위해 각 스토리가 처음으로
+    # 판정 최소 기사 수에 도달한 시각을 고정된 코호트 기준 시각으로 사용한다.
+    ranked_company_story_articles = (
+        select(
+            StoryClusterArticle.story_cluster_id.label("story_cluster_id"),
+            article_time.label("article_time"),
+            func.row_number().over(
+                partition_by=StoryClusterArticle.story_cluster_id,
+                order_by=(article_time.asc(), NewsArticle.id.asc()),
+            ).label("article_rank"),
+        )
+        .select_from(CompanyArticleMatch)
+        .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+        .join(
+            StoryClusterArticle,
+            StoryClusterArticle.article_id == NewsArticle.id,
+        )
+        .where(CompanyArticleMatch.company_id == company_id)
+        .subquery()
+    )
+    eligible_story_cohorts = (
+        select(
+            ranked_company_story_articles.c.story_cluster_id,
+            ranked_company_story_articles.c.article_time.label("eligible_at"),
+        )
+        .where(
+            ranked_company_story_articles.c.article_rank
+            == settings.story_event_min_articles
+        )
+        .subquery()
+    )
+    eligible_story_day = seoul_day_bucket(
+        eligible_story_cohorts.c.eligible_at
+    ).label("day")
+    eligible_story_rows = {
+        row[0].date(): row[1]
+        for row in db.execute(
+            select(
+                eligible_story_day,
+                func.count(eligible_story_cohorts.c.story_cluster_id),
+            )
+            .select_from(eligible_story_cohorts)
+            .where(eligible_story_cohorts.c.eligible_at >= cutoff)
+            .group_by(eligible_story_day)
+        )
+    }
+    eligible_sentiment_rows = {
+        row["day"].date(): row
+        for row in db.execute(
+            select(
+                eligible_story_day,
+                func.count(eligible_story_cohorts.c.story_cluster_id)
+                .filter(positive_story_condition)
+                .label("positive_story_count"),
+                func.count(eligible_story_cohorts.c.story_cluster_id)
+                .filter(neutral_story_condition)
+                .label("neutral_story_count"),
+                func.count(eligible_story_cohorts.c.story_cluster_id)
+                .filter(negative_story_condition)
+                .label("negative_story_count"),
+            )
+            .select_from(eligible_story_cohorts)
+            .join(
+                story_sentiment_scores,
+                story_sentiment_scores.c.story_cluster_id
+                == eligible_story_cohorts.c.story_cluster_id,
+            )
+            .where(eligible_story_cohorts.c.eligible_at >= cutoff)
+            .group_by(eligible_story_day)
+        ).mappings()
+    }
+    eligible_risk_story_rows = {
+        row[0].date(): row[1]
+        for row in db.execute(
+            select(
+                eligible_story_day,
+                func.count(func.distinct(eligible_story_cohorts.c.story_cluster_id)),
+            )
+            .select_from(eligible_story_cohorts)
+            .join(
+                RiskEvent,
+                RiskEvent.story_cluster_id
+                == eligible_story_cohorts.c.story_cluster_id,
+            )
+            .where(
+                eligible_story_cohorts.c.eligible_at >= cutoff,
+                RiskEvent.company_id == company_id,
+                RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+                RiskEvent.event_source == "story_v2",
+                RiskEvent.id.in_(eligible_story_event_ids),
+            )
+            .group_by(eligible_story_day)
+        )
+    }
+    negative_story_rows = {
+        row[0].date(): row[1]
+        for row in db.execute(
+            select(
+                story_first_day,
+                func.count(company_story_first.c.story_cluster_id),
+            )
+            .select_from(company_story_first)
+            .join(
+                story_sentiment_scores,
+                story_sentiment_scores.c.story_cluster_id
+                == company_story_first.c.story_cluster_id,
+            )
+            .where(
+                company_story_first.c.first_seen_at >= cutoff,
+                negative_story_condition,
+            )
+            .group_by(story_first_day)
         )
     }
 
@@ -295,7 +529,27 @@ def list_daily_summaries(
                 positive_article_count=int(live.get("positive_article_count", 0)),
                 neutral_article_count=int(live.get("neutral_article_count", 0)),
                 negative_article_count=int(live.get("negative_article_count", 0)),
-                story_count=materialized.story_count if materialized else 0,
+                negative_story_count=int(negative_story_rows.get(summary_date, 0)),
+                eligible_story_count=int(eligible_story_rows.get(summary_date, 0)),
+                eligible_positive_story_count=int(
+                    eligible_sentiment_rows.get(summary_date, {}).get(
+                        "positive_story_count", 0
+                    )
+                ),
+                eligible_neutral_story_count=int(
+                    eligible_sentiment_rows.get(summary_date, {}).get(
+                        "neutral_story_count", 0
+                    )
+                ),
+                eligible_negative_story_count=int(
+                    eligible_sentiment_rows.get(summary_date, {}).get(
+                        "negative_story_count", 0
+                    )
+                ),
+                eligible_risk_story_count=int(
+                    eligible_risk_story_rows.get(summary_date, 0)
+                ),
+                story_count=int(story_rows.get(summary_date, 0)),
                 amplification_count=materialized.amplification_count if materialized else 0,
                 publisher_count=materialized.publisher_count if materialized else 0,
                 positive_probability=materialized.positive_probability if materialized else None,

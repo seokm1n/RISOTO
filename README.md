@@ -47,7 +47,7 @@ docker compose exec backend alembic check
 초기 마이그레이션은 다음 테이블을 생성합니다.
 
 - `industries`: 상위·하위 산업군
-- `companies`: 메인 기업과 `competitor` 역할의 경쟁사, 재무정보와 모니터링 상태
+- `companies`: 메인 기업과 `competitor` 역할의 비교 기업, 재무정보와 모니터링 상태
 - `company_keywords`: 기업 별칭, 제품·브랜드, 위험 키워드
 
 ## 기업 등록 및 관리 화면
@@ -71,7 +71,7 @@ docker compose up --build -d
 - 산업군 API: `http://localhost:8000/api/v1/industries`
 
 기본 산업군은 두 번째 Alembic 마이그레이션에서 생성됩니다. 메인 기업 역할은 `main`,
-경쟁사 역할은 `competitor`로 저장되고, 제품명은 `product` 키워드로 저장됩니다.
+비교 기업 역할은 `competitor`로 저장되고, 제품명은 `product` 키워드로 저장됩니다.
 
 ## 뉴스 수집 API 키
 
@@ -120,7 +120,10 @@ API 응답은 바로 분석하지 않고 다음 세 계층으로 보관합니다
 - 유사 기사: 다른 URL은 삭제하지 않고 기사량에 포함하며 `story_clusters`로만 연결합니다.
 - 광고: 협찬·제휴·할인·구매·상담·연락처·상거래 URL 신호를 점수화합니다.
 - 관련성: 기업명, 종목코드, 별칭, 제품명이 실제 제목·요약에 등장하는지 확인하고,
-  KLUE-RoBERTa NLI 모델이 실질 기사·부수 언급·무관 가설을 비교합니다.
+  승격된 BGE cross-encoder가 `대상 기업 정보 + 기사` 쌍의 실질적 관련성을 재판정합니다.
+  승격 전에는 기존 NLI·규칙 판정으로 폴백합니다.
+- 제휴 고지: `쿠팡 파트너스 활동의 일환`과 같은 고지문에만 대상 기업이 등장하면
+  관련 기사로 통과시키지 않습니다.
 
 기본 판정 기준은 다음과 같습니다.
 
@@ -135,8 +138,11 @@ API 응답은 바로 분석하지 않고 다음 세 계층으로 보관합니다
 없으면 보수적인 규칙 기반 판정으로 계속 동작하고 `classifier_kind=rules_only` 및 실패
 사유를 기록합니다. AI가 사용되면 `classifier_kind=hybrid_klue_nli`와 모델명이 남습니다.
 관련성 분류의 초기 폴백 모델은 `Huffon/klue-roberta-base-nli`입니다. 기사 원문은 외부
-분류 API로 전송하지 않고 백엔드 컨테이너에서 추론합니다. 유사도는 중복 삭제가 아니라
-스토리 군집과 `article_count`/`story_count`/`amplification_count` 분리에만 사용합니다.
+분류 API로 전송하지 않고 백엔드 컨테이너에서 추론합니다. 정규화 URL이 같거나 제목이
+완전히 같고 발행(없으면 수집) 시각 차이가 15분 이내이면 한 기사로 처리합니다. 단,
+YouTube 댓글은 같은 영상의 서로 다른 댓글이 제목을 공유하므로 제목 중복 판정에서
+제외합니다. 그 밖의 유사도는 중복 삭제가 아니라 스토리 군집과
+`article_count`/`story_count`/`amplification_count` 분리에만 사용합니다.
 
 판정 통계와 상세 결과는 다음 API로 확인합니다.
 
@@ -244,12 +250,18 @@ KLUE 미세조정은 API 서버와 분리된 CUDA 컨테이너에서 실행합�
 ```powershell
 docker compose --profile training build trainer
 docker compose --profile training run --rm trainer filter --epochs 4
+docker compose --profile training run --rm trainer company-reranker --epochs 2 --batch-size 2 --human-weight 1
 docker compose --profile training run --rm trainer sentiment --epochs 4
 docker compose --profile training run --rm trainer risk-types --epochs 4
 docker compose --profile training run --rm trainer risk
 ```
 
-명령은 모두 `candidate`만 등록합니다. 아래 API는 추후 모델 운영 기능에서 사용합니다.
+명령은 모두 `candidate`만 등록합니다. `company-reranker`는 DB 확정 라벨로
+학습하되 기업 이름이 겹치지 않게 학습·검증·테스트를 나누고,
+`backend/training_data/relevance_labeled.csv`도 서로 겹치지 않는 학습 70%·임계값 보정 15%·최종 평가
+15%로 분리합니다. DB의 미학습 기업명은 CSV 학습 파트에서도 제외해 일반화 지표의
+누출을 막습니다.
+아래 API는 모델 운영 현황 확인에 사용합니다.
 
 ```text
 GET  /api/v1/model-versions
@@ -321,8 +333,9 @@ psql "postgresql://<user>:<password>@<host>:<port>/<database>" -f ground_truth_l
 판정하고, 7일이 지난 후속 보도는 강한 동일성이 있을 때만 최대 30일까지 기존 스토리에
 연결합니다. 한 개의 고정된 "제목 유사도 72%" 기준은 더 이상 사용하지 않습니다.
 
-같은 스토리의 후속 기사는 기존 사건에 연결하고, 마지막 적격 근거 이후 48시간 동안
-새 근거가 없으면 사건을 닫습니다. 위험 유형은 제품·품질, 안전·사고, 보안·개인정보,
+같은 스토리의 후속 기사는 기존 사건에 연결하고, 마지막 관련 기사 날짜 다음 날부터
+빈 날짜가 3일 연속 완료되면 사건을 닫습니다. 사건 위험도는 생성과 심각도 표시에만
+사용하며 자동 종료 조건에는 사용하지 않습니다. 위험 유형은 제품·품질, 안전·사고, 보안·개인정보,
 법률·규제, 노동·인사, 재무·지배구조, 공급·운영, 평판·소비자의 다중 라벨로 보존합니다.
 
 최초 사건 확정, 위험 등급 상승, 위험 확률의 의미 있는 상승 또는 공식 출처 추가 시 대응

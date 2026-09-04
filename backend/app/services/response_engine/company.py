@@ -30,6 +30,7 @@ _ALIASES: dict[str, CompanyRole] = {
     "peer": CompanyRole.PEER,
     "competitor": CompanyRole.PEER,
     "동종": CompanyRole.PEER,
+    "비교 기업": CompanyRole.PEER,
     "경쟁사": CompanyRole.PEER,
 }
 

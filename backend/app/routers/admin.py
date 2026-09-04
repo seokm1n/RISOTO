@@ -17,10 +17,12 @@ from app.models import (
     CompanyArticleMatch,
     NewsArticle,
     RiskEvent,
+    StoryClusterArticle,
     User,
     AuthSession,
 )
 from app.routers.collection import provider_status
+from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.schemas import (
     AdminCollectionCompanyRead,
     AdminCollectionDailyRead,
@@ -114,19 +116,35 @@ def _collection_daily_counts(db: Session, cutoff: date) -> list[AdminCollectionD
         .where(article_day >= cutoff)
         .group_by(article_day)
     ).all()
+    story_rows = db.execute(
+        select(
+            article_day.label("day"),
+            func.count(func.distinct(StoryClusterArticle.story_cluster_id)),
+        )
+        .select_from(CompanyArticleMatch)
+        .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+        .join(StoryClusterArticle, StoryClusterArticle.article_id == NewsArticle.id)
+        .where(article_day >= cutoff)
+        .group_by(article_day)
+    ).all()
     risk_day = cast(RiskEvent.detected_at, SqlDate)
     risk_rows = db.execute(
         select(risk_day.label("day"), func.count(RiskEvent.id))
-        .where(risk_day >= cutoff, RiskEvent.status != "legacy_candidate")
+        .where(
+            risk_day >= cutoff,
+            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+        )
         .group_by(risk_day)
     ).all()
     collected = {row.day: int(row[1] or 0) for row in collected_rows}
+    stories = {row.day: int(row[1] or 0) for row in story_rows}
     risks = {row.day: int(row[1] or 0) for row in risk_rows}
     days = sorted(set(collected) | set(risks))
     return [
         AdminCollectionDailyRead(
             day=day,
             collected_count=collected.get(day, 0),
+            story_count=stories.get(day, 0),
             risk_count=risks.get(day, 0),
         )
         for day in days
