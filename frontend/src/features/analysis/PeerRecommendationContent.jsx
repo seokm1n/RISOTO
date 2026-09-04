@@ -203,7 +203,7 @@ export default function PeerRecommendationContent({ content }) {
             {content.risk_type_label ? ` · ${content.risk_type_label}` : ""}
           </strong>
         </div>
-        <span className="draft-kind competitor">경쟁사 → 나의 기업 영향</span>
+        <span className="draft-kind competitor">비교 기업 → 나의 기업 영향</span>
       </div>
 
       <ImpactVerdict impact={impact} peerCompanyName={content.peer_company_name} />

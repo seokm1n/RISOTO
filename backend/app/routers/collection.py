@@ -22,6 +22,7 @@ from app.models import (
     NewsArticle,
     RawNewsArticle,
     RiskEvent,
+    RiskEventArticle,
     RiskEventType,
     StoryClusterArticle,
 )
@@ -80,6 +81,17 @@ def _latest_filter_results(company_id: int):
     return (
         select(ArticleFilterResult)
         .join(latest_ids, latest_ids.c.id == ArticleFilterResult.id)
+    )
+
+
+def _eligible_story_event_ids(min_articles: int):
+    """Return story events backed by the minimum number of evidence articles."""
+    return (
+        select(RiskEventArticle.risk_event_id)
+        .group_by(RiskEventArticle.risk_event_id)
+        .having(
+            func.count(func.distinct(RiskEventArticle.article_id)) >= min_articles
+        )
     )
 
 
@@ -305,11 +317,13 @@ def set_monitoring_state(
 def list_company_articles(
     company_id: int,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=100),
+    page_size: int = Query(default=10, ge=1, le=1000),
     source: str | None = Query(default=None, min_length=1, max_length=40),
     q: str | None = Query(default=None, min_length=1, max_length=200),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    time_from: datetime | None = Query(default=None),
+    time_to: datetime | None = Query(default=None),
     days: int | None = Query(default=None, ge=1, le=365),
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
@@ -357,6 +371,10 @@ def list_company_articles(
         base_query = base_query.where(article_time >= datetime.combine(date_from, datetime.min.time(), tzinfo=SEOUL).astimezone(timezone.utc))
     if date_to:
         base_query = base_query.where(article_time < (datetime.combine(date_to, datetime.min.time(), tzinfo=SEOUL) + timedelta(days=1)).astimezone(timezone.utc))
+    if time_from:
+        base_query = base_query.where(article_time >= time_from)
+    if time_to:
+        base_query = base_query.where(article_time < time_to)
     total = db.scalar(select(func.count()).select_from(base_query.subquery())) or 0
     rows = db.execute(
         base_query
@@ -490,9 +508,15 @@ def list_risk_events_page(
     """위험관리 화면용 사건 목록을 서버에서 필터링·페이지네이션한다."""
     _user_company(db, company_id, auth.user_id)
     active_statuses = ("open", "monitoring", "acknowledged")
+    settings = get_settings()
     base_filters = (
         RiskEvent.company_id == company_id,
         RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+        RiskEvent.event_source == "story_v2",
+        RiskEvent.story_cluster_id.is_not(None),
+        RiskEvent.id.in_(
+            _eligible_story_event_ids(settings.story_event_min_articles)
+        ),
     )
     query = select(RiskEvent).where(*base_filters)
     if view == "active":

@@ -36,6 +36,11 @@ SPACE_RE = re.compile(r"\s+")
 TRACKING_PARAMETERS = {
     "fbclid", "gclid", "igshid", "mc_cid", "mc_eid", "ref", "source",
 }
+# URL이 달라도 같은 제목이 짧은 시간 안에 반복되면 제공자가 같은 기사를
+# 사진 번호 등으로 여러 번 내보낸 경우로 본다. 스토리 확산을 보존하기 위해
+# 비슷한 제목까지 넓히지는 않고 정규화 후 완전히 같은 제목에만 적용한다.
+TITLE_DUPLICATE_WINDOW_MINUTES = 15
+TITLE_DUPLICATE_EXCLUDED_SOURCES = {"youtube_comment"}
 # 각 항목은 광고 표현 정규식, 누적 가중치, 감사 로그용 근거 코드로 구성된다.
 AD_PATTERNS: tuple[tuple[str, float, str], ...] = (
     (r"(?:유료\s*)?광고(?:입니다|포함|성)?", 0.34, "advertising_disclosure"),
@@ -94,7 +99,7 @@ TOPICAL_RELEVANCE_TRAINED_COMPANIES = {
 class FilterConfig:
     """필터 버전, 판정 임계값 및 선택적 AI 모델 설정을 한데 묶는다."""
 
-    version: str = "hybrid-company-reranker-v4"
+    version: str = "hybrid-company-reranker-v5"
     duplicate_threshold: float = 0.92
     advertising_reject_threshold: float = 0.85
     advertising_review_threshold: float = 0.55
@@ -426,13 +431,39 @@ def _non_article_page_evidence(item: object) -> list[str]:
     return []
 
 
-def _published_close(left: object, right: object, max_days: int = 7) -> bool:
-    """두 기사의 발행일 차이가 중복 비교 허용 범위 안인지 확인한다."""
-    left_date = getattr(left, "published_at", None)
-    right_date = getattr(right, "published_at", None)
-    if not isinstance(left_date, datetime) or not isinstance(right_date, datetime):
-        return True
-    return abs((left_date - right_date).total_seconds()) <= max_days * 86400
+def _published_within_minutes(
+    left: object,
+    right: object,
+    max_minutes: int = TITLE_DUPLICATE_WINDOW_MINUTES,
+) -> bool:
+    """발행 시각, 없으면 수집 시각이 지정한 분 이내인지 확인한다."""
+    for field in ("published_at", "collected_at"):
+        left_date = getattr(left, field, None)
+        right_date = getattr(right, field, None)
+        if not isinstance(left_date, datetime) or not isinstance(right_date, datetime):
+            continue
+        try:
+            seconds = abs((left_date - right_date).total_seconds())
+        except TypeError:
+            # 한쪽만 timezone 정보를 가진 비정상 입력도 비교 자체가 실패하지 않게 한다.
+            seconds = abs(
+                (
+                    left_date.replace(tzinfo=None)
+                    - right_date.replace(tzinfo=None)
+                ).total_seconds()
+            )
+        return seconds <= max(0, max_minutes) * 60
+    return False
+
+
+def _supports_title_duplicate_check(item: object) -> bool:
+    """제목이 개별 수집 항목의 정체성을 나타내는 소스인지 확인한다.
+
+    YouTube 수집 항목은 제목이 영상명이고 실제 개별 항목은 댓글이다. 같은 영상에
+    달린 서로 다른 댓글을 기사 제목 중복 규칙으로 합치지 않는다.
+    """
+    source = str(getattr(item, "source", "") or "").strip().casefold()
+    return source not in TITLE_DUPLICATE_EXCLUDED_SOURCES
 
 
 def classify_article(
@@ -637,19 +668,51 @@ def classify_article(
     else:
         details_topical_override = None
 
-    # 자료량과 확산을 보존하기 위해 URL이 같은 경우만 중복 제거한다.
-    # 같은 본문 해시나 유사 문장은 story_cluster_id로 묶되 이 단계에서는 삭제하지 않는다.
+    # URL이 같거나, 정규화 제목이 완전히 같고 15분 이내인 경우만 중복 제거한다.
+    # 비슷한 제목·본문은 실제 타 언론사의 후속 보도일 수 있으므로 story_cluster_id로만 묶는다.
+    # YouTube 댓글처럼 제목이 개별 항목이 아니라 상위 콘텐츠(영상)를 나타내는 소스는
+    # 제목 중복 비교에서 제외하고 URL로만 중복을 판정한다.
     candidates = [
         candidate for candidate in (candidate_articles or [])
         if getattr(candidate, "id", None) != getattr(raw_record, "id", None)
     ]
     ranked: list[tuple[float, object, str]] = []
+    item_title = normalize_text(getattr(item, "title", ""))
+    time_reference = raw_record or item
     for candidate in candidates:
+        raw_id = getattr(time_reference, "id", None)
+        candidate_id = getattr(candidate, "id", None)
         candidate_url = normalize_url(
             getattr(candidate, "normalized_url", None) or getattr(candidate, "url", "")
         )
-        if item_url and candidate_url == item_url:
+        if (
+            item_url
+            and candidate_url == item_url
+            and (
+                raw_id is None
+                or candidate_id is None
+                or candidate_id < raw_id
+            )
+        ):
             ranked.append((1.0, candidate, "same_normalized_url"))
+            continue
+        candidate_title = normalize_text(getattr(candidate, "title", ""))
+        if (
+            item_title
+            and candidate_title == item_title
+            and _supports_title_duplicate_check(time_reference)
+            and _supports_title_duplicate_check(candidate)
+            # raw ID is monotonic, so the older row is always the canonical one.
+            # This also prevents a version-bump reanalysis from making two rows
+            # point at each other as duplicates.
+            and (
+                raw_id is None
+                or candidate_id is None
+                or candidate_id < raw_id
+            )
+            and _published_within_minutes(time_reference, candidate)
+        ):
+            ranked.append((1.0, candidate, "same_title_within_15_minutes"))
     ranked.sort(key=lambda row: row[0], reverse=True)
 
     duplicate_score, duplicate_candidate, duplicate_evidence = (

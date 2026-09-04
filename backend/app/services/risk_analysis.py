@@ -782,6 +782,7 @@ def update_risk_events(
             select(RiskEvent)
             .where(
                 RiskEvent.company_id == window.company_id,
+                RiskEvent.event_source == "window_v1",
                 RiskEvent.status.in_(["open", "monitoring", "acknowledged"]),
             )
             .order_by(RiskEvent.last_seen_at.desc())

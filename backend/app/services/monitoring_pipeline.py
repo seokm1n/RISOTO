@@ -7,13 +7,14 @@ import logging
 from pathlib import Path
 from threading import Lock
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import delete, or_, select, text
 
 from app.config import Settings, get_settings
 from app.database import SessionLocal
 from app.models import (
     ArticleQueryHit,
     ArticleFilterResult,
+    ArticleRiskAssessment,
     CollectionIncident,
     CollectionJob,
     Company,
@@ -29,6 +30,7 @@ from app.services.article_filtering import (
     content_hash,
     get_semantic_scorer,
     normalized_content,
+    normalize_text,
     normalize_url,
 )
 from app.services.collection_health import (
@@ -113,24 +115,53 @@ def _raw_candidates(db, raw: RawNewsArticle, limit: int = 250) -> list[RawNewsAr
     exact = or_(
         RawNewsArticle.normalized_url == raw.normalized_url,
         RawNewsArticle.content_hash == raw.content_hash,
+        RawNewsArticle.title == raw.title,
     )
-    conditions = exact
-    if raw.published_at is not None:
-        conditions = or_(
-            exact,
-            RawNewsArticle.published_at.between(
-                raw.published_at - timedelta(days=7),
-                raw.published_at + timedelta(days=7),
-            ),
-        )
-    return list(
+    candidates = list(
         db.scalars(
             select(RawNewsArticle)
-            .where(RawNewsArticle.id != raw.id, conditions)
+            .where(RawNewsArticle.id != raw.id, exact)
             .order_by(RawNewsArticle.collected_at.desc())
             .limit(limit)
         )
     )
+    remaining = limit - len(candidates)
+    if remaining <= 0:
+        return candidates
+
+    # 정규화 전 제목 표기가 조금 다른 경우도 15분 범위에서 비교하되, 7일치
+    # 전체 후보에 밀려 정확한 제목 후보가 누락되지 않도록 시간 범위를 좁힌다.
+    nearby_conditions = []
+    if raw.published_at is not None:
+        nearby_conditions.append(
+            RawNewsArticle.published_at.between(
+                raw.published_at - timedelta(minutes=15),
+                raw.published_at + timedelta(minutes=15),
+            )
+        )
+    if raw.collected_at is not None:
+        nearby_conditions.append(
+            RawNewsArticle.collected_at.between(
+                raw.collected_at - timedelta(minutes=15),
+                raw.collected_at + timedelta(minutes=15),
+            )
+        )
+    if nearby_conditions:
+        existing_ids = {candidate.id for candidate in candidates}
+        candidates.extend(
+            candidate
+            for candidate in db.scalars(
+                select(RawNewsArticle)
+                .where(
+                    RawNewsArticle.id != raw.id,
+                    RawNewsArticle.id.notin_(existing_ids),
+                    or_(*nearby_conditions),
+                )
+                .order_by(RawNewsArticle.collected_at.desc())
+                .limit(remaining)
+            )
+        )
+    return candidates
 
 
 def _lock_normalized_url(db, normalized_url: str) -> None:
@@ -755,6 +786,7 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
         "filter_review_required": 0,
         "article_matches_added": 0,
         "article_matches_removed": 0,
+        "risk_assessments_removed": 0,
         "sentiment_queued": 0,
         "sentiment_analyzed": 0,
         "feature_windows": 0,
@@ -815,6 +847,25 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     .order_by(RawNewsArticle.collected_at.desc())
                 ):
                     same_url_candidates[candidate.normalized_url].append(candidate)
+            # 재정제에서도 실시간 수집과 같은 "동일 제목 + 15분" 규칙을 쓴다.
+            # 낮은 raw ID를 기준 기사로 고정해 두 원문이 서로를 중복으로 가리키는
+            # 순환 참조를 만들지 않는다.
+            same_title_candidates: dict[str, list[RawNewsArticle]] = {}
+            raw_titles = {
+                candidate.title for candidate, _hit in rows_to_evaluate
+                if candidate.title
+            }
+            if raw_titles:
+                # 기준 원문이 다른 기업의 검색 결과로 먼저 저장됐더라도 찾을 수 있게
+                # 회사별 hit 범위가 아니라 전체 원문에서 같은 제목을 조회한다.
+                for candidate in db.scalars(
+                    select(RawNewsArticle)
+                    .where(RawNewsArticle.title.in_(raw_titles))
+                    .order_by(RawNewsArticle.id)
+                ):
+                    title_key = normalize_text(candidate.title)
+                    if title_key:
+                        same_title_candidates.setdefault(title_key, []).append(candidate)
             existing_filter_results = {
                 result.raw_article_id: result
                 for result in db.scalars(
@@ -856,7 +907,6 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                 )
 
             accepted_articles: dict[int, ArticleQueryHit] = {}
-            processed_article_ids: set[int] = set()
             for (raw, hit), reranker_prediction, relevance_prediction, topical_prediction in zip(
                 rows_to_evaluate,
                 reranker_predictions,
@@ -868,11 +918,15 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     keywords,
                     raw,
                     raw,
-                    candidate_articles=[
-                        candidate
-                        for candidate in same_url_candidates.get(raw.normalized_url, [])
+                    candidate_articles=list({
+                        candidate.id: candidate
+                        for candidate in [
+                            *same_url_candidates.get(raw.normalized_url, []),
+                            *same_title_candidates.get(normalize_text(raw.title), []),
+                        ]
                         if candidate.id != raw.id
-                    ][:250],
+                        and candidate.id < raw.id
+                    }.values())[:250],
                     semantic_scorer=semantic_scorer,
                     config=filter_config,
                     precomputed_company_reranker=reranker_prediction,
@@ -912,8 +966,6 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     )
                     db.add(result)
                     existing_filter_results[raw.id] = result
-                if result.curated_article_id is not None:
-                    processed_article_ids.add(result.curated_article_id)
                 result.decision = decision.decision
                 result.reason = decision.reason
                 result.duplicate_of_raw_id = decision.duplicate_of_raw_id
@@ -936,7 +988,6 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                 counters["filter_evaluated"] += 1
                 counters[f"filter_{decision.decision}"] += 1
                 if article is not None:
-                    processed_article_ids.add(article.id)
                     if decision.decision == "accepted":
                         accepted_articles[article.id] = hit
                         assign_story_cluster(
@@ -966,7 +1017,28 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                         )
                     )
                     counters["article_matches_added"] += 1
-            for article_id in processed_article_ids - set(accepted_articles):
+            # This is a full historical pass, so the accepted set is authoritative
+            # for the company.  A previously interrupted pass may already have
+            # cleared ArticleFilterResult.curated_article_id while leaving the old
+            # CompanyArticleMatch behind; limiting removal to result pointers would
+            # make that stale match impossible to discover on the next run.
+            stale_article_ids = set(current_matches) - set(accepted_articles)
+            stale_assessment_ids = set(
+                db.scalars(
+                    select(ArticleRiskAssessment.article_id).where(
+                        ArticleRiskAssessment.company_id == company_id,
+                    )
+                )
+            ) - set(accepted_articles)
+            if stale_assessment_ids:
+                db.execute(
+                    delete(ArticleRiskAssessment).where(
+                        ArticleRiskAssessment.company_id == company_id,
+                        ArticleRiskAssessment.article_id.in_(stale_assessment_ids),
+                    )
+                )
+                counters["risk_assessments_removed"] += len(stale_assessment_ids)
+            for article_id in stale_article_ids:
                 match = current_matches.get(article_id)
                 if match is not None:
                     db.delete(match)

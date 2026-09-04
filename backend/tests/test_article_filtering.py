@@ -1,6 +1,7 @@
 """기사 필터의 관련성·광고·중복 판정 회귀 테스트."""
 
 import unittest
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -18,7 +19,7 @@ def article(title, summary="", url="https://news.example/story", **extra):
         title=title,
         summary=summary,
         url=url,
-        published_at=None,
+        published_at=extra.pop("published_at", None),
         **extra,
     )
 
@@ -111,12 +112,14 @@ class ArticleFilteringTests(unittest.TestCase):
         self.assertEqual((result.decision, result.reason), ("rejected", "duplicate"))
         self.assertEqual(result.duplicate_of_raw_id, 41)
 
-    def test_similar_content_at_a_different_url_is_preserved(self):
-        """내용이 같아도 정규화 URL이 다르면 기사량 집계 대상으로 보존한다."""
+    def test_exact_title_at_a_different_url_within_15_minutes_is_duplicate(self):
+        """URL이 달라도 같은 제목이 15분 이내 반복되면 한 기사로 처리한다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
         candidate = article(
             "Acme Robotics launches Robo One",
             url="https://publisher-a.example/news/1",
             id=42,
+            published_at=published_at,
         )
         candidate.normalized_url = normalize_url(candidate.url)
         candidate.content_hash = content_hash(candidate.title, candidate.summary)
@@ -124,8 +127,108 @@ class ArticleFilteringTests(unittest.TestCase):
             article(
                 "Acme Robotics launches Robo One",
                 url="https://publisher-b.example/articles/99",
+                published_at=published_at + timedelta(minutes=14),
             ),
             candidates=[candidate],
+        )
+        self.assertEqual((result.decision, result.reason), ("rejected", "duplicate"))
+        self.assertEqual(result.duplicate_of_raw_id, 42)
+        self.assertEqual(
+            result.details["duplicate_evidence"],
+            "same_title_within_15_minutes",
+        )
+
+    def test_exact_title_at_a_different_url_after_15_minutes_is_preserved(self):
+        """같은 제목이라도 15분을 넘긴 별도 발행은 기사량 집계 대상으로 보존한다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
+        candidate = article(
+            "Acme Robotics launches Robo One",
+            url="https://publisher-a.example/news/1",
+            id=43,
+            published_at=published_at,
+        )
+        candidate.normalized_url = normalize_url(candidate.url)
+        result = self.classify(
+            article(
+                "Acme Robotics launches Robo One",
+                url="https://publisher-b.example/articles/99",
+                published_at=published_at + timedelta(minutes=16),
+            ),
+            candidates=[candidate],
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertIsNone(result.duplicate_of_raw_id)
+
+    def test_youtube_comments_with_the_same_video_title_are_preserved(self):
+        """같은 영상의 서로 다른 댓글은 영상 제목이 같아도 별도 항목으로 보존한다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
+        candidate = article(
+            "Acme Robotics product review",
+            summary="첫 번째 시청자 댓글",
+            url="https://youtube.com/watch?v=1&lc=comment-a",
+            id=44,
+            source="youtube_comment",
+            published_at=published_at,
+        )
+        candidate.normalized_url = normalize_url(candidate.url)
+        result = self.classify(
+            article(
+                "Acme Robotics product review",
+                summary="서로 다른 두 번째 시청자 댓글",
+                url="https://youtube.com/watch?v=1&lc=comment-b",
+                source="youtube_comment",
+                published_at=published_at + timedelta(minutes=1),
+            ),
+            candidates=[candidate],
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertIsNone(result.duplicate_of_raw_id)
+
+    def test_title_duplicate_never_points_to_a_later_raw_record(self):
+        """재정제 시 기준 원문이 더 큰 ID의 중복 원문을 가리키지 않는다."""
+        published_at = datetime(2098, 1, 1, 3, 0, tzinfo=timezone.utc)
+        canonical = article(
+            "Acme Robotics launches Robo One",
+            url="https://publisher-a.example/news/1",
+            id=41,
+            published_at=published_at,
+        )
+        later = article(
+            "Acme Robotics launches Robo One",
+            url="https://publisher-a.example/news/2",
+            id=42,
+            published_at=published_at + timedelta(minutes=1),
+        )
+        result = classify_article(
+            self.company,
+            self.keywords,
+            canonical,
+            canonical,
+            candidate_articles=[later],
+            config=self.config,
+        )
+        self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
+        self.assertIsNone(result.duplicate_of_raw_id)
+
+    def test_url_duplicate_never_points_to_a_later_raw_record(self):
+        """재정제 시 같은 URL의 기준 원문도 항상 더 낮은 ID로 고정한다."""
+        canonical = article(
+            "Acme Robotics launches Robo One",
+            id=45,
+        )
+        canonical.normalized_url = normalize_url(canonical.url)
+        later = article(
+            "Acme Robotics launches Robo One updated",
+            id=46,
+        )
+        later.normalized_url = normalize_url(later.url)
+        result = classify_article(
+            self.company,
+            self.keywords,
+            canonical,
+            canonical,
+            candidate_articles=[later],
+            config=self.config,
         )
         self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
         self.assertIsNone(result.duplicate_of_raw_id)

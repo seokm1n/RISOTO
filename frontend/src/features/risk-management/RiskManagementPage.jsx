@@ -7,10 +7,8 @@ import { RISK_TYPE_LABELS, formatNumber } from "../../shared/presentation";
 import { RiskDetail, RiskEventListContent } from "../analysis/AnalysisStatisticsPage";
 
 const HISTORY_PERIOD_OPTIONS = [
-  { value: "7", label: "최근 7일" },
-  { value: "30", label: "최근 30일" },
-  { value: "90", label: "최근 90일" },
-  { value: "365", label: "최근 1년" },
+  { value: "3", label: "3일" },
+  { value: "7", label: "7일" },
   { value: "all", label: "전체" },
 ];
 const VIEW_OPTIONS = new Set(["active", "history"]);
@@ -33,8 +31,8 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const loadSequence = useRef(0);
 
   const selectedCompanyId = searchParams.get("companyId") || (initialCompanyId ? String(initialCompanyId) : "");
-  const requestedView = searchParams.get("view") ?? "active";
-  const eventView = VIEW_OPTIONS.has(requestedView) ? requestedView : "active";
+  const requestedView = searchParams.get("view") ?? "history";
+  const eventView = VIEW_OPTIONS.has(requestedView) ? requestedView : "history";
   const requestedPeriod = searchParams.get("days") ?? String(initialPeriodDays || 7);
   const period = HISTORY_PERIODS.has(requestedPeriod) ? requestedPeriod : "7";
   const page = positiveInteger(searchParams.get("page"), 1);
@@ -148,19 +146,18 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
 
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
-  const historyTitle = period === "all" ? "종료 사건 · 전체" : `종료 사건 · 최근 ${period === "365" ? "1년" : `${period}일`}`;
+  const historyTitle = period === "all" ? "종료 사건 · 전체" : `종료 사건 · 최근 ${period}일`;
 
   return <section className="workspace analysis-statistics-workspace risk-management-workspace">
     <div className="risk-summary-grid" aria-label="위험 사건 요약">
       <article><span>활성 사건</span><strong>{formatNumber(pageData.summary.active)}</strong><small>지금 추적 중</small></article>
-      <article className="critical"><span>치명적 사건</span><strong>{formatNumber(pageData.summary.critical)}</strong><small>즉시 확인 필요</small></article>
       <article className="needs-response"><span>대응 필요</span><strong>{formatNumber(pageData.summary.needs_response)}</strong><small>보류 또는 실패</small></article>
       <article><span>종료 이력</span><strong>{formatNumber(pageData.summary.history)}</strong><small>전체 종료 사건</small></article>
     </div>
 
     <div className="monitor-toolbar risk-management-toolbar">
       <div className="analysis-toolbar-filters">
-        <label><span className="analysis-field-label">관리 기업</span><select value={selectedCompanyId} onChange={(event) => updateQuery({ companyId: event.target.value }, { resetPage: true, clearSelection: true })}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="경쟁사">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label>
+        <label><span className="analysis-field-label">관리 기업</span><select value={selectedCompanyId} onChange={(event) => updateQuery({ companyId: event.target.value }, { resetPage: true, clearSelection: true })}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label>
         <label><span className="analysis-field-label">위험 유형</span><select value={riskType} onChange={(event) => updateQuery({ risk_type: event.target.value }, { resetPage: true, clearSelection: true })}><option value="all">전체 유형</option>{Object.entries(RISK_TYPE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
         <label><span className="analysis-field-label">심각도</span><select value={severity} onChange={(event) => updateQuery({ severity: event.target.value }, { resetPage: true, clearSelection: true })}><option value="all">전체 심각도</option><option value="critical">긴급</option><option value="warning">주의</option></select></label>
         <label><span className="analysis-field-label">대응 상태</span><select value={responseStatus} onChange={(event) => updateQuery({ response: event.target.value }, { resetPage: true, clearSelection: true })}><option value="all">전체 상태</option><option value="needs_action">대응 필요</option><option value="in_progress">생성 중</option><option value="generated">생성 완료</option><option value="none">미생성</option></select></label>
@@ -169,8 +166,8 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
     </div>
 
     <div className="risk-view-tabs" role="tablist" aria-label="사건 목록 구분">
-      <button type="button" role="tab" aria-selected={eventView === "active"} className={eventView === "active" ? "active" : ""} onClick={() => updateQuery({ view: "active" }, { resetPage: true, clearSelection: true })}>활성·검토 필요 <strong>{formatNumber(pageData.summary.active)}</strong></button>
       <button type="button" role="tab" aria-selected={eventView === "history"} className={eventView === "history" ? "active" : ""} onClick={() => updateQuery({ view: "history", days: period }, { resetPage: true, clearSelection: true })}>종료 이력 <strong>{formatNumber(pageData.summary.history)}</strong></button>
+      <button type="button" role="tab" aria-selected={eventView === "active"} className={eventView === "active" ? "active" : ""} onClick={() => updateQuery({ view: "active" }, { resetPage: true, clearSelection: true })}>활성·검토 필요 <strong>{formatNumber(pageData.summary.active)}</strong></button>
     </div>
 
     {error && <div className="notice error">{error}</div>}

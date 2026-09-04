@@ -119,6 +119,40 @@ class RiskEventDatabaseTests(unittest.TestCase):
         self.assertNotEqual(first_id, second_id)
         self.assertTrue(should_generate)
 
+    def test_window_hysteresis_never_closes_story_event(self):
+        story_event = RiskEvent(
+            company_id=self.company_id,
+            event_key="window-isolation-story-test",
+            event_source="story_v2",
+            anomaly_score=0.0,
+            risk_probability=0.9,
+            severity="critical",
+            status="monitoring",
+            primary_type="safety_accident",
+            summary="15분 점수와 분리된 스토리 사건",
+            model_version="story-event-test",
+            opened_at=self.start,
+            last_seen_at=self.start,
+            last_evidence_at=self.start,
+        )
+        self.db.add(story_event)
+        self.db.flush()
+
+        update_risk_events(
+            self.db,
+            self.window(0, False, "safety_accident"),
+            self.settings,
+        )
+        update_risk_events(
+            self.db,
+            self.window(1, False, "safety_accident"),
+            self.settings,
+        )
+
+        self.assertEqual(story_event.status, "monitoring")
+        self.assertEqual(story_event.consecutive_below, 0)
+        self.assertIsNone(story_event.closed_at)
+
 
 if __name__ == "__main__":
     unittest.main()

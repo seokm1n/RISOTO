@@ -167,7 +167,7 @@ def create_or_update_company(
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> CompanyRead:
-    """현재 사용자의 경쟁사를 등록한다."""
+    """현재 사용자의 비교 기업을 등록한다."""
     return _create_company(payload, "competitor", background_tasks, db, auth)
 
 

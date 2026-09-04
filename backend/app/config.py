@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     baseline_min_days: int = 3
 
     # 기사 중복·광고·관련성 하이브리드 필터 설정
-    article_filter_version: str = "hybrid-company-reranker-v4"
+    article_filter_version: str = "hybrid-company-reranker-v5"
     article_filter_ai_enabled: bool = True
     article_filter_classifier_model: str = "Huffon/klue-roberta-base-nli"
     article_filter_semantic_model: str = (
@@ -94,8 +94,9 @@ class Settings(BaseSettings):
     article_risk_high_threshold: float = 0.80
     article_risk_uncertain_low: float = 0.35
     article_risk_llm_max_per_run: int = 20
-    story_event_min_distinct_sources: int = 2
-    story_event_inactivity_hours: int = 48
+    story_event_min_articles: int = 2
+    # 마지막 관련 기사 날짜 다음 날부터 빈 날짜 3일이 모두 지나면 종료한다.
+    story_event_inactivity_days: int = 3
     story_event_rebuild_hours: int = 72
 
     # 후보 재학습 준비 신호와 일일 운영 점검. 학습·승격은 별도 GPU 작업과 관리자 승인으로 남긴다.

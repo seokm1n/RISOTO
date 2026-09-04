@@ -11,7 +11,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import engine
-from app.models import Company, CompanyFeatureWindow, ModelVersion, RiskEvent
+from app.models import (
+    Company,
+    CompanyFeatureWindow,
+    ModelVersion,
+    NewsArticle,
+    RiskEvent,
+    RiskEventArticle,
+    StoryCluster,
+)
 from app.routers.notifications import list_notifications
 from app.services.model_governance import evaluate_model_promotion
 from tests.auth_helpers import auth_for_company
@@ -109,8 +117,18 @@ class NotificationDatabaseTests(unittest.TestCase):
 
     def test_only_current_user_open_risks_are_returned_read_only(self):
         start = datetime(2093, 1, 1, tzinfo=timezone.utc)
+        cluster = StoryCluster(
+            fingerprint=uuid4().hex,
+            representative_title="통합 알림 테스트 위험 스토리",
+            first_published_at=start,
+            last_published_at=start + timedelta(minutes=1),
+        )
+        self.db.add(cluster)
+        self.db.flush()
         open_event = RiskEvent(
             company_id=self.company_id,
+            story_cluster_id=cluster.id,
+            event_source="story_v2",
             anomaly_score=0.8,
             risk_probability=0.9,
             severity="critical",
@@ -148,6 +166,8 @@ class NotificationDatabaseTests(unittest.TestCase):
         )
         monitoring_event = RiskEvent(
             company_id=self.company_id,
+            story_cluster_id=cluster.id,
+            event_source="story_v2",
             anomaly_score=0.65,
             risk_probability=0.75,
             severity="warning",
@@ -161,6 +181,57 @@ class NotificationDatabaseTests(unittest.TestCase):
         self.db.add_all(
             [open_event, closed_event, acknowledged_event, monitoring_event]
         )
+        singleton_event = RiskEvent(
+            company_id=self.company_id,
+            story_cluster_id=cluster.id,
+            event_source="story_v2",
+            anomaly_score=0.9,
+            risk_probability=0.92,
+            severity="critical",
+            status="open",
+            summary="기사 한 건뿐인 위험",
+            model_state="provisional",
+            approval_state="draft",
+            opened_at=start + timedelta(minutes=4),
+            last_seen_at=start + timedelta(minutes=4),
+        )
+        legacy_event = RiskEvent(
+            company_id=self.company_id,
+            anomaly_score=0.95,
+            risk_probability=0.95,
+            severity="critical",
+            status="open",
+            summary="스토리가 아닌 과거 위험",
+            model_state="provisional",
+            approval_state="draft",
+            opened_at=start + timedelta(minutes=5),
+            last_seen_at=start + timedelta(minutes=5),
+        )
+        self.db.add_all([singleton_event, legacy_event])
+        self.db.flush()
+        evidence_articles = []
+        for index in range(2):
+            article = NewsArticle(
+                source="notification-test",
+                title=f"알림 근거 기사 {index}",
+                url=f"https://notification.test/{uuid4().hex}",
+                published_at=start + timedelta(seconds=index),
+            )
+            self.db.add(article)
+            self.db.flush()
+            evidence_articles.append(article)
+        for event in (open_event, monitoring_event):
+            for article in evidence_articles:
+                self.db.add(RiskEventArticle(
+                    risk_event_id=event.id,
+                    article_id=article.id,
+                    evidence_score=0.8,
+                ))
+        self.db.add(RiskEventArticle(
+            risk_event_id=singleton_event.id,
+            article_id=evidence_articles[0].id,
+            evidence_score=0.9,
+        ))
 
         valid_count = int(
             self.db.scalar(
@@ -224,8 +295,33 @@ class NotificationDatabaseTests(unittest.TestCase):
         self.assertNotIn(f"risk:{closed_event.id}", ids)
         self.assertNotIn(f"risk:{acknowledged_event.id}", ids)
         self.assertIn(f"risk:{monitoring_event.id}", ids)
+        self.assertNotIn(f"risk:{singleton_event.id}", ids)
+        self.assertNotIn(f"risk:{legacy_event.id}", ids)
         self.assertNotIn(f"model:{eligible.id}", ids)
         self.assertNotIn(f"model:{blocked.id}", ids)
+        follow_up = NewsArticle(
+            source="notification-test",
+            title="기존 위험 스토리에 추가된 후속 기사",
+            url=f"https://notification.test/{uuid4().hex}",
+            published_at=start + timedelta(hours=1),
+        )
+        self.db.add(follow_up)
+        self.db.flush()
+        self.db.add(RiskEventArticle(
+            risk_event_id=open_event.id,
+            article_id=follow_up.id,
+            evidence_score=0.7,
+        ))
+        self.db.flush()
+        updated = list_notifications(self.db, self.auth)
+        self.assertEqual(
+            {item.id for item in updated.items},
+            ids,
+        )
+        self.assertEqual(
+            next(item for item in updated.items if item.id == f"risk:{open_event.id}").created_at,
+            start,
+        )
         self.assertEqual(response.total, len(response.items))
         self.assertEqual(
             response.risk_count,

@@ -27,7 +27,7 @@ import { useSharedResource } from "../../shared/useSharedResource";
 
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "AI 리스크 브리핑", path: "/main" },
-  { id: "statistics", label: "분석", path: "/analysis/collection" },
+  { id: "statistics", label: "분석 파이프라인", path: "/analysis/collection" },
   { id: "risk-management", label: "대응", path: "/risk-management" },
   { id: "collection", label: "수집 관리", path: "/collection" },
   { id: "companies", label: "기업 관리", path: "/companies" },
@@ -43,7 +43,7 @@ const ADMIN_NAV_ITEMS = [
 const PAGE_TITLES = {
   main: "AI 리스크 브리핑",
   collection: "수집 현황",
-  statistics: "분석 통계",
+  statistics: "분석 파이프라인",
   "risk-management": "위험 관리",
   companies: "기업 목록",
   account: "마이페이지",
@@ -180,6 +180,20 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     goTo(`/analysis/${riskEventId ? "risk" : "collection"}${query}`, options);
   }, [goTo]);
 
+  const openRiskAnalysis = useCallback((companyId, options) => {
+    const params = new URLSearchParams();
+    if (companyId) params.set("companyId", String(companyId));
+    const query = params.size ? `?${params}` : "";
+    goTo(`/analysis/risk${query}`, options);
+  }, [goTo]);
+
+  const openResponseHistory = useCallback((companyId, riskEventId, options) => {
+    const params = new URLSearchParams({ view: "history", days: "all" });
+    if (companyId) params.set("companyId", String(companyId));
+    if (riskEventId) params.set("eventId", String(riskEventId));
+    goTo(`/risk-management?${params}`, options);
+  }, [goTo]);
+
   const requestLogout = async () => {
     if (managementDirty && page === "companies") {
       const confirmed = await confirm({
@@ -250,7 +264,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="*" element={<Navigate to="/admin/members" replace />} />
     </> : <>
       <Route path="/" element={<Navigate to="/main" replace />} />
-      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} />} />
+      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} onOpenRiskPage={openRiskAnalysis} onOpenResponseHistory={openResponseHistory} />} />
       <Route path="/account" element={<MyPage session={session} onAccountDeleted={onAccountDeleted} />} />
       <Route path="/collection" element={<CollectionRoute onOpenCompany={openAnalysisStatistics} onMonitoringChanged={refreshUserCompanies} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
