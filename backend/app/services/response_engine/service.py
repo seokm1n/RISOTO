@@ -24,6 +24,7 @@ from dataclasses import asdict
 
 from sqlalchemy import select, text
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Company, ResponseDraft, RiskEvent, RiskEventArticle, NewsArticle
 from app.services.risk_ground_truth import authoritative_risk_label
@@ -576,7 +577,7 @@ def _build_peer_content(db, payload):
     return content, allowed_urls, response_model()
 
 
-def enqueue_response_draft(risk_event_id: int, force: bool = False) -> None:
+def enqueue_response_draft(risk_event_id: int, force: bool = False, auto: bool = False) -> None:
     """수집 흐름을 막지 않고 백그라운드로 생성한다. 실패는 로그로만 남는다.
 
     **이벤트 단위로 잠그는 이유**: 이 함수를 부르는 실시간 tick이 여러 곳에서 동시에 돈다
@@ -595,6 +596,17 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False) -> None:
                 event.response_generation_status = status
                 event.response_generation_error = error
                 status_db.commit()
+
+    # 자동 생성만 스위치로 막는다. 담당자가 버튼으로 요청한 건은 의도가 명확하므로
+    # 끄지 않는다. 생성 경로가 story_risk와 risk_analysis 두 갈래이고 서로 배타적이라
+    # (한쪽을 끄면 다른 쪽이 켜진다) 각 호출부가 아니라 여기 한 곳에서 판단한다.
+    if auto and not get_settings().response_draft_auto_enabled:
+        logger.info(
+            "대응방안 자동 생성이 꺼져 있어 건너뜁니다 (risk_event=%s). "
+            "RESPONSE_DRAFT_AUTO_ENABLED=true로 켜거나 수동 생성을 쓰세요.",
+            risk_event_id,
+        )
+        return
 
     def _run() -> None:
         lock_key = f"response-draft:{risk_event_id}"
