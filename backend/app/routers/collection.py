@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.auth import CurrentAuth, require_auth
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models import (
+    ArticleRiskAssessment,
     ArticleQueryHit,
     ArticleFilterResult,
     CollectionJob,
@@ -24,12 +25,14 @@ from app.models import (
     RiskEvent,
     RiskEventArticle,
     RiskEventType,
+    StoryCluster,
     StoryClusterArticle,
 )
 from app.presenters import risk_event_read
 from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES, RISK_TYPES
 from app.schemas import (
     ArticleFilterResultPage,
+    ArticleFilterLlmReviewRead,
     ArticleFilterResultRead,
     ArticleFilterSummary,
     BulkMonitoringStateResponse,
@@ -43,9 +46,18 @@ from app.schemas import (
     RiskEventPageRead,
     RiskEventRead,
     RiskEventSummaryRead,
+    RiskJudgmentPageRead,
+    RiskJudgmentRead,
+    RiskJudgmentSummaryRead,
 )
-from app.services.monitoring_pipeline import run_collection
+from app.services.llm_labeling import review_article_filter
+from app.services.monitoring_pipeline import (
+    apply_binary_filter_review,
+    continue_accepted_filter_review,
+    run_collection,
+)
 from app.services.period_aggregation import seoul_period_start
+from app.services.story_risk import source_domain
 
 
 router = APIRouter(tags=["collection"])
@@ -92,6 +104,17 @@ def _eligible_story_event_ids(min_articles: int):
         .having(
             func.count(func.distinct(RiskEventArticle.article_id)) >= min_articles
         )
+    )
+
+
+def _reportable_story_event_filters(company_id: int, min_articles: int):
+    """위험판정·대응 화면에 노출할 스토리 사건의 공통 조건을 반환한다."""
+    return (
+        RiskEvent.company_id == company_id,
+        RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+        RiskEvent.event_source == "story_v2",
+        RiskEvent.story_cluster_id.is_not(None),
+        RiskEvent.id.in_(_eligible_story_event_ids(min_articles)),
     )
 
 
@@ -242,6 +265,80 @@ def list_filter_results(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.post(
+    "/companies/{company_id}/filter-results/{filter_result_id}/llm-review",
+    response_model=ArticleFilterLlmReviewRead,
+)
+def rereview_filter_result_with_llm(
+    company_id: int,
+    filter_result_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> ArticleFilterLlmReviewRead:
+    """Resolve one review-required article to accepted or rejected using the LLM."""
+    company = _user_company(db, company_id, auth.user_id)
+    source_result = db.scalar(
+        select(ArticleFilterResult).where(
+            ArticleFilterResult.id == filter_result_id,
+            ArticleFilterResult.company_id == company_id,
+        )
+    )
+    if source_result is None:
+        raise HTTPException(status_code=404, detail="정제 결과를 찾을 수 없습니다.")
+    latest_id = db.scalar(
+        select(ArticleFilterResult.id)
+        .where(
+            ArticleFilterResult.company_id == company_id,
+            ArticleFilterResult.raw_article_id == source_result.raw_article_id,
+        )
+        .order_by(ArticleFilterResult.id.desc())
+        .limit(1)
+    )
+    if latest_id != source_result.id or source_result.decision != "review_required":
+        raise HTTPException(status_code=409, detail="이미 재검토가 완료된 기사입니다.")
+    raw = db.get(RawNewsArticle, source_result.raw_article_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail="원문 기사를 찾을 수 없습니다.")
+
+    review = review_article_filter(db, company, raw)
+    if review is None:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM 재검토를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        )
+    try:
+        reviewed_result, article_id = apply_binary_filter_review(
+            db,
+            company,
+            source_result,
+            raw,
+            review,
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if article_id is not None:
+        background_tasks.add_task(
+            continue_accepted_filter_review,
+            company_id,
+            article_id,
+        )
+    llm_review = reviewed_result.details["llm_review"]
+    return ArticleFilterLlmReviewRead(
+        id=reviewed_result.id,
+        raw_article_id=reviewed_result.raw_article_id,
+        decision=reviewed_result.decision,
+        reason=reviewed_result.reason,
+        explanation=llm_review["explanation"],
+        confidence=llm_review["confidence"],
+        provider=llm_review["provider"],
+        model_name=llm_review["model_name"],
+        reviewed_at=datetime.fromisoformat(llm_review["reviewed_at"]),
     )
 
 
@@ -486,7 +583,7 @@ def get_monitoring_summary(
 @router.get("/companies/{company_id}/risk-events/page", response_model=RiskEventPageRead)
 def list_risk_events_page(
     company_id: int,
-    view: Literal["active", "history"] = "active",
+    view: Literal["active", "history", "all"] = "active",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     days: int | None = Query(default=None, ge=1, le=36500),
@@ -509,18 +606,23 @@ def list_risk_events_page(
     _user_company(db, company_id, auth.user_id)
     active_statuses = ("open", "monitoring", "acknowledged")
     settings = get_settings()
-    base_filters = (
-        RiskEvent.company_id == company_id,
-        RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
-        RiskEvent.event_source == "story_v2",
-        RiskEvent.story_cluster_id.is_not(None),
-        RiskEvent.id.in_(
-            _eligible_story_event_ids(settings.story_event_min_articles)
-        ),
+    base_filters = _reportable_story_event_filters(
+        company_id,
+        settings.story_event_min_articles,
     )
     query = select(RiskEvent).where(*base_filters)
     if view == "active":
         query = query.where(RiskEvent.status.in_(active_statuses))
+        if days is not None:
+            _, cutoff = seoul_period_start(days)
+            query = query.where(
+                func.coalesce(
+                    RiskEvent.last_evidence_at,
+                    RiskEvent.last_seen_at,
+                    RiskEvent.opened_at,
+                    RiskEvent.detected_at,
+                ) >= cutoff
+            )
         ordering = (
             func.coalesce(
                 RiskEvent.last_evidence_at,
@@ -529,7 +631,7 @@ def list_risk_events_page(
             ).desc(),
             RiskEvent.id.desc(),
         )
-    else:
+    elif view == "history":
         query = query.where(RiskEvent.status == "closed")
         if days is not None:
             _, cutoff = seoul_period_start(days)
@@ -545,6 +647,26 @@ def list_risk_events_page(
                 RiskEvent.closed_at,
                 RiskEvent.last_evidence_at,
                 RiskEvent.opened_at,
+            ).desc(),
+            RiskEvent.id.desc(),
+        )
+    else:
+        if days is not None:
+            _, cutoff = seoul_period_start(days)
+            query = query.where(
+                func.coalesce(
+                    RiskEvent.last_evidence_at,
+                    RiskEvent.last_seen_at,
+                    RiskEvent.opened_at,
+                    RiskEvent.detected_at,
+                ) >= cutoff
+            )
+        ordering = (
+            func.coalesce(
+                RiskEvent.last_evidence_at,
+                RiskEvent.last_seen_at,
+                RiskEvent.opened_at,
+                RiskEvent.detected_at,
             ).desc(),
             RiskEvent.id.desc(),
         )
@@ -604,6 +726,316 @@ def list_risk_events_page(
     return RiskEventPageRead(
         items=[risk_event_read(db, event) for event in events],
         total=total,
+        page=page,
+        page_size=page_size,
+        summary=summary,
+    )
+
+
+@router.get(
+    "/companies/{company_id}/risk-judgments/page",
+    response_model=RiskJudgmentPageRead,
+)
+def list_risk_judgments_page(
+    company_id: int,
+    classification: Literal["risk", "non_risk"] = "risk",
+    view: Literal["active", "history", "all"] = "all",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    days: int | None = Query(default=None, ge=1, le=36500),
+    severity: Literal["warning", "critical"] | None = None,
+    risk_type: Literal[
+        "product_quality",
+        "safety_accident",
+        "security_privacy",
+        "legal_regulatory",
+        "labor_hr",
+        "financial_governance",
+        "supply_operations",
+        "reputation_consumer",
+    ] | None = None,
+    db: Session = Depends(get_db),
+    auth: CurrentAuth = Depends(require_auth),
+) -> RiskJudgmentPageRead:
+    """스토리 판정 결과를 위험 사건과 비위험 스토리로 나눠 반환한다."""
+    _user_company(db, company_id, auth.user_id)
+    settings = get_settings()
+    active_statuses = ("open", "monitoring", "acknowledged")
+    event_filters = _reportable_story_event_filters(
+        company_id,
+        settings.story_event_min_articles,
+    )
+
+    article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+    story_article_count = func.count(func.distinct(CompanyArticleMatch.article_id))
+    eligible_stories = (
+        select(
+            StoryClusterArticle.story_cluster_id.label("story_cluster_id"),
+            story_article_count.label("evidence_article_count"),
+            func.max(ArticleRiskAssessment.risk_probability).label("risk_probability"),
+            func.min(article_time).label("first_evidence_at"),
+            func.max(article_time).label("last_evidence_at"),
+        )
+        .select_from(CompanyArticleMatch)
+        .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+        .join(
+            StoryClusterArticle,
+            StoryClusterArticle.article_id == CompanyArticleMatch.article_id,
+        )
+        .outerjoin(
+            ArticleRiskAssessment,
+            (ArticleRiskAssessment.company_id == CompanyArticleMatch.company_id)
+            & (ArticleRiskAssessment.article_id == CompanyArticleMatch.article_id),
+        )
+        .where(CompanyArticleMatch.company_id == company_id)
+        .group_by(StoryClusterArticle.story_cluster_id)
+        .having(story_article_count >= settings.story_event_min_articles)
+        .subquery()
+    )
+    risk_cluster_ids = select(RiskEvent.story_cluster_id).where(*event_filters)
+    all_non_risk_story_ids = select(eligible_stories.c.story_cluster_id).where(
+        eligible_stories.c.story_cluster_id.notin_(risk_cluster_ids)
+    )
+    non_risk_story_ids = all_non_risk_story_ids
+    if days is not None:
+        _, cutoff = seoul_period_start(days)
+        non_risk_story_ids = non_risk_story_ids.where(
+            eligible_stories.c.last_evidence_at >= cutoff
+        )
+
+    active_count = db.scalar(
+        select(func.count(RiskEvent.id)).where(
+            *event_filters,
+            RiskEvent.status.in_(active_statuses),
+        )
+    ) or 0
+    history_count = db.scalar(
+        select(func.count(RiskEvent.id)).where(
+            *event_filters,
+            RiskEvent.status == "closed",
+        )
+    ) or 0
+    non_risk_count = db.scalar(
+        select(func.count()).select_from(all_non_risk_story_ids.subquery())
+    ) or 0
+    filtered_non_risk_count = db.scalar(
+        select(func.count()).select_from(non_risk_story_ids.subquery())
+    ) or 0
+    summary = RiskJudgmentSummaryRead(
+        risk=active_count + history_count,
+        non_risk=non_risk_count,
+        active=active_count,
+        history=history_count,
+    )
+
+    if classification == "risk":
+        risk_page = list_risk_events_page(
+            company_id=company_id,
+            view=view,
+            page=page,
+            page_size=page_size,
+            days=days,
+            severity=severity,
+            risk_type=risk_type,
+            response="all",
+            db=db,
+            auth=auth,
+        )
+        return RiskJudgmentPageRead(
+            items=[
+                RiskJudgmentRead(
+                    **item.model_dump(),
+                    classification="risk",
+                    risk_event_id=item.id,
+                )
+                for item in risk_page.items
+            ],
+            total=risk_page.total,
+            page=page,
+            page_size=page_size,
+            summary=summary,
+        )
+
+    non_risk_query = (
+        select(
+            StoryCluster,
+            eligible_stories.c.risk_probability,
+            eligible_stories.c.first_evidence_at,
+            eligible_stories.c.last_evidence_at,
+        )
+        .join(
+            eligible_stories,
+            eligible_stories.c.story_cluster_id == StoryCluster.id,
+        )
+        .where(StoryCluster.id.in_(non_risk_story_ids))
+    )
+    story_rows = db.execute(
+        non_risk_query
+        .order_by(
+            eligible_stories.c.last_evidence_at.desc().nullslast(),
+            StoryCluster.id.desc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    cluster_ids = [cluster.id for cluster, *_rest in story_rows]
+    evidence_by_cluster: dict[
+        int,
+        list[tuple[ArticleRiskAssessment | None, NewsArticle, StoryClusterArticle]],
+    ] = {cluster_id: [] for cluster_id in cluster_ids}
+    if cluster_ids:
+        evidence_rows = db.execute(
+            select(ArticleRiskAssessment, NewsArticle, StoryClusterArticle)
+            .select_from(CompanyArticleMatch)
+            .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+            .join(
+                StoryClusterArticle,
+                StoryClusterArticle.article_id == CompanyArticleMatch.article_id,
+            )
+            .outerjoin(
+                ArticleRiskAssessment,
+                (ArticleRiskAssessment.company_id == CompanyArticleMatch.company_id)
+                & (ArticleRiskAssessment.article_id == CompanyArticleMatch.article_id),
+            )
+            .where(
+                CompanyArticleMatch.company_id == company_id,
+                StoryClusterArticle.story_cluster_id.in_(cluster_ids),
+            )
+            .order_by(
+                StoryClusterArticle.story_cluster_id,
+                ArticleRiskAssessment.risk_probability.desc().nullslast(),
+                article_time.desc(),
+            )
+        ).all()
+        for assessment, article, cluster_link in evidence_rows:
+            evidence_by_cluster[cluster_link.story_cluster_id].append(
+                (assessment, article, cluster_link)
+            )
+
+    items: list[RiskJudgmentRead] = []
+    for cluster, probability, first_evidence_at, last_evidence_at in story_rows:
+        rows = evidence_by_cluster.get(cluster.id, [])
+        primary_row = next(
+            (row for row in rows if row[2].is_representative),
+            rows[0] if rows else None,
+        )
+        type_scores: dict[str, float] = {}
+        for assessment, _article, _cluster_link in rows:
+            if assessment is None:
+                continue
+            for key, raw_score in (assessment.type_scores or {}).items():
+                if key not in RISK_TYPES:
+                    continue
+                try:
+                    score = float(raw_score)
+                except (TypeError, ValueError):
+                    continue
+                type_scores[key] = max(type_scores.get(key, 0.0), score)
+        primary_type = (
+            max(type_scores.items(), key=lambda item: item[1])[0]
+            if type_scores
+            else None
+        )
+        risk_rows = [
+            row
+            for row in rows
+            if row[0] is not None
+            and row[0].decision == "risk"
+            and row[0].risk_probability >= settings.article_risk_candidate_threshold
+        ]
+        evidence_domains = {
+            source_domain(article.original_url or article.url)
+            for _assessment, article, _cluster_link in rows
+        } - {"unknown"}
+        risk_domains = {
+            source_domain(article.original_url or article.url)
+            for _assessment, article, _cluster_link in risk_rows
+        } - {"unknown"}
+        primary_article = primary_row[1] if primary_row else None
+        detected_at = first_evidence_at or last_evidence_at or datetime.now(timezone.utc)
+        items.append(
+            RiskJudgmentRead(
+                id=cluster.id,
+                classification="non_risk",
+                risk_event_id=None,
+                company_id=company_id,
+                article_id=primary_article.id if primary_article else None,
+                article_title=primary_article.title if primary_article else None,
+                article_url=primary_article.url if primary_article else None,
+                story_cluster_id=cluster.id,
+                event_source="story_v2",
+                anomaly_score=0.0,
+                risk_probability=float(probability or 0.0),
+                severity="non_risk",
+                status="non_risk",
+                primary_type=primary_type,
+                risk_types=[
+                    {
+                        "risk_type": key,
+                        "probability": score,
+                        "is_primary": key == primary_type,
+                        "evidence": {"source": "article_assessments"},
+                    }
+                    for key, score in sorted(
+                        type_scores.items(),
+                        key=lambda item: item[1],
+                        reverse=True,
+                    )
+                    if score >= 0.35 or key == primary_type
+                ],
+                evidence_articles=[
+                    {
+                        "article_id": article.id,
+                        "title": article.title,
+                        "url": article.url,
+                        "source": article.source,
+                        "source_domain": source_domain(article.original_url or article.url),
+                        "published_at": article.published_at,
+                        "evidence_role": (
+                            "trigger"
+                            if assessment is not None
+                            and assessment.decision == "risk"
+                            and assessment.risk_probability
+                            >= settings.article_risk_candidate_threshold
+                            else "context"
+                        ),
+                        "evidence_score": assessment.risk_probability if assessment else 0.0,
+                        "risk_probability": assessment.risk_probability if assessment else None,
+                        "relevance_score": assessment.relevance_score if assessment else None,
+                        "type_match_score": (
+                            (assessment.type_scores or {}).get(primary_type)
+                            if assessment is not None and primary_type
+                            else None
+                        ),
+                        "source_credibility": assessment.source_credibility if assessment else None,
+                        "representativeness": (
+                            1.0 if cluster_link.is_representative else cluster_link.similarity
+                        ),
+                    }
+                    for assessment, article, cluster_link in rows
+                ],
+                risk_article_count=len(risk_rows),
+                risk_source_count=len(risk_domains),
+                evidence_article_count=len(rows),
+                source_count=len(evidence_domains),
+                summary=cluster.representative_title,
+                model_version=(
+                    primary_row[0].model_version
+                    if primary_row and primary_row[0] is not None
+                    else None
+                ),
+                model_state="provisional",
+                approval_state="draft",
+                opened_at=first_evidence_at,
+                last_seen_at=last_evidence_at,
+                last_evidence_at=last_evidence_at,
+                response_generation_status="idle",
+                detected_at=detected_at,
+            )
+        )
+    return RiskJudgmentPageRead(
+        items=items,
+        total=filtered_non_risk_count,
         page=page,
         page_size=page_size,
         summary=summary,

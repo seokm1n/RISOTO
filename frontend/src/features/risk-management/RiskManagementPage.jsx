@@ -1,46 +1,45 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
-import { Pagination } from "../../shared/components";
-import { RISK_TYPE_LABELS, formatNumber } from "../../shared/presentation";
+import { PanelTitle } from "../../shared/components";
+import { formatNumber } from "../../shared/presentation";
 import { RiskDetail, RiskEventListContent } from "../analysis/AnalysisStatisticsPage";
 
-const HISTORY_PERIOD_OPTIONS = [
+const PERIOD_OPTIONS = [
+  { value: "all", label: "전체" },
+  { value: "1", label: "1일" },
   { value: "3", label: "3일" },
   { value: "7", label: "7일" },
-  { value: "all", label: "전체" },
 ];
-const VIEW_OPTIONS = new Set(["active", "history", "needs_response"]);
-const HISTORY_PERIODS = new Set(HISTORY_PERIOD_OPTIONS.map((option) => option.value));
-const RESPONSE_OPTIONS = new Set(["all", "in_progress", "generated", "none"]);
-const PAGE_SIZE = 10;
+const PERIODS = new Set(PERIOD_OPTIONS.map((option) => option.value));
+const PAGE_SIZE = 100;
 
 const positiveInteger = (value, fallback = 1) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-// 기사 판정과 스토리 군집으로 확정된 위험 사건을 목록·근거·대응방안으로 관리한다.
-export default function RiskManagementPage({ canReview = false, initialCompanyId = null, initialPeriodDays = 7, embedded = false }) {
+// 기사 판정과 스토리 군집으로 확정된 위험 사건의 대응방안을 관리한다.
+export default function RiskManagementPage({ canReview = false, initialCompanyId = null, initialRiskEventId = null, initialPeriodDays = "all", embedded = false }) {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [companies, setCompanies] = useState([]);
   const [pageData, setPageData] = useState({ items: [], total: 0, summary: { active: 0, critical: 0, needs_response: 0, history: 0 } });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [listOpen, setListOpen] = useState(false);
   const loadSequence = useRef(0);
+  const dropdownRef = useRef(null);
 
   const selectedCompanyId = searchParams.get("companyId") || (initialCompanyId ? String(initialCompanyId) : "");
-  const requestedView = searchParams.get("view") ?? "active";
-  const eventView = VIEW_OPTIONS.has(requestedView) ? requestedView : "active";
-  const requestedPeriod = searchParams.get("days") ?? String(initialPeriodDays || 7);
-  const period = HISTORY_PERIODS.has(requestedPeriod) ? requestedPeriod : "7";
-  const page = positiveInteger(searchParams.get("page"), 1);
-  const severity = ["warning", "critical"].includes(searchParams.get("severity")) ? searchParams.get("severity") : "all";
-  const riskType = Object.hasOwn(RISK_TYPE_LABELS, searchParams.get("risk_type")) ? searchParams.get("risk_type") : "all";
-  const requestedResponse = searchParams.get("response") ?? "all";
-  const responseStatus = RESPONSE_OPTIONS.has(requestedResponse) ? requestedResponse : "all";
-  const selectedRiskId = positiveInteger(searchParams.get("eventId") ?? searchParams.get("riskEventId"), 0) || null;
+  const eventView = searchParams.get("view") === "needs_response" ? "needs_response" : "all";
+  const requestedPeriod = searchParams.get("days") ?? String(initialPeriodDays || "all");
+  const period = PERIODS.has(requestedPeriod) ? requestedPeriod : "all";
+  const selectedRiskId = positiveInteger(
+    searchParams.get("eventId") ?? searchParams.get("riskEventId") ?? initialRiskEventId,
+    0,
+  ) || null;
 
   const updateQuery = useCallback((changes, { resetPage = false, clearSelection = false } = {}) => {
     setSearchParams((current) => {
@@ -82,24 +81,17 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
     const requestId = ++loadSequence.current;
     if (!silent) setLoading(true);
     const params = new URLSearchParams({
-      view: eventView === "history" ? "history" : "active",
-      page: String(page),
+      view: eventView === "needs_response" ? "active" : "all",
+      page: "1",
       page_size: String(PAGE_SIZE),
-      response: eventView === "needs_response" ? "needs_action" : eventView === "active" && !["in_progress", "generated"].includes(responseStatus) ? "without_needs_action" : responseStatus,
+      response: eventView === "needs_response" ? "needs_action" : "all",
     });
-    if (eventView === "history" && period !== "all") params.set("days", period);
-    if (severity !== "all") params.set("severity", severity);
-    if (riskType !== "all") params.set("risk_type", riskType);
+    if (period !== "all") params.set("days", period);
     try {
       const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
       if (requestId !== loadSequence.current) return;
       const data = response.data ?? {};
       const total = Number(data.total) || 0;
-      const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-      if (page > lastPage) {
-        updateQuery({ page: lastPage }, { clearSelection: true });
-        return;
-      }
       setPageData({
         items: data.items ?? [],
         total,
@@ -111,7 +103,7 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
     } finally {
       if (requestId === loadSequence.current) setLoading(false);
     }
-  }, [eventView, page, period, responseStatus, riskType, selectedCompanyId, severity, updateQuery]);
+  }, [eventView, period, selectedCompanyId]);
 
   useEffect(() => {
     loadRisks();
@@ -121,6 +113,26 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
       loadSequence.current += 1;
     };
   }, [loadRisks]);
+
+  useEffect(() => {
+    setListOpen(false);
+  }, [eventView, period, selectedCompanyId]);
+
+  useEffect(() => {
+    if (!listOpen) return undefined;
+    const closeOutside = (event) => {
+      if (!dropdownRef.current?.contains(event.target)) setListOpen(false);
+    };
+    const closeWithEscape = (event) => {
+      if (event.key === "Escape") setListOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [listOpen]);
 
   const selectedRisk = useMemo(
     () => pageData.items.find((risk) => risk.id === selectedRiskId) ?? pageData.items[0] ?? null,
@@ -144,39 +156,47 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
     return () => window.clearInterval(timer);
   }, [loadRisks, selectedRisk]);
 
-  const mainCompanies = companies.filter((company) => company.company_role === "main");
-  const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
-  const historyTitle = period === "all" ? "종료 사건 · 전체" : `종료 사건 · 최근 ${period}일`;
-  const activeCount = Math.max((pageData.summary.active ?? 0) - (pageData.summary.needs_response ?? 0), 0);
+  const riskCount = (pageData.summary.active ?? 0) + (pageData.summary.history ?? 0);
+  const listTitle = eventView === "needs_response" ? "검토 필요 사건 선택" : "위험 사건 선택";
+  const emptyMessage = eventView === "needs_response"
+    ? "선택한 기간에 검토가 필요한 위험 사건이 없습니다."
+    : "선택한 기간에 마지막 관련 기사가 추가된 위험 사건이 없습니다.";
+  const openEvidence = () => {
+    if (!selectedRisk || !selectedCompanyId) return;
+    const params = new URLSearchParams({
+      companyId: String(selectedCompanyId),
+      eventId: String(selectedRisk.id),
+      classification: "risk",
+      days: period,
+    });
+    navigate(`/analysis/risk?${params}`);
+  };
 
-  const viewTitle = eventView === "active" ? "활성 사건" : eventView === "needs_response" ? "대응 필요 사건" : historyTitle;
-  const emptyMessage = eventView === "active" ? "현재 활성 위험 사건이 없습니다." : eventView === "needs_response" ? "대응이 필요한 위험 사건이 없습니다." : "선택한 기간과 조건에 맞는 종료 사건이 없습니다.";
-
-  return <section className={`${embedded ? "risk-management-embedded" : "workspace"} analysis-statistics-workspace risk-management-workspace`}>
-    <div className="risk-summary-grid" aria-label="위험 사건 요약">
-      <button className={eventView === "active" ? "selectable active" : "selectable"} type="button" aria-pressed={eventView === "active"} onClick={() => updateQuery({ view: "active", response: null }, { resetPage: true, clearSelection: true })}><span>활성</span><strong>{formatNumber(activeCount)}</strong><small>대응 필요 제외</small></button>
-      <button className={eventView === "history" ? "selectable active" : "selectable"} type="button" aria-pressed={eventView === "history"} onClick={() => updateQuery({ view: "history", days: period }, { resetPage: true, clearSelection: true })}><span>종료</span><strong>{formatNumber(pageData.summary.history)}</strong><small>전체 종료 사건</small></button>
-      <button className={`selectable needs-response${eventView === "needs_response" ? " active" : ""}`} type="button" aria-pressed={eventView === "needs_response"} onClick={() => updateQuery({ view: "needs_response", response: null }, { resetPage: true, clearSelection: true })}><span>대응 필요</span><strong>{formatNumber(pageData.summary.needs_response)}</strong><small>미생성·보류·실패</small></button>
-    </div>
-
-    <div className="monitor-toolbar risk-management-toolbar">
-      <div className="analysis-toolbar-filters">
-        {!embedded && <label><span className="analysis-field-label">관리 기업</span><select value={selectedCompanyId} onChange={(event) => updateQuery({ companyId: event.target.value }, { resetPage: true, clearSelection: true })}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label>}
-        <label><span className="analysis-field-label">위험 유형</span><select value={riskType} onChange={(event) => updateQuery({ risk_type: event.target.value }, { resetPage: true, clearSelection: true })}><option value="all">전체 유형</option>{Object.entries(RISK_TYPE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-        <label><span className="analysis-field-label">심각도</span><select value={severity} onChange={(event) => updateQuery({ severity: event.target.value }, { resetPage: true, clearSelection: true })}><option value="all">전체 심각도</option><option value="critical">긴급</option><option value="warning">주의</option></select></label>
-        {eventView !== "needs_response" && <label><span className="analysis-field-label">대응 상태</span><select value={eventView === "active" && responseStatus === "none" ? "all" : responseStatus} onChange={(event) => updateQuery({ response: event.target.value }, { resetPage: true, clearSelection: true })}><option value="all">전체 상태</option><option value="in_progress">생성 중</option><option value="generated">생성 완료</option>{eventView === "history" && <option value="none">미생성</option>}</select></label>}
-        {eventView === "history" && <label><span className="analysis-field-label">이력 기간</span><select value={period} onChange={(event) => updateQuery({ days: event.target.value }, { resetPage: true, clearSelection: true })}>{HISTORY_PERIOD_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>}
-      </div>
+  return <section className={`${embedded ? "risk-management-embedded" : "workspace"} analysis-statistics-workspace risk-management-workspace pipeline-stage-content`}>
+    <div className="pipeline-stat-grid risk-stage-stat-grid" aria-label="대응 위험 사건 분류">
+      <button className={`pipeline-stat danger selectable${eventView === "all" ? " active" : ""}`} type="button" aria-pressed={eventView === "all"} onClick={() => updateQuery({ view: "all", response: null }, { resetPage: true, clearSelection: true })}><span>위험</span><strong>{formatNumber(riskCount)}건</strong><small>활성·종료 통합</small></button>
+      <button className={`pipeline-stat warning selectable${eventView === "needs_response" ? " active" : ""}`} type="button" aria-pressed={eventView === "needs_response"} onClick={() => updateQuery({ view: "needs_response", response: null }, { resetPage: true, clearSelection: true })}><span>검토 필요</span><strong>{formatNumber(pageData.summary.needs_response)}건</strong><small>미생성·보류·실패</small></button>
     </div>
 
     {error && <div className="notice error">{error}</div>}
-    {!companies.length && !loading ? <p className="empty-state">먼저 기업 등록 페이지에서 관리할 기업을 등록해 주세요.</p> : <div className="risk-management-split">
-      <section className="panel risk-event-list-panel">
-        <div className="risk-section-heading"><div><span className="eyebrow">RISK EVENTS</span><h2>{viewTitle}</h2></div><small>총 {formatNumber(pageData.total)}건</small></div>
-        <div className="risk-list selectable">{loading && !pageData.items.length ? <p className="panel-empty">사건을 불러오는 중입니다.</p> : pageData.items.length ? pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk?.id === risk.id ? "selected" : ""}`} type="button" onClick={() => updateQuery({ eventId: risk.id, riskEventId: null })} key={risk.id}><RiskEventListContent risk={risk} /></button>) : <p className="panel-empty">{emptyMessage}</p>}</div>
-        <Pagination page={page} pageSize={PAGE_SIZE} total={pageData.total} onChange={(nextPage) => updateQuery({ page: nextPage }, { clearSelection: true })} />
+    {!companies.length && !loading ? <p className="empty-state">먼저 기업 등록 페이지에서 관리할 기업을 등록해 주세요.</p> : <>
+      <section className="panel pipeline-panel pipeline-risk-picker-panel">
+        <div className="pipeline-panel-heading pipeline-risk-list-heading"><PanelTitle title={listTitle} /><div className="pipeline-risk-list-controls"><select aria-label="조회 기간" value={period} onChange={(event) => updateQuery({ days: event.target.value }, { resetPage: true, clearSelection: true })}>{PERIOD_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></div></div>
+        {selectedRisk ? <div className={`pipeline-risk-dropdown${listOpen ? " open" : ""}`} ref={dropdownRef}>
+          <button className="pipeline-risk-dropdown-trigger risk-event-list-item selected" type="button" aria-expanded={listOpen} aria-controls="response-risk-event-list" onClick={() => setListOpen((open) => !open)}>
+            <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact /></div>
+            <span className="pipeline-risk-dropdown-action">{listOpen ? "목록 접기" : "목록 펼치기"}<i aria-hidden="true" /></span>
+          </button>
+          {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 사건 목록" : "위험 사건 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><RiskEventListContent risk={risk} judgmentCompact /></button>)}</div>}
+        </div> : <p className="panel-empty">{loading ? "사건을 불러오는 중입니다." : emptyMessage}</p>}
       </section>
-      <section className="panel risk-detail-panel"><div className="risk-section-heading"><div><span className="eyebrow">EVIDENCE & RESPONSE</span><h2>위험 근거와 대응방안</h2></div></div><RiskDetail risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} /></section>
-    </div>}
+      <section className="panel pipeline-panel pipeline-risk-evidence">
+        <div className="pipeline-panel-heading pipeline-risk-detail-heading">
+          <PanelTitle kicker="RESPONSE PLAN" title="대응 방안" />
+          {selectedRisk && <button className="secondary-button" type="button" onClick={openEvidence}>근거 보기</button>}
+        </div>
+        <RiskDetail risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} />
+      </section>
+    </>}
   </section>;
 }

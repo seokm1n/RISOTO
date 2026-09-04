@@ -25,6 +25,7 @@ import { AppNoticeDialog, useAppConfirm } from "../../shared/components";
 import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 import { clearSelectedCompanyId } from "../../shared/selectedCompanySession";
+import { clearAnalysisPipelineRiskEventId } from "../../shared/analysisPipelineSession";
 
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "AI 리스크 브리핑", path: "/main" },
@@ -178,6 +179,9 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     return () => window.clearInterval(timer);
   }, [loadNotifications]);
   useEffect(() => { document.title = `RISOTO · ${PAGE_TITLES[page]}`; }, [page]);
+  useEffect(() => {
+    if (!location.pathname.startsWith("/analysis/")) clearAnalysisPipelineRiskEventId();
+  }, [location.pathname]);
 
   const goTo = useCallback((path, options) => {
     setNotificationOpen(false);
@@ -185,26 +189,19 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     navigate(path, options);
   }, [location.pathname, location.search, navigate]);
 
+  const openCollectionAtTop = useCallback(() => {
+    goTo("/collection");
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }, [goTo]);
+
   const openAnalysisStatistics = useCallback((companyId, riskEventId = null, options) => {
     const params = new URLSearchParams();
     if (companyId) params.set("companyId", String(companyId));
     if (riskEventId) params.set("eventId", String(riskEventId));
     const query = params.size ? `?${params}` : "";
     goTo(`/analysis/${riskEventId ? "risk" : "collection"}${query}`, options);
-  }, [goTo]);
-
-  const openRiskAnalysis = useCallback((companyId, options) => {
-    const params = new URLSearchParams();
-    if (companyId) params.set("companyId", String(companyId));
-    const query = params.size ? `?${params}` : "";
-    goTo(`/analysis/risk${query}`, options);
-  }, [goTo]);
-
-  const openResponseHistory = useCallback((companyId, riskEventId, options) => {
-    const params = new URLSearchParams({ view: "history", days: "all" });
-    if (companyId) params.set("companyId", String(companyId));
-    if (riskEventId) params.set("eventId", String(riskEventId));
-    goTo(`/analysis/response?${params}`, options);
   }, [goTo]);
 
   const requestLogout = async () => {
@@ -221,6 +218,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     if (isAdmin) {
       await onLogout();
       clearSelectedCompanyId();
+      clearAnalysisPipelineRiskEventId();
       return;
     }
     setLogoutNoticeOpen(true);
@@ -231,6 +229,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     try {
       await onLogout();
       clearSelectedCompanyId();
+      clearAnalysisPipelineRiskEventId();
     } finally {
       setLoggingOut(false);
     }
@@ -239,6 +238,10 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
   const companyAdministrationProps = {
     onDirtyChange: setManagementDirty,
     onOpenCompany: openAnalysisStatistics,
+  };
+  const handleAccountDeleted = () => {
+    clearAnalysisPipelineRiskEventId();
+    onAccountDeleted();
   };
   const allowedNotificationItems = (notifications.items ?? []).filter((item) => item.type === "risk");
   const notificationUnreadTotal = allowedNotificationItems.filter((item) => !readNotificationIds.has(item.id)).length;
@@ -283,7 +286,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <button className="brand" onClick={() => goTo(homePath)}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
       <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
       <div className="topbar-actions">
-        {!isAdmin && mainCompany && <span className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} role="status" aria-live="polite" aria-label={mainCollectionRunning ? "실시간 수집중" : "수집 중지"} title={mainCollectionRunning ? "실시간 수집중" : "수집 중지"}><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 수집중" : "수집 중지"}</span></span>}
+        {!isAdmin && mainCompany && <button className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} type="button" onClick={openCollectionAtTop} aria-live="polite" aria-label={`${mainCollectionRunning ? "실시간 수집중" : "수집 중지"} · 수집 관리 맨 위로 이동`} aria-current={page === "collection" ? "page" : undefined} title="수집 관리 맨 위로 이동"><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 수집중" : "수집 중지"}</span></button>}
         <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`읽지 않은 위험 알림 ${notificationUnreadTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationUnreadTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationUnreadTotal > 99 ? "99+" : notificationUnreadTotal}</span>}</button>
         <button className={`account-button ${page === "account" ? "active" : ""}`} type="button" onClick={() => goTo("/account")} title={`${session.user.email} · 마이페이지`} aria-current={page === "account" ? "page" : undefined}><span>{session.user.email}</span><strong>마이페이지</strong></button>
         <button className="logout-button" type="button" onClick={requestLogout}>로그아웃</button>
@@ -300,12 +303,12 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/operations" element={<Navigate to="/admin/operations" replace />} />
       <Route path="/models" element={<Navigate to="/admin/operations" replace />} />
       <Route path="/reviews" element={<Navigate to="/admin/reviews" replace />} />
-      <Route path="/account" element={<MyPage session={session} onAccountDeleted={onAccountDeleted} />} />
+      <Route path="/account" element={<MyPage session={session} onAccountDeleted={handleAccountDeleted} />} />
       <Route path="*" element={<Navigate to="/admin/members" replace />} />
     </> : <>
       <Route path="/" element={<Navigate to="/main" replace />} />
-      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} onOpenRiskPage={openRiskAnalysis} onOpenResponseHistory={openResponseHistory} />} />
-      <Route path="/account" element={<MyPage session={session} onAccountDeleted={onAccountDeleted} />} />
+      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} />} />
+      <Route path="/account" element={<MyPage session={session} onAccountDeleted={handleAccountDeleted} />} />
       <Route path="/collection" element={<CollectionRoute onOpenCompany={openAnalysisStatistics} onMonitoringChanged={refreshUserCompanies} />} />
       <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
       <Route path="/companies/new" element={<Navigate to="/companies" replace />} />

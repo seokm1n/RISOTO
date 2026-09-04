@@ -323,8 +323,20 @@ class NotificationDatabaseTests(unittest.TestCase):
             start,
         )
         self.assertEqual(response.total, len(response.items))
-        self.assertEqual(response.unread_count, response.total)
-        self.assertTrue(all(not item.is_read for item in response.items))
+        self.assertEqual(
+            response.unread_count,
+            sum(not item.is_read for item in response.items),
+        )
+        self.assertFalse(
+            next(item for item in response.items if item.id == f"risk:{open_event.id}").is_read
+        )
+        self.assertFalse(
+            next(
+                item
+                for item in response.items
+                if item.id == f"risk:{monitoring_event.id}"
+            ).is_read
+        )
         self.assertEqual(
             response.risk_count,
             sum(item.type == "risk" for item in response.items),
@@ -334,8 +346,15 @@ class NotificationDatabaseTests(unittest.TestCase):
             sum(item.type == "model_promotion_ready" for item in response.items),
         )
         self.assertEqual(
-            [item.created_at for item in response.items],
-            sorted((item.created_at for item in response.items), reverse=True),
+            [item.id for item in response.items],
+            [
+                item.id
+                for item in sorted(
+                    response.items,
+                    key=lambda item: (not item.is_read, item.created_at, item.id),
+                    reverse=True,
+                )
+            ],
         )
         self.assertEqual(open_event.status, "open")
         self.assertEqual(eligible.status, "candidate")
@@ -350,7 +369,7 @@ class NotificationDatabaseTests(unittest.TestCase):
             if item.risk_event_id == open_event.id
         )
         self.assertTrue(read_item.is_read)
-        self.assertEqual(read_response.unread_count, read_response.total - 1)
+        self.assertEqual(read_response.unread_count, response.unread_count - 1)
 
 
 if __name__ == "__main__":

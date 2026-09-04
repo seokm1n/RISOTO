@@ -1,31 +1,81 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
-import { PanelTitle } from "../../shared/components";
+import { Pagination, PanelTitle } from "../../shared/components";
 import RiskOverviewTrendChart from "../../shared/RiskOverviewTrendChart";
 import {
-  RISK_TYPE_LABELS,
-  formatDate,
   formatNumber,
   formatPercent,
-  formatRiskProbability,
   riskEventTitle,
 } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 import { resolveSelectedCompany, setSelectedCompanyId as rememberSelectedCompanyId } from "../../shared/selectedCompanySession";
 
 const MAIN_TREND_DAYS = 7;
-const RISK_ARTICLE_LIMIT = 5;
+const RISK_PAGE_SIZE = 3;
 
-const riskActivityDate = (risk) => risk.status === "closed"
-  ? risk.closed_at ?? risk.last_evidence_at ?? risk.opened_at
-  : risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at;
-
-const riskActivityTime = (risk) => {
-  const timestamp = new Date(riskActivityDate(risk) ?? 0).getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
+const RESPONSE_STATUS_SUMMARIES = {
+  pending: "대응 방안을 생성할 준비를 하고 있습니다.",
+  generating: "사건 근거를 검토해 대응 방안을 생성하고 있습니다.",
+  generated: "생성된 대응 방안을 확인해 주세요.",
+  deferred: "대응 방안 생성이 보류되었습니다.",
+  failed: "대응 방안 생성에 실패했습니다.",
+  idle: "아직 생성된 대응 방안이 없습니다.",
 };
+
+const textValue = (...values) => values.find((value) => typeof value === "string" && value.trim())?.trim() ?? null;
+
+function firstGroupedAction(groups) {
+  if (!groups || typeof groups !== "object") return null;
+  const preferredKeys = ["immediate", "within_24h", "within_7d"];
+  const keys = [...preferredKeys, ...Object.keys(groups).filter((key) => !preferredKeys.includes(key))];
+  for (const key of keys) {
+    const item = Array.isArray(groups[key]) ? groups[key][0] : null;
+    const action = typeof item === "string" ? item : textValue(item?.action, item?.task);
+    if (action) return action;
+  }
+  return null;
+}
+
+function responseDraftSummary(risk, draft) {
+  const content = draft?.content ?? {};
+  if (content.status === "근거부족_보류") {
+    return textValue(content.review_reason, RESPONSE_STATUS_SUMMARIES.deferred);
+  }
+
+  if (draft?.schema_version === 3 && draft.generation_kind === "competitor_impact") {
+    return textValue(
+      content.recommendation?.headline,
+      content.recommendation?.recommendations?.[0]?.action,
+      content.impact?.reason,
+      content.status === "영향없음_종료" ? "나의 기업에 미치는 영향 경로가 확인되지 않았습니다." : null,
+    ) ?? RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle;
+  }
+
+  if (draft?.schema_version === 3) {
+    const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
+    const scenario = scenarios.find((item) => item.stance === content.selected_stance) ?? scenarios[0];
+    const report = scenario?.report ?? {};
+    const strategy = Array.isArray(report.strategies) ? report.strategies[0] : null;
+    const checklist = Array.isArray(report.checklist) ? report.checklist[0] : null;
+    return textValue(
+      strategy?.detail,
+      strategy?.title,
+      checklist?.task,
+      report.summary_points?.[1],
+      report.summary_points?.[0],
+    ) ?? RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle;
+  }
+
+  const scenario = Array.isArray(content.scenarios) ? content.scenarios[0] : null;
+  return textValue(
+    firstGroupedAction(scenario?.recommended_actions),
+    firstGroupedAction(content.recommended_actions),
+    content.recommendation?.headline,
+    content.recommendation?.recommendations?.[0]?.action,
+  ) ?? RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle;
+}
 
 function averageDailySummaries(groups) {
   if (!groups.length) return [];
@@ -36,6 +86,8 @@ function averageDailySummaries(groups) {
       summary_date: day.summary_date,
       article_count: 0,
       risk_article_count: 0,
+      positive_article_count: 0,
+      neutral_article_count: 0,
       negative_article_count: 0,
       negative_story_count: 0,
       eligible_story_count: 0,
@@ -48,6 +100,8 @@ function averageDailySummaries(groups) {
     };
     current.article_count += day.article_count ?? 0;
     current.risk_article_count += day.risk_article_count ?? 0;
+    current.positive_article_count += day.positive_article_count ?? 0;
+    current.neutral_article_count += day.neutral_article_count ?? 0;
     current.negative_article_count += day.negative_article_count ?? 0;
     current.negative_story_count += day.negative_story_count ?? 0;
     current.eligible_story_count += day.eligible_story_count ?? 0;
@@ -64,6 +118,8 @@ function averageDailySummaries(groups) {
       ...day,
       article_count: oneDecimal(day.article_count),
       risk_article_count: oneDecimal(day.risk_article_count),
+      positive_article_count: oneDecimal(day.positive_article_count),
+      neutral_article_count: oneDecimal(day.neutral_article_count),
       negative_article_count: oneDecimal(day.negative_article_count),
       negative_story_count: oneDecimal(day.negative_story_count),
       eligible_story_count: oneDecimal(day.eligible_story_count),
@@ -117,17 +173,23 @@ function InteractiveDonut({ periodLabel, segments, ariaLabel, tooltipId }) {
     </div>
     {hoveredSlice && <div className="briefing-pie-tooltip visible" id={tooltipId} role="tooltip">
       <strong>{periodLabel}</strong>
-      <span>{hoveredSlice.label}<b>{formatNumber(hoveredSlice.value)}건</b></span>
+      <span>
+        <span className="briefing-pie-tooltip-label">
+          <i className={hoveredSlice.className} aria-hidden="true" />
+          {hoveredSlice.label}
+        </span>
+        <b>{formatNumber(hoveredSlice.value)}건</b>
+      </span>
     </div>}
   </div>;
 }
 
-function RiskRatioCard({ periodLabel, eligibleCount, riskCount }) {
-  const safeEligibleCount = Math.max(Number(eligibleCount) || 0, 0);
-  const safeRiskCount = Math.min(Math.max(Number(riskCount) || 0, 0), safeEligibleCount);
-  const nonRiskCount = Math.max(safeEligibleCount - safeRiskCount, 0);
-  const riskRatio = safeEligibleCount > 0 ? safeRiskCount / safeEligibleCount : 0;
-  const nonRiskRatio = safeEligibleCount > 0 ? nonRiskCount / safeEligibleCount : 0;
+function RiskRatioCard({ periodLabel, articleCount, riskCount }) {
+  const safeArticleCount = Math.max(Number(articleCount) || 0, 0);
+  const safeRiskCount = Math.min(Math.max(Number(riskCount) || 0, 0), safeArticleCount);
+  const nonRiskCount = Math.max(safeArticleCount - safeRiskCount, 0);
+  const riskRatio = safeArticleCount > 0 ? safeRiskCount / safeArticleCount : 0;
+  const nonRiskRatio = safeArticleCount > 0 ? nonRiskCount / safeArticleCount : 0;
   return <article className="briefing-ratio-card">
     <InteractiveDonut
       periodLabel={periodLabel}
@@ -135,7 +197,7 @@ function RiskRatioCard({ periodLabel, eligibleCount, riskCount }) {
         { key: "risk", label: "위험", value: safeRiskCount, className: "risk" },
         { key: "normal", label: "비위험", value: nonRiskCount, className: "normal" },
       ]}
-      ariaLabel={`${periodLabel} 판정 가능 스토리 ${safeEligibleCount}건 중 위험 ${safeRiskCount}건, 비위험 ${nonRiskCount}건`}
+      ariaLabel={`${periodLabel} 기사 ${safeArticleCount}건 중 위험 ${safeRiskCount}건, 비위험 ${nonRiskCount}건`}
       tooltipId="risk-ratio-tooltip"
     />
     <dl>
@@ -161,7 +223,7 @@ function SentimentRatioCard({ periodLabel, positiveCount, negativeCount, neutral
         { key: "negative", label: "부정", value: negative, className: "negative" },
         { key: "neutral", label: "중립", value: neutral, className: "neutral" },
       ]}
-      ariaLabel={`${periodLabel} 감성 판정 스토리 ${total}건 중 긍정 ${positive}건, 부정 ${negative}건, 중립 ${neutral}건`}
+      ariaLabel={`${periodLabel} 감성 판정 기사 ${total}건 중 긍정 ${positive}건, 부정 ${negative}건, 중립 ${neutral}건`}
       tooltipId="sentiment-ratio-tooltip"
     />
     <dl>
@@ -172,12 +234,13 @@ function SentimentRatioCard({ periodLabel, positiveCount, negativeCount, neutral
   </article>;
 }
 
-// 로그인 직후 나의 기업과 등록 기업 평균을 비교하고 최신 위험 근거를 브리핑한다.
-export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponseHistory }) {
+// 로그인 직후 나의 기업과 등록 기업 평균을 비교하고 활성 위험 사건과 대응을 브리핑한다.
+export default function MainPage({ onOpenCompany }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [briefingView, setBriefingView] = useState("company");
   const [ratioView, setRatioView] = useState("risk");
   const [ratioPeriod, setRatioPeriod] = useState("sevenDays");
+  const [riskPage, setRiskPage] = useState(1);
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
     "/companies", () => api.get("/companies").then((response) => response.data),
   );
@@ -200,8 +263,13 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
     }, { replace: true });
   }, [requestedCompanyId, selectedCompanyId, setSearchParams]);
 
+  useEffect(() => {
+    setRiskPage(1);
+  }, [selectedCompanyId]);
+
   const selectCompany = (companyId) => {
     rememberSelectedCompanyId(companyId);
+    setRiskPage(1);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("companyId", companyId);
@@ -220,45 +288,59 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
   const averageSummaries = averageDailySummaries(dailyGroups);
   const briefingSummaries = briefingView === "average" ? averageSummaries : dailySummaries;
   const trendDisplayDates = briefingSummaries
-    .filter((day) => (day.eligible_risk_story_count ?? 0) > 0 || (day.eligible_negative_story_count ?? 0) > 0)
+    .filter((day) => (day.article_count ?? 0) > 0)
     .map((day) => day.summary_date);
 
-  const { data: riskPages = [] } = useSharedResource(
-    selectedCompanyId ? `main-briefing-risks:${selectedCompanyId}` : "skip:main-briefing-risks",
+  const { data: riskPageData, error: riskPageError, loading: riskPageLoading } = useSharedResource(
+    selectedCompanyId ? `main-briefing-risks:${selectedCompanyId}:${riskPage}` : "skip:main-briefing-risks",
     selectedCompanyId
-      ? () => Promise.all([
-          api.get(`/companies/${selectedCompanyId}/risk-events/page?view=active&page=1&page_size=${RISK_ARTICLE_LIMIT}&response=all`).then((response) => response.data),
-          api.get(`/companies/${selectedCompanyId}/risk-events/page?view=history&page=1&page_size=${RISK_ARTICLE_LIMIT}&response=all`).then((response) => response.data),
-        ])
-      : () => Promise.resolve([]),
+      ? async () => {
+          const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?view=active&page=${riskPage}&page_size=${RISK_PAGE_SIZE}&response=all`);
+          const pageData = response.data ?? { items: [], total: 0, page: riskPage, page_size: RISK_PAGE_SIZE };
+          const items = await Promise.all((pageData.items ?? []).map(async (risk) => {
+            try {
+              const draftResponse = await api.get(`/risk-events/${risk.id}/response-drafts`);
+              const drafts = draftResponse.data ?? [];
+              const latestDraft = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0] ?? null;
+              return { ...risk, response_summary: responseDraftSummary(risk, latestDraft) };
+            } catch {
+              return { ...risk, response_summary: RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle };
+            }
+          }));
+          return { ...pageData, items };
+        }
+      : () => Promise.resolve({ items: [], total: 0, page: 1, page_size: RISK_PAGE_SIZE }),
   );
-  const riskyStories = useMemo(() => riskPages
-      .flatMap((riskPage) => riskPage?.items ?? [])
-      .filter((risk) => risk.event_source === "story_v2" && (risk.evidence_article_count ?? 0) >= 2)
-      .sort((left, right) => riskActivityTime(right) - riskActivityTime(left))
-      .slice(0, RISK_ARTICLE_LIMIT), [riskPages]);
+  const riskyStories = riskPageData?.items ?? [];
+  const riskTotal = riskPageData?.total ?? 0;
 
-  const error = companiesError ? getErrorMessage(companiesError) : null;
+  useEffect(() => {
+    if (riskPageLoading) return;
+    const lastPage = Math.max(1, Math.ceil(riskTotal / RISK_PAGE_SIZE));
+    if (riskPage > lastPage) setRiskPage(lastPage);
+  }, [riskPage, riskPageLoading, riskTotal]);
+
+  const error = companiesError || riskPageError ? getErrorMessage(companiesError ?? riskPageError) : null;
   const todayKey = new Date().toLocaleDateString("sv-SE");
   const todaySummary = briefingSummaries.find((day) => day.summary_date === todayKey);
-  const todayCount = todaySummary?.eligible_story_count ?? 0;
-  const todayRiskCount = todaySummary?.eligible_risk_story_count ?? 0;
-  const sevenDayCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0);
-  const sevenDayRiskCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_risk_story_count ?? 0), 0);
+  const todayCount = todaySummary?.article_count ?? 0;
+  const todayRiskCount = todaySummary?.risk_article_count ?? 0;
+  const sevenDayCount = briefingSummaries.reduce((sum, day) => sum + (day.article_count ?? 0), 0);
+  const sevenDayRiskCount = briefingSummaries.reduce((sum, day) => sum + (day.risk_article_count ?? 0), 0);
   const todaySentiment = {
-    positiveCount: todaySummary?.eligible_positive_story_count ?? 0,
-    negativeCount: todaySummary?.eligible_negative_story_count ?? 0,
-    neutralCount: todaySummary?.eligible_neutral_story_count ?? 0,
+    positiveCount: todaySummary?.positive_article_count ?? 0,
+    negativeCount: todaySummary?.negative_article_count ?? 0,
+    neutralCount: todaySummary?.neutral_article_count ?? 0,
   };
   const sevenDaySentiment = {
-    positiveCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_positive_story_count ?? 0), 0),
-    negativeCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_negative_story_count ?? 0), 0),
-    neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_neutral_story_count ?? 0), 0),
+    positiveCount: briefingSummaries.reduce((sum, day) => sum + (day.positive_article_count ?? 0), 0),
+    negativeCount: briefingSummaries.reduce((sum, day) => sum + (day.negative_article_count ?? 0), 0),
+    neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.neutral_article_count ?? 0), 0),
   };
   const periodLabel = ratioPeriod === "today" ? "1일" : "7일";
   const selectedRiskRatio = ratioPeriod === "today"
-    ? { eligibleCount: todayCount, riskCount: todayRiskCount }
-    : { eligibleCount: sevenDayCount, riskCount: sevenDayRiskCount };
+    ? { articleCount: todayCount, riskCount: todayRiskCount }
+    : { articleCount: sevenDayCount, riskCount: sevenDayRiskCount };
   const selectedSentimentRatio = ratioPeriod === "today" ? todaySentiment : sevenDaySentiment;
 
   return <section className="workspace main-workspace briefing-workspace">
@@ -303,27 +385,20 @@ export default function MainPage({ onOpenCompany, onOpenRiskPage, onOpenResponse
               <RiskOverviewTrendChart
                 days={briefingSummaries}
                 displayDates={trendDisplayDates}
+                basis="articles"
                 ariaLabel={briefingView === "average" ? "등록 기업 전체의 최근 7일 평균 위험 판정 기사와 부정 기사 비율" : `${selectedCompany.name} 최근 7일 위험 판정 기사와 부정 기사 비율`}
               />
             </section>
           </div>
         </section>
         <section className="panel briefing-risk-articles">
-          <div className="briefing-risk-head"><PanelTitle title="최근 위험 사건" description="자세히 보기를 누르면 위험 판정 또는 종료 이력을 확인할 수 있습니다." /></div>
-          <div className="briefing-risk-list">{riskyStories.length ? riskyStories.map((risk) => {
-            const isClosed = risk.status === "closed";
-            const activityDate = riskActivityDate(risk);
-            const openRisk = () => isClosed
-              ? onOpenResponseHistory(selectedCompanyId, risk.id)
-              : onOpenCompany(selectedCompanyId, risk.id);
-            return <button className="briefing-risk-card" type="button" onClick={openRisk} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
-              <div className="briefing-risk-meta"><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span><span>{RISK_TYPE_LABELS[risk.primary_type] ?? risk.primary_type ?? "위험"}</span><span className={`briefing-risk-state ${isClosed ? "closed" : "active"}`}>{isClosed ? "종료" : "활성"}</span></div>
-              <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
-              <p>기사 {formatNumber(risk.evidence_article_count)}건 · 출처 {formatNumber(risk.source_count)}곳</p>
-              <footer><small>위험도 {formatRiskProbability(risk.risk_probability)} · {isClosed ? "종료" : "최근"} {formatDate(activityDate)}</small><span className="briefing-risk-action" aria-hidden="true">자세히 보기</span></footer>
-            </button>;
-          }) : <p className="panel-empty">표시할 위험 사건이 없습니다.</p>}</div>
-          <div className="briefing-risk-more"><button type="button" aria-label={`${selectedCompany.name} 활성 위험 판정 더보기`} onClick={() => onOpenRiskPage(selectedCompanyId)}>더보기</button></div>
+          <div className="briefing-risk-head"><PanelTitle title="최근 위험 사건" description="현재 활성 상태인 사건과 최신 대응 방안을 확인할 수 있습니다." /></div>
+          <div className="briefing-risk-columns"><strong>위험사건</strong><strong>대응 방안</strong></div>
+          <div className="briefing-risk-list">{riskPageLoading && !riskPageData ? <p className="panel-empty">활성 위험 사건을 불러오는 중입니다.</p> : riskyStories.length ? riskyStories.map((risk) => <button className="briefing-risk-card" type="button" onClick={() => onOpenCompany(selectedCompanyId, risk.id)} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
+            <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
+            <span className="briefing-response-summary" title={risk.response_summary}>{risk.response_summary}</span>
+          </button>) : <p className="panel-empty">현재 활성 위험 사건이 없습니다.</p>}</div>
+          <Pagination page={riskPage} pageSize={RISK_PAGE_SIZE} total={riskTotal} onChange={setRiskPage} />
         </section>
       </div>}
     </div>

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 from pathlib import Path
 from threading import Lock
+from uuid import uuid4
 
 from sqlalchemy import delete, or_, select, text
 
@@ -294,6 +295,118 @@ def _get_or_create_curated_article(
     db.add(article)
     db.flush()
     return article, True
+
+
+def apply_binary_filter_review(
+    db,
+    company: Company,
+    source_result: ArticleFilterResult,
+    raw: RawNewsArticle,
+    review: dict,
+) -> tuple[ArticleFilterResult, int | None]:
+    """Persist an LLM re-review as a new immutable latest filter decision.
+
+    A separate result row preserves the original model judgement and prevents a
+    later rules-only historical reanalysis from silently overwriting the manual
+    LLM override. Accepted articles are materialized and linked exactly as they
+    are during collection so downstream analysis can continue normally.
+    """
+    _lock_company_collection(db, company.id)
+    latest = db.scalar(
+        select(ArticleFilterResult)
+        .where(
+            ArticleFilterResult.company_id == company.id,
+            ArticleFilterResult.raw_article_id == raw.id,
+        )
+        .order_by(ArticleFilterResult.id.desc())
+        .limit(1)
+        .with_for_update()
+    )
+    if latest is None or latest.id != source_result.id or latest.decision != "review_required":
+        raise ValueError("이미 처리되었거나 최신 상태가 아닌 정제 결과입니다.")
+
+    now = datetime.now(timezone.utc)
+    decision = review["decision"]
+    reason = review["reason"]
+    duplicate_of_raw_id = None
+    article = None
+
+    if decision == "accepted":
+        article, _created = _get_or_create_curated_article(
+            db,
+            raw,
+            raw,
+            raw.normalized_url,
+        )
+        if article.raw_article_id is not None and article.raw_article_id != raw.id:
+            reason = "duplicate"
+            duplicate_of_raw_id = article.raw_article_id
+
+    review_details = {
+        "source_filter_result_id": source_result.id,
+        "source_filter_version": source_result.filter_version,
+        "provider": review["provider"],
+        "model_name": review["model_name"],
+        "decision": review["decision"],
+        "reason": review["reason"],
+        "confidence": float(review["confidence"]),
+        "explanation": str(review["explanation"])[:4000],
+        "reviewed_at": now.isoformat(),
+        "ambiguous_policy": "rejected",
+    }
+    reviewed_result = ArticleFilterResult(
+        raw_article_id=raw.id,
+        company_id=company.id,
+        decision=decision,
+        reason=reason,
+        duplicate_of_raw_id=duplicate_of_raw_id,
+        curated_article_id=article.id if article is not None else None,
+        relevance_score=float(review["relevance_score"]),
+        advertising_score=float(review["advertising_score"]),
+        confidence=float(review["confidence"]),
+        classifier_kind="llm_binary_review",
+        filter_version=(
+            f"{source_result.filter_version[:40]}:llm-review:{uuid4().hex[:12]}"
+        ),
+        details={
+            **dict(source_result.details or {}),
+            "llm_review": review_details,
+        },
+        filtered_at=now,
+    )
+    db.add(reviewed_result)
+    db.flush()
+
+    if article is not None:
+        match = db.get(CompanyArticleMatch, (company.id, article.id))
+        if match is None:
+            hit = db.scalar(
+                select(ArticleQueryHit)
+                .where(
+                    ArticleQueryHit.company_id == company.id,
+                    ArticleQueryHit.raw_article_id == raw.id,
+                )
+                .order_by(ArticleQueryHit.last_seen_at.desc(), ArticleQueryHit.id.desc())
+                .limit(1)
+            )
+            db.add(
+                CompanyArticleMatch(
+                    company_id=company.id,
+                    article_id=article.id,
+                    job_id=hit.job_id if hit is not None else None,
+                    matched_keyword=hit.matched_keyword if hit is not None else None,
+                )
+            )
+        assign_story_cluster(db, article, company_id=company.id)
+        db.flush()
+
+    return reviewed_result, article.id if article is not None else None
+
+
+def continue_accepted_filter_review(company_id: int, article_id: int) -> None:
+    """Run the normal downstream stages after an LLM review accepts an article."""
+    analyze_company_articles(company_id)
+    enqueue_company_risk_articles(company_id, [article_id])
 
 
 def _realtime_sources(settings: Settings) -> list[str]:

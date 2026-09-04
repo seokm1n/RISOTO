@@ -1,26 +1,9 @@
-// 동종 기업 추천(schema_version 3, generation_kind: competitor_impact)을 그린다.
-//
-// 메인 경로와도 v2와도 구조가 다르다. scenarios가 아예 없고 content.impact(영향 판단)와
-// content.recommendation(권고)을 읽는다. 그래서 MainResponseContent와 같은 이유로 파일을
-// 나눴다.
-//
-// 그리는 상태가 셋이다.
-//   근거부족_보류  기사가 0건이라 판단 자체를 하지 않음 (LLM 미호출). 양쪽 경로 공통이라
-//                  MainResponseContent의 NoEvidenceNotice를 그대로 쓴다 - 같은 상태를 두
-//                  화면으로 그리면 담당자가 다른 상황으로 읽는다.
-//   영향없음_종료  영향 판단이 '영향_없음'을 내서 추천을 만들지 않음. recommendation이 null.
-//   생성완료/검증실패  추천이 있음.
-//
-// 두 번째가 이 경로의 핵심이다. "만들다 실패했다"가 아니라 "만들지 않기로 했다"는 것이
-// 화면에서 읽혀야 게이트가 기능으로 보인다.
 import { NoEvidenceNotice } from "./MainResponseContent";
 
-// 내부 표기(언더스코어)를 사람 말로 바꾼다. 검증 규칙 6이 산문 필드에서 이 표기를
-// 금지하는데, 구조 필드는 그대로 두고 화면에서 바꾸는 것이 원래 방침이다.
-const DIRECTION_LABELS = {
-  부정적_파급: "부정적 파급",
-  반사이익: "반사이익",
-  영향_없음: "영향 없음",
+const DIRECTION_PRESENTATION = {
+  부정적_파급: { label: "부정 영향 가능", tone: "urgent" },
+  반사이익: { label: "기회 영향 가능", tone: "opportunity" },
+  영향_없음: { label: "직접 영향 낮음", tone: "watch" },
 };
 
 const CHANNEL_LABELS = {
@@ -39,149 +22,223 @@ const TIMEFRAME_LABELS = {
   "1개월_내": "1개월 이내",
 };
 
-// 시점 정렬 기준. 목록 위쪽이 '먼저 할 일'로 읽히는데 실제로는 모델이 낸 순서일 뿐이라
-// 화면에서 다시 세운다. 모르는 값은 맨 뒤로 보내되 버리지는 않는다.
 const TIMEFRAME_ORDER = ["즉시", "1주_내", "2주_내", "1개월_내"];
 
-function timeframeRank(timeframe) {
-  const index = TIMEFRAME_ORDER.indexOf(timeframe);
-  return index === -1 ? TIMEFRAME_ORDER.length : index;
+function humanize(value) {
+  return typeof value === "string" ? value.replaceAll("_", " ") : value ?? "";
 }
 
 function label(map, value) {
-  return map[value] ?? value ?? "";
+  return map[value] ?? humanize(value);
 }
 
 function percent(value) {
   return typeof value === "number" ? `${Math.round(value * 100)}%` : null;
 }
 
-// 영향 판단 요약. 추천이 있든 없든 머리 부분에 온다.
-function ImpactVerdict({ impact, peerCompanyName }) {
-  const confidence = percent(impact.confidence);
-  const level = impact.impact_level;
+function timeframeRank(value) {
+  const rank = TIMEFRAME_ORDER.indexOf(value);
+  return rank === -1 ? TIMEFRAME_ORDER.length : rank;
+}
+
+function ImpactHeader({ content, impact, recommendationCount }) {
+  const direction = DIRECTION_PRESENTATION[impact.impact_direction] ?? {
+    label: label({}, impact.impact_direction) || "영향 방향 확인",
+    tone: "standard",
+  };
+  const facts = [
+    ["위험 유형", content.risk_type_label],
+    ["영향 수준", impact.impact_level && impact.impact_level !== "없음" ? impact.impact_level : "낮음"],
+    ["판단 확신도", percent(impact.confidence)],
+    ["권고 과제", recommendationCount ? `${recommendationCount}개` : null],
+  ].filter(([, value]) => value);
+
   return (
-    <section className="draft-impact">
-      <h5>영향 판단</h5>
-      <p className="draft-verdict">
-        {label(DIRECTION_LABELS, impact.impact_direction)}
-        {level && level !== "없음" ? ` · 노출 ${level}` : ""}
-        {confidence ? ` · 확신도 ${confidence}` : ""}
-        {impact.needs_review && <span className="draft-review-flag">사람 확인 필요</span>}
-      </p>
-      {impact.reason && <p className="draft-reason">{impact.reason}</p>}
-      {impact.watch_points?.length > 0 && (
-        <>
-          <strong>지켜볼 것</strong>
-          <ul>
-            {impact.watch_points.map((point, i) => (
-              <li key={`wp-${i}`}>{point}</li>
-            ))}
-          </ul>
-        </>
-      )}
-      {peerCompanyName && (
-        <p className="draft-peer-note">
-          {peerCompanyName}에서 발생한 사안이며, 우리 기업의 자체 사고가 아닙니다.
-        </p>
+    <section className={`response-command-card response-peer-command ${direction.tone}`}>
+      <div className="response-command-copy">
+        <span className="response-ui-kicker">동종 업계 영향 가이드</span>
+        <div className="response-command-title">
+          <span className={`response-priority-pill ${direction.tone}`}>{direction.label}</span>
+          <h4>
+            {content.peer_company_name
+              ? `${content.peer_company_name} 관련 사안`
+              : "동종 기업 관련 사안"}
+          </h4>
+        </div>
+        {impact.reason && <p>{impact.reason}</p>}
+        {content.peer_company_name && (
+          <small className="response-peer-context">
+            우리 기업에서 발생한 사건이 아니라 업계 파급 가능성을 분석한 결과입니다.
+          </small>
+        )}
+      </div>
+      {facts.length > 0 && (
+        <dl className="response-command-facts">
+          {facts.map(([name, value]) => (
+            <div key={name}>
+              <dt>{name}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
       )}
     </section>
   );
 }
 
-// 권고 하나. verify_first는 사실 확인 전에 대외 발언하지 말라는 뜻이라 놓치면 사고로
-// 이어진다. 목록에서 눈에 띄어야 한다.
-function RecommendationItem({ item, index, orphanChannel }) {
+function RecommendationGroups({ recommendations, channels }) {
+  const knownChannels = channels ?? [];
+  const orphaned = recommendations.filter((item) => !knownChannels.includes(item.channel));
+  const groups = knownChannels.map((channel) => ({
+    channel,
+    title: label(CHANNEL_LABELS, channel),
+    items: recommendations
+      .filter((item) => item.channel === channel)
+      .sort((left, right) => timeframeRank(left.timeframe) - timeframeRank(right.timeframe)),
+    orphaned: false,
+  }));
+
+  if (orphaned.length > 0) {
+    groups.push({
+      channel: "unclassified",
+      title: "기타 영향 경로",
+      items: [...orphaned].sort(
+        (left, right) => timeframeRank(left.timeframe) - timeframeRank(right.timeframe)
+      ),
+      orphaned: true,
+    });
+  }
+
+  let order = 0;
   return (
-    <li className="draft-recommendation">
-      <div className="draft-recommendation-head">
-        <span className="draft-order">{String(index).padStart(2, "0")}</span>
-        <span className="draft-timeframe">{label(TIMEFRAME_LABELS, item.timeframe)}</span>
-        {item.verify_first && <em className="draft-verify-first">확인 후 대외 답변</em>}
+    <section className="response-workboard response-peer-workboard">
+      <header className="response-section-heading">
+        <div>
+          <span>실행 권고</span>
+          <h4>우리 기업이 준비할 일</h4>
+        </div>
+        <strong>{recommendations.length}개 과제</strong>
+      </header>
+      <div className="response-channel-groups">
+        {groups.map((group) => (
+          <article className="response-channel-group" key={group.channel}>
+            <header>
+              <strong>{group.title}</strong>
+              <span>{group.items.length}개</span>
+            </header>
+            {group.items.length > 0 ? (
+              <ol>
+                {group.items.map((item, index) => {
+                  order += 1;
+                  return (
+                    <li key={`${group.channel}-${index}`}>
+                      <span className="response-task-number">
+                        {String(order).padStart(2, "0")}
+                      </span>
+                      <div className="response-task-copy">
+                        <div className="response-task-flags">
+                          {item.verify_first && <em>사실 확인 먼저</em>}
+                          {group.orphaned && <em className="muted">경로 재확인</em>}
+                        </div>
+                        <strong>{item.action}</strong>
+                        {item.owner_hint && <small>담당 · {item.owner_hint}</small>}
+                        {item.rationale && <p>{item.rationale}</p>}
+                      </div>
+                      <span className="response-task-due">
+                        {label(TIMEFRAME_LABELS, item.timeframe) || "시점 확인"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="response-channel-empty">이 경로에 연결된 권고가 없습니다.</p>
+            )}
+          </article>
+        ))}
       </div>
-      <p className="draft-action">{item.action}</p>
-      {orphanChannel && (
-        <p className="draft-orphan-channel">
-          경로: {label(CHANNEL_LABELS, item.channel)} · 앞 단계가 식별한 영향 경로에 없음
-        </p>
-      )}
-      {item.owner_hint && <p className="draft-owner">담당: {item.owner_hint}</p>}
-      {item.rationale && <p className="draft-rationale">{item.rationale}</p>}
-    </li>
+    </section>
   );
 }
 
-// 권고를 영향 경로로 묶는다. 검증 규칙 1이 "모든 권고는 영향 경로 중 하나에 매달려야
-// 한다"고 강제하는데, 평평한 목록으로 그리면 그 구조가 화면에서 사라진다.
-function RecommendationGroups({ recommendations, channels }) {
-  const known = channels ?? [];
-  const orphans = recommendations.filter((item) => !known.includes(item.channel));
-  let order = 0;
-
-  const groups = known.map((channel) => ({
-    channel,
-    label: label(CHANNEL_LABELS, channel),
-    items: recommendations
-      .filter((item) => item.channel === channel)
-      .sort((a, b) => timeframeRank(a.timeframe) - timeframeRank(b.timeframe)),
-    orphan: false,
-  }));
-
-  // 경로 밖 권고는 버리지 않고 맨 아래에 모은다. 검증 실패 건도 사람이 보고 판단해야
-  // 하므로 화면에서 사라지면 안 된다.
-  if (orphans.length > 0) {
-    groups.push({ channel: "__orphan__", label: "경로 불명", items: orphans, orphan: true });
+function FollowUpSection({ impact, recommendation }) {
+  const watchPoints = impact.watch_points ?? [];
+  const avoid = recommendation?.avoid ?? [];
+  if (
+    !watchPoints.length &&
+    !avoid.length &&
+    !recommendation?.realert_condition &&
+    !recommendation?.limitations
+  ) {
+    return null;
   }
 
   return (
-    <section className="draft-recommendations">
-      <h5>권고 · 영향 경로별</h5>
-      {groups.map((group) => (
-        <div className="draft-channel-group" key={group.channel}>
-          <strong className="draft-channel">{group.label}</strong>
-          {group.items.length === 0 ? (
-            // 앞 단계가 식별한 경로인데 권고가 없는 것은 그 자체로 봐야 할 신호다.
-            <p className="draft-channel-empty">이 경로에 대한 권고가 없습니다.</p>
-          ) : (
-            <ul>
-              {group.items.map((item, i) => {
-                order += 1;
-                return (
-                  <RecommendationItem
-                    key={`${group.channel}-${i}`}
-                    item={item}
-                    index={order}
-                    orphanChannel={group.orphan}
-                  />
-                );
-              })}
-            </ul>
-          )}
+    <section className="response-followup-panel">
+      <header className="response-section-heading">
+        <div>
+          <span>후속 관리</span>
+          <h4>지켜볼 신호와 다시 알릴 기준</h4>
         </div>
-      ))}
+      </header>
+      <div className="response-peer-followup-grid">
+        {watchPoints.length > 0 && (
+          <article>
+            <h5>지켜볼 신호</h5>
+            <ul>
+              {watchPoints.map((point, index) => (
+                <li key={`watch-${index}`}>{point}</li>
+              ))}
+            </ul>
+          </article>
+        )}
+        {recommendation?.realert_condition && (
+          <article className="response-realert-card">
+            <h5>다시 알릴 기준</h5>
+            <p>{recommendation.realert_condition}</p>
+          </article>
+        )}
+        {avoid.length > 0 && (
+          <article className="response-avoid-card">
+            <h5>하지 말아야 할 일</h5>
+            <ul>
+              {avoid.map((item, index) => (
+                <li key={`avoid-${index}`}>{item}</li>
+              ))}
+            </ul>
+          </article>
+        )}
+        {recommendation?.limitations && (
+          <article className="response-caution-card">
+            <h5>사용 전 확인</h5>
+            <p>{recommendation.limitations}</p>
+          </article>
+        )}
+      </div>
     </section>
   );
 }
 
-// 검증에서 걸린 항목. 통과했으면 알릴 것이 없다 - MainResponseContent와 같은 방침이다.
-function VerificationBadge({ verification }) {
+function VerificationNotice({ verification }) {
   const violations = verification?.violations ?? [];
   if (!verification || (verification.passed && violations.length === 0)) return null;
   return (
-    <div className="draft-verification">
-      <strong>검증에서 걸린 항목</strong>
+    <aside className="response-quality-alert" role="status">
+      <strong>자동 검증에서 확인이 필요한 항목</strong>
       <ul>
-        {violations.map((v, i) => (
-          <li key={`v-${i}`}>{typeof v === "string" ? v : v.message ?? JSON.stringify(v)}</li>
+        {violations.map((violation, index) => (
+          <li key={`peer-verification-${index}`}>
+            {typeof violation === "string"
+              ? violation
+              : violation.message ?? "세부 검증 결과를 확인해 주세요."}
+          </li>
         ))}
       </ul>
-    </div>
+    </aside>
   );
 }
 
 export default function PeerRecommendationContent({ content }) {
-  // 근거 기사가 없어 판단 자체를 하지 않은 경우. 이 content에는 impact도 content_kind도
-  // 없으므로 다른 것을 읽기 전에 먼저 가른다.
   if (content.status === "근거부족_보류") {
     return <NoEvidenceNotice content={content} />;
   }
@@ -189,128 +246,51 @@ export default function PeerRecommendationContent({ content }) {
   const impact = content.impact ?? {};
   const recommendation = content.recommendation;
   const recommendations = recommendation?.recommendations ?? [];
-  const citedIds = recommendation?.cited_case_ids ?? [];
-  const cases = content.cases ?? [];
-  const citedCases = cases.filter((c) => citedIds.includes(c.case_id));
 
   return (
-    <div className="response-draft response-draft-v3">
-      <div className="response-draft-head">
-        <div>
-          <span className="eyebrow">동종 기업 추천 · 검토 필요</span>
-          <strong>
-            {content.peer_company_name ? `${content.peer_company_name}에서 발생한 사안` : "동종 기업 사안"}
-            {content.risk_type_label ? ` · ${content.risk_type_label}` : ""}
-          </strong>
-        </div>
-        <span className="draft-kind competitor">비교 기업 → 나의 기업 영향</span>
-      </div>
+    <div className="response-draft response-draft-v3 response-operations-view response-peer-view">
+      <ImpactHeader
+        content={content}
+        impact={impact}
+        recommendationCount={recommendations.length}
+      />
 
-      <ImpactVerdict impact={impact} peerCompanyName={content.peer_company_name} />
+      {recommendation && (
+        <section className="response-peer-brief">
+          {recommendation.source_event && (
+            <article>
+              <h5>동종 기업에서 일어난 일</h5>
+              <p>{recommendation.source_event}</p>
+            </article>
+          )}
+          {recommendation.headline && (
+            <article className="recommended">
+              <h5>현재 권고</h5>
+              <p>{recommendation.headline}</p>
+            </article>
+          )}
+        </section>
+      )}
 
-      {/* 영향_없음이면 추천이 없다. "만들다 실패했다"로 읽히지 않도록 이유를 명시한다. */}
       {content.status === "영향없음_종료" && (
-        <section className="draft-no-recommendation">
-          <h5>권고를 만들지 않았습니다</h5>
+        <section className="response-no-action-card">
+          <strong>현재 필요한 별도 대응은 없습니다</strong>
           <p>
-            우리 기업에 닿는 영향 경로가 확인되지 않아 여기서 종료했습니다. 상황이 바뀌면
+            우리 기업으로 이어지는 영향 경로가 확인되지 않았습니다. 관련 신호가 달라지면
             다시 판단합니다.
           </p>
         </section>
       )}
 
-      {recommendation && (
-        <>
-          {recommendation.source_event && (
-            <section className="draft-situation">
-              <h5>상황</h5>
-              <p>{recommendation.source_event}</p>
-            </section>
-          )}
-
-          {recommendation.headline && (
-            <section className="draft-headline">
-              <h5>무엇을 할 것인가</h5>
-              <p>{recommendation.headline}</p>
-            </section>
-          )}
-
-          {recommendations.length > 0 && (
-            <RecommendationGroups
-              recommendations={recommendations}
-              channels={impact.impact_channels}
-            />
-          )}
-
-          {recommendation.avoid?.length > 0 && (
-            <section className="draft-avoid">
-              <h5>하지 말 것</h5>
-              <ul>
-                {recommendation.avoid.map((item, i) => (
-                  <li key={`av-${i}`}>{item}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {recommendation.realert_condition && (
-            <section className="draft-realert">
-              <h5>다시 볼 조건</h5>
-              <p>{recommendation.realert_condition}</p>
-            </section>
-          )}
-
-          {recommendation.limitations && (
-            <p className="draft-limitations">
-              <strong>한계</strong>
-              {recommendation.limitations}
-            </p>
-          )}
-        </>
+      {recommendations.length > 0 && (
+        <RecommendationGroups
+          recommendations={recommendations}
+          channels={impact.impact_channels}
+        />
       )}
 
-      {content.regulations?.length > 0 && (
-        <section className="draft-regulations">
-          <h5>참고 법령</h5>
-          <ul>
-            {content.regulations.map((r, i) => (
-              <li key={`rg-${i}`}>
-                <strong>
-                  {r.law_name} {r.article}
-                </strong>
-                <span>{r.requirement}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {citedCases.length > 0 && (
-        <section className="draft-precedents">
-          <h5>인용 사례</h5>
-          <ul>
-            {citedCases.map((c, i) => {
-              const url = (c.source_urls ?? [])[0];
-              return (
-                <li key={`pc-${i}`}>
-                  {url ? (
-                    <a href={url} target="_blank" rel="noreferrer">
-                      {c.title}
-                    </a>
-                  ) : (
-                    <span>{c.title}</span>
-                  )}
-                  {/* 지금 case_records가 0행이라 인용 사례는 사실상 전부 웹검색이다.
-                      표시가 없으면 검수된 것처럼 읽힌다. */}
-                  {c.provenance === "web_search" && <em className="unverified">미검수 · 참고용</em>}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      <VerificationBadge verification={content.verification} />
+      <FollowUpSection impact={impact} recommendation={recommendation} />
+      <VerificationNotice verification={content.verification} />
     </div>
   );
 }

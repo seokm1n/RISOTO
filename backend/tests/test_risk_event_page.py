@@ -9,14 +9,17 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.models import (
+    ArticleRiskAssessment,
     Company,
+    CompanyArticleMatch,
     NewsArticle,
     RiskEvent,
     RiskEventArticle,
     RiskEventType,
     StoryCluster,
+    StoryClusterArticle,
 )
-from app.routers.collection import list_risk_events_page
+from app.routers.collection import list_risk_events_page, list_risk_judgments_page
 from app.routers.governance import start_response_generation
 from tests.auth_helpers import auth_for_company
 
@@ -161,6 +164,23 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         self.assertNotIn(singleton.id, [item.id for item in result.items])
         self.assertNotIn(window_event.id, [item.id for item in result.items])
 
+        all_events = list_risk_events_page(
+            self.company.id,
+            view="all",
+            page=1,
+            page_size=10,
+            days=None,
+            severity=None,
+            risk_type=None,
+            response="all",
+            db=self.db,
+            auth=self.auth,
+        )
+        self.assertEqual(
+            [item.id for item in all_events.items],
+            [closed.id, critical.id, generating.id, open_event.id],
+        )
+
         needs_response = list_risk_events_page(
             self.company.id,
             view="active",
@@ -224,6 +244,112 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
         self.assertIn(active_idle.id, [item.id for item in needs_response.items])
         self.assertNotIn(active_idle.id, [item.id for item in active_without_needs.items])
         self.assertIn(closed_idle.id, [item.id for item in history.items])
+
+    def test_active_response_review_respects_period_filter(self):
+        recent = self.event(1, status="open", severity="warning", response_status="idle")
+        stale = self.event(2, status="open", severity="warning", response_status="failed")
+        stale.opened_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        stale.last_seen_at = stale.opened_at
+        stale.last_evidence_at = stale.opened_at
+        stale.detected_at = stale.opened_at
+        self.db.commit()
+
+        result = list_risk_events_page(
+            self.company.id, view="active", page=1, page_size=10, days=1,
+            severity=None, risk_type=None, response="needs_action", db=self.db, auth=self.auth,
+        )
+
+        self.assertEqual([item.id for item in result.items], [recent.id])
+
+    def test_risk_judgments_split_eligible_stories_into_risk_and_non_risk(self):
+        for index, article in enumerate(self.evidence_articles):
+            self.db.add(CompanyArticleMatch(
+                company_id=self.company.id,
+                article_id=article.id,
+            ))
+            self.db.add(StoryClusterArticle(
+                article_id=article.id,
+                story_cluster_id=self.cluster.id,
+                similarity=1.0 - index / 10,
+                is_representative=index == 0,
+            ))
+            self.db.add(ArticleRiskAssessment(
+                company_id=self.company.id,
+                article_id=article.id,
+                story_cluster_id=self.cluster.id,
+                decision="non_risk",
+                risk_probability=0.20 + index / 10,
+                type_scores={},
+                primary_type=None,
+                relevance_score=0.9,
+                source_domain="risk-page.test",
+                source_credibility=0.65,
+                classifier_kind="test",
+                model_version="test-v1",
+                reason="test non-risk judgment",
+                assessed_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+            ))
+        self.db.commit()
+
+        non_risk = list_risk_judgments_page(
+            self.company.id,
+            classification="non_risk",
+            view="active",
+            page=1,
+            page_size=10,
+            days=None,
+            severity=None,
+            risk_type=None,
+            db=self.db,
+            auth=self.auth,
+        )
+        self.assertEqual(non_risk.summary.risk, 0)
+        self.assertEqual(non_risk.summary.non_risk, 1)
+        self.assertEqual(non_risk.total, 1)
+        self.assertEqual(non_risk.items[0].classification, "non_risk")
+        self.assertEqual(non_risk.items[0].evidence_article_count, 2)
+        self.assertEqual(non_risk.items[0].source_count, 1)
+
+        for article in self.evidence_articles:
+            article.published_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        self.db.commit()
+        recent_non_risk = list_risk_judgments_page(
+            self.company.id,
+            classification="non_risk",
+            view="all",
+            page=1,
+            page_size=10,
+            days=1,
+            severity=None,
+            risk_type=None,
+            db=self.db,
+            auth=self.auth,
+        )
+        self.assertEqual(recent_non_risk.summary.non_risk, 1)
+        self.assertEqual(recent_non_risk.total, 0)
+
+        event = self.event(
+            1,
+            status="open",
+            severity="warning",
+            response_status="generated",
+        )
+        self.db.commit()
+        risk = list_risk_judgments_page(
+            self.company.id,
+            classification="risk",
+            view="active",
+            page=1,
+            page_size=10,
+            days=None,
+            severity=None,
+            risk_type=None,
+            db=self.db,
+            auth=self.auth,
+        )
+        self.assertEqual(risk.summary.risk, 1)
+        self.assertEqual(risk.summary.non_risk, 0)
+        self.assertEqual([item.risk_event_id for item in risk.items], [event.id])
 
     @patch("app.routers.governance.enqueue_response_draft")
     def test_response_generation_is_idempotent_while_pending(self, enqueue):

@@ -106,7 +106,7 @@ def list_notifications(
 
     items = sorted(
         risk_items,
-        key=lambda item: (item.created_at, item.id),
+        key=lambda item: (not item.is_read, item.created_at, item.id),
         reverse=True,
     )
     return NotificationListRead(

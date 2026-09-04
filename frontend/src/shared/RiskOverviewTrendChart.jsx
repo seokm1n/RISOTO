@@ -19,33 +19,34 @@ function useElementSize() {
   return [ref, size];
 }
 
-// 기사 2건 이상에 처음 도달한 같은 스토리 코호트 안에서 위험·부정 비율을 비교한다.
-export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 판정 기사와 부정 기사 비율 추이", displayDates = null }) {
+// 화면 목적에 따라 실제 기사 또는 판정 가능한 스토리를 같은 분모로 위험·부정 비율을 비교한다.
+export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 판정 기사와 부정 기사 비율 추이", displayDates = null, basis = "stories" }) {
   const [canvasRef, { width: measuredWidth, height: measuredHeight }] = useElementSize();
   const [hoveredIndex, setHoveredIndex] = useState(null);
-  useEffect(() => { setHoveredIndex(null); }, [days, displayDates]);
+  useEffect(() => { setHoveredIndex(null); }, [basis, days, displayDates]);
+  const usesArticleCounts = basis === "articles";
   const displayDateSet = displayDates === null ? null : new Set(displayDates);
   const points = [...days]
     .sort((left, right) => left.summary_date.localeCompare(right.summary_date))
     .map((day) => {
-      const eligibleStoryCount = Math.max(Number(day.eligible_story_count) || 0, 0);
-      const riskStoryCount = Math.max(Number(day.eligible_risk_story_count) || 0, 0);
-      const negativeStoryCount = Math.max(Number(day.eligible_negative_story_count) || 0, 0);
+      const populationCount = Math.max(Number(usesArticleCounts ? day.article_count : day.eligible_story_count) || 0, 0);
+      const riskCount = Math.max(Number(usesArticleCounts ? day.risk_article_count : day.eligible_risk_story_count) || 0, 0);
+      const negativeCount = Math.max(Number(usesArticleCounts ? day.negative_article_count : day.eligible_negative_story_count) || 0, 0);
       return {
         ...day,
-        eligible_story_count: eligibleStoryCount,
-        risk_story_count: riskStoryCount,
-        negative_story_count: negativeStoryCount,
-        risk_ratio: eligibleStoryCount > 0 ? Math.min(riskStoryCount / eligibleStoryCount, 1) : 0,
-        negative_ratio: eligibleStoryCount > 0 ? Math.min(negativeStoryCount / eligibleStoryCount, 1) : 0,
+        population_count: populationCount,
+        risk_count: riskCount,
+        negative_count: negativeCount,
+        risk_ratio: populationCount > 0 ? Math.min(riskCount / populationCount, 1) : 0,
+        negative_ratio: populationCount > 0 ? Math.min(negativeCount / populationCount, 1) : 0,
       };
     })
     .filter((day) => displayDateSet
       ? displayDateSet.has(day.summary_date)
-      : day.risk_story_count > 0 || day.negative_story_count > 0);
+      : day.risk_count > 0 || day.negative_count > 0);
   if (!points.length) return <div className="main-overview-trend">
     <div className="main-overview-legend" aria-hidden="true" />
-    <div className="main-chart-canvas" ref={canvasRef}><p className="panel-empty">아직 표시할 위험·부정 스토리 비율 데이터가 없습니다.</p></div>
+    <div className="main-chart-canvas" ref={canvasRef}><p className="panel-empty">아직 표시할 위험·부정 {usesArticleCounts ? "기사" : "스토리"} 비율 데이터가 없습니다.</p></div>
   </div>;
 
   const width = measuredWidth || 700, height = measuredHeight || 210;
@@ -124,8 +125,8 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 
       </svg>
       {hoveredPoint && <div className={`main-trend-tooltip ${tooltipEdge} ${tooltipBelow ? "below" : "above"}`} style={{ left: `${hoveredX / width * 100}%`, top: `${tooltipY}px` }} role="tooltip">
         <strong>{formatDay(hoveredPoint.summary_date)}</strong>
-        <span className="risk">위험 판정 <b>{formatPercent(hoveredPoint.risk_ratio)} · {formatNumber(hoveredPoint.risk_story_count)}건</b></span>
-        <span className="negative">부정 기사 <b>{formatPercent(hoveredPoint.negative_ratio)} · {formatNumber(hoveredPoint.negative_story_count)}건</b></span>
+        <span className="risk">위험 판정 <b>{formatPercent(hoveredPoint.risk_ratio)} · {formatNumber(hoveredPoint.risk_count)}건</b></span>
+        <span className="negative">부정 기사 <b>{formatPercent(hoveredPoint.negative_ratio)} · {formatNumber(hoveredPoint.negative_count)}건</b></span>
       </div>}
     </div>
   </div>;

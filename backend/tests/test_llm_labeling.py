@@ -13,10 +13,12 @@ from app.database import engine
 from app.models import ArticleLabel, Company
 from app.services.llm_labeling import (
     _unlabeled_query,
+    _valid_filter_review_payload,
     audit_sample_candidates,
     call_llm_label,
     label_articles,
     llm_labeling_status,
+    review_article_filter,
 )
 from app.services.review_identity import INTERNAL_REVIEW_ACTOR
 
@@ -37,6 +39,40 @@ class LlmLabelingUnitTests(unittest.TestCase):
 
         with patch("app.services.llm_labeling.get_settings", return_value=_EmptySettings()):
             result = call_llm_label({"name": "테스트"}, object(), "gpt-test")
+        self.assertIsNone(result)
+
+    def test_binary_filter_review_accepts_only_pass_or_reject(self):
+        accepted = {
+            "decision": "accepted",
+            "reason": "accepted",
+            "relevance_score": 0.96,
+            "advertising_score": 0.02,
+            "confidence": 0.92,
+            "explanation": "기업 자체를 다루는 비광고 기사입니다.",
+        }
+        rejected = {
+            **accepted,
+            "decision": "rejected",
+            "reason": "irrelevant",
+            "relevance_score": 0.2,
+            "confidence": 0.76,
+        }
+        self.assertEqual(_valid_filter_review_payload(accepted), accepted)
+        self.assertEqual(_valid_filter_review_payload(rejected), rejected)
+        self.assertIsNone(
+            _valid_filter_review_payload({**accepted, "decision": "review_required"})
+        )
+        self.assertIsNone(
+            _valid_filter_review_payload({**accepted, "reason": "irrelevant"})
+        )
+
+    def test_binary_filter_review_returns_none_without_a_provider(self):
+        class _EmptySettings:
+            llm_labeling_provider = "openai"
+            openai_api_key = ""
+
+        with patch("app.services.llm_labeling.get_settings", return_value=_EmptySettings()):
+            result = review_article_filter(object(), object(), object())
         self.assertIsNone(result)
 
 
