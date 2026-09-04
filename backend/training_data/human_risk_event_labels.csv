@@ -1,0 +1,83 @@
+﻿band,event_id,company,primary_type,시작,종료,지속시간,기사수,제목에기업명,is_risk,실제유형,note,max_p
+C_0.90-0.98,768,쿠팡,supply_operations,2026-08-26 3:00,2026-08-26 5:00,2.0h,3,2,TRUE,legal_regulatory,,0.9780
+C_0.90-0.98,594,무신사,reputation_consumer,2026-08-26 10:00,2026-08-26 10:45,0.8h,6,3,TRUE,product_quality,,0.9692
+A_0.65-0.75,978,무신사,financial_governance,2026-09-01 13:15,2026-09-01 14:00,0.8h,2,1,TRUE,financial_governance,,0.0527
+C_0.90-0.98,708,쿠팡,reputation_consumer,2026-02-14 14:30,2026-02-14 20:15,5.8h,4,4,,TRUE,reputation_consumer,0.9797
+C_0.90-0.98,941,쿠팡,legal_regulatory,2026-08-31 17:15,2026-08-31 18:00,0.8h,6,2,TRUE,legal_regulatory,,0.9669
+B_0.75-0.90,633,11번가,reputation_consumer,2026-08-28 15:00,2026-08-28 15:45,0.8h,0,0,FALSE,,근거기사가 비어 있어 내용 파악 불가,0.8961
+B_0.75-0.90,597,무신사,labor_hr,2026-08-27 7:00,2026-08-27 8:30,1.5h,4,1,TRUE,financial_governance,,0.8490
+B_0.75-0.90,607,에이블리,reputation_consumer,2026-08-28 12:00,2026-08-28 12:45,0.8h,1,0,FALSE,,,0.8803
+D_0.98이상,718,쿠팡,supply_operations,2026-02-17 7:15,2026-02-19 0:00,40.8h,1,1,FALSE,,유머성 게시글,0.9980
+B_0.75-0.90,605,에이블리,reputation_consumer,2026-08-26 11:00,2026-08-26 11:45,0.8h,2,1,FALSE,,,0.8961
+B_0.75-0.90,942,무신사,safety_accident,2026-08-31 17:30,2026-08-31 19:15,1.8h,6,5,TRUE,security_privacy,,0.8652
+B_0.75-0.90,626,11번가,financial_governance,2026-08-18 17:45,2026-08-18 20:15,2.5h,1,0,FALSE,,,0.8815
+D_0.98이상,702,쿠팡,reputation_consumer,2026-02-09 9:00,2026-02-14 20:15,131.3h,6,6,TRUE,legal_regulatory,,0.9980
+C_0.90-0.98,536,올리브영,reputation_consumer,2026-08-25 17:30,2026-08-25 18:30,1.0h,6,6,FALSE,,,0.9596
+C_0.90-0.98,593,무신사,reputation_consumer,2026-08-26 9:15,2026-08-26 10:00,0.8h,6,6,FALSE,,,0.9226
+C_0.90-0.98,591,무신사,reputation_consumer,2026-08-25 17:45,2026-08-25 20:00,2.3h,4,3,TRUE,product_quality,,0.9678
+D_0.98이상,719,쿠팡,security_privacy,2026-02-17 9:00,2026-02-19 0:00,39.0h,6,4,TRUE,"security_privacy, legal_regulatory",,0.9980
+D_0.98이상,724,쿠팡,reputation_consumer,2026-02-18 20:15,2026-02-20 19:15,47.0h,1,1,FALSE,,,0.9980
+A_0.65-0.75,298,쿠팡,reputation_consumer,2026-08-26 13:15,2026-08-26 14:00,0.8h,6,2,TRUE,legal_regulatory,,0.2097
+A_0.65-0.75,638,카카오,reputation_consumer,2026-08-28 9:45,2026-08-28 10:30,0.8h,6,6,FALSE,,,0.6618
+D_0.98이상,715,쿠팡,reputation_consumer,2026-02-16 9:00,2026-02-19 0:00,63.0h,6,4,TRUE,"security_privacy, labor_hr",,0.9980
+B_0.75-0.90,775,쿠팡,security_privacy,2026-08-27 6:00,2026-08-27 6:45,0.8h,3,2,TRUE,"reputation_consumer, legal_regulatory",,0.8580
+B_0.75-0.90,631,11번가,reputation_consumer,2026-08-27 15:00,2026-08-27 15:45,0.8h,1,0,FALSE,,,0.8961
+B_0.75-0.90,630,11번가,reputation_consumer,2026-08-26 11:15,2026-08-26 12:15,1.0h,1,0,FALSE,,,0.8961
+B_0.75-0.90,613,마켓컬리,reputation_consumer,2026-08-28 12:00,2026-08-28 12:45,0.8h,1,0,FALSE,,,0.8961
+C_0.90-0.98,623,SSG,reputation_consumer,2026-08-27 9:45,2026-08-27 11:00,1.3h,6,6,FALSE,,,0.9516
+D_0.98이상,712,쿠팡,safety_accident,2026-02-14 22:45,2026-02-19 0:00,97.3h,1,1,TRUE,reputation_consumer,,0.9980
+A_0.65-0.75,516,쿠팡,reputation_consumer,2026-08-28 16:00,2026-08-28 16:45,0.8h,4,1,TRUE,legal_regulatory,,0.5354
+B_0.75-0.90,611,마켓컬리,reputation_consumer,2026-08-26 9:15,2026-08-26 10:30,1.3h,5,1,FALSE,,,0.8961
+B_0.75-0.90,537,올리브영,safety_accident,2026-08-26 11:45,2026-08-26 12:30,0.8h,4,1,FALSE,,,0.8484
+C_0.90-0.98,776,쿠팡,legal_regulatory,2026-08-27 6:45,2026-08-27 8:30,1.8h,2,2,TRUE,legal_regulatory,,0.9524
+A_0.65-0.75,513,쿠팡,reputation_consumer,2026-08-28 10:45,2026-08-28 11:30,0.8h,6,0,FALSE,,제목에 기업명 없으나 커뮤니티 게시글에서 품질에 관한 불만글 있음 / 근거 무관(제휴 홍보글),0.4489
+D_0.98이상,780,쿠팡,legal_regulatory,2026-08-28 3:45,2026-08-28 7:45,4.0h,6,6,TRUE,"legal_regulatory, reputation_consumer, labor_hr",,0.9947
+D_0.98이상,770,쿠팡,legal_regulatory,2026-08-26 9:30,2026-08-26 11:00,1.5h,6,6,TRUE,"legal_regulatory, reputation_consumer",,0.9896
+D_0.98이상,515,쿠팡,safety_accident,2026-08-28 14:45,2026-08-28 15:45,1.0h,6,3,TRUE,"reputation_consumer, labor_hr, legal_regulatory",,0.9823
+C_0.90-0.98,610,마켓컬리,reputation_consumer,2026-08-25 18:15,2026-08-26 4:15,10.0h,3,0,TRUE,"legal_regulatory, labor_hr",,0.9416
+B_0.75-0.90,538,올리브영,reputation_consumer,2026-08-26 15:00,2026-08-26 15:45,0.8h,5,0,FALSE,,,0.8852
+D_0.98이상,766,쿠팡,legal_regulatory,2026-08-25 16:45,2026-08-25 20:30,3.8h,6,6,TRUE,"product_quality, legal_regulatory",,0.9911
+B_0.75-0.90,632,11번가,reputation_consumer,2026-08-28 12:00,2026-08-28 12:45,0.8h,0,0,FALSE,,,0.8961
+D_0.98이상,394,쿠팡,legal_regulatory,2026-08-26 14:00,2026-08-27 10:45,20.8h,6,6,TRUE,"legal_regulatory, safety_accident",,0.9970
+C_0.90-0.98,540,올리브영,reputation_consumer,2026-08-27 9:45,2026-08-27 11:00,1.3h,6,2,FALSE,,,0.9555
+B_0.75-0.90,627,11번가,reputation_consumer,2026-08-25 18:00,2026-08-25 22:15,4.3h,5,0,FALSE,,"연관없는 기사, 광고",0.8961
+B_0.75-0.90,598,무신사,reputation_consumer,2026-08-27 15:00,2026-08-27 15:45,0.8h,2,1,FALSE,,개인 불만 1건,0.7802
+C_0.90-0.98,764,쿠팡,legal_regulatory,2026-08-07 8:15,2026-08-07 10:00,1.8h,1,0,FALSE,,,0.9099
+C_0.90-0.98,514,쿠팡,reputation_consumer,2026-08-28 11:30,2026-08-28 12:45,1.3h,6,4,TRUE,legal_regulatory,,0.9442
+A_0.65-0.75,625,SSG,safety_accident,2026-08-28 13:45,2026-08-28 14:30,0.8h,6,6,FALSE,,,0.6999
+A_0.65-0.75,641,네이버,reputation_consumer,2026-08-27 8:00,2026-08-27 8:45,0.8h,6,0,FALSE,,,0.6912
+B_0.75-0.90,606,에이블리,reputation_consumer,2026-08-26 15:00,2026-08-26 16:45,1.8h,2,0,FALSE,,,0.8961
+A_0.65-0.75,1001,쿠팡,reputation_consumer,2026-09-01 16:00,2026-09-01 16:45,0.8h,6,5,FALSE,,긍정 기사 다수,0.0083
+D_0.98이상,723,쿠팡,reputation_consumer,2026-02-18 11:00,2026-02-20 19:15,56.3h,1,1,FALSE,,개인 문의,0.9980
+C_0.90-0.98,774,쿠팡,legal_regulatory,2026-08-27 5:00,2026-08-27 6:00,1.0h,5,3,TRUE,"legal_regulatory, labor_hr",,0.9141
+C_0.90-0.98,622,SSG,reputation_consumer,2026-08-26 6:00,2026-08-26 6:45,0.8h,6,6,FALSE,,,0.9376
+C_0.90-0.98,769,쿠팡,legal_regulatory,2026-08-26 5:45,2026-08-26 6:45,1.0h,6,3,TRUE,legal_regulatory,,0.9586
+C_0.90-0.98,599,무신사,reputation_consumer,2026-08-27 16:00,2026-08-27 16:45,0.8h,3,1,FALSE,,,0.9058
+B_0.75-0.90,604,에이블리,reputation_consumer,2026-08-26 9:15,2026-08-26 11:00,1.8h,5,0,FALSE,,,0.8961
+C_0.90-0.98,773,쿠팡,legal_regulatory,2026-08-26 23:30,2026-08-27 4:30,5.0h,6,4,TRUE,legal_regulatory,,0.9365
+D_0.98이상,706,쿠팡,security_privacy,2026-02-13 9:00,2026-02-14 20:15,35.3h,6,6,TRUE,legal_regulatory,,0.9980
+D_0.98이상,705,쿠팡,legal_regulatory,2026-02-12 9:00,2026-02-14 20:15,59.3h,6,6,TRUE,legal_regulatory,,0.9980
+D_0.98이상,624,SSG,reputation_consumer,2026-08-27 15:00,2026-08-27 16:00,1.0h,6,6,FALSE,,기업 차원에서 '위기'인지 기준 재정의 필요,0.9850
+B_0.75-0.90,642,네이버,reputation_consumer,2026-08-27 16:00,2026-08-27 16:45,0.8h,6,4,FALSE,,,0.8082
+D_0.98이상,713,쿠팡,reputation_consumer,2026-02-15 9:00,2026-02-19 0:00,87.0h,6,6,TRUE,"reputation_consumer, labor_hr, legal_regulatory",,0.9980
+C_0.90-0.98,511,쿠팡,supply_operations,2026-08-27 17:00,2026-08-27 17:45,0.8h,6,4,TRUE,legal_regulatory,,0.9159
+D_0.98이상,717,쿠팡,reputation_consumer,2026-02-16 21:30,2026-02-19 0:00,50.5h,1,1,FALSE,,,0.9980
+B_0.75-0.90,603,에이블리,reputation_consumer,2026-08-25 18:15,2026-08-25 21:30,3.3h,2,1,FALSE,,,0.8961
+C_0.90-0.98,1003,무신사,safety_accident,2026-09-01 17:30,2026-09-01 18:00,0.5h,4,3,TRUE,security_privacy,,0.9562
+B_0.75-0.90,595,무신사,safety_accident,2026-08-26 15:00,2026-08-26 15:45,0.8h,4,0,FALSE,,,0.8714
+D_0.98이상,711,쿠팡,reputation_consumer,2026-02-14 20:15,2026-02-19 0:00,99.8h,1,1,UNCERTAIN,,,0.9980
+B_0.75-0.90,628,11번가,reputation_consumer,2026-08-26 9:15,2026-08-26 10:00,0.8h,5,0,FALSE,,관련성 없는 소스 다수,0.8961
+C_0.90-0.98,535,올리브영,reputation_consumer,2026-08-25 16:00,2026-08-25 17:15,1.3h,6,6,FALSE,,,0.9574
+D_0.98이상,720,쿠팡,reputation_consumer,2026-02-17 14:15,2026-02-19 0:00,33.8h,1,1,FALSE,,개인 경험담,0.9980
+D_0.98이상,433,쿠팡,legal_regulatory,2026-08-27 9:30,2026-08-27 13:45,4.3h,6,6,TRUE,legal_regulatory,,0.9978
+D_0.98이상,512,쿠팡,safety_accident,2026-08-27 18:00,2026-08-28 10:15,16.3h,6,1,TRUE,labor_hr,,0.9947
+C_0.90-0.98,596,무신사,safety_accident,2026-08-26 18:15,2026-08-26 19:00,0.8h,1,1,TRUE,product_quality,,0.9663
+D_0.98이상,721,쿠팡,reputation_consumer,2026-02-17 22:15,2026-02-20 19:15,69.0h,1,1,FALSE,,,0.9980
+C_0.90-0.98,640,네이버,reputation_consumer,2026-08-26 10:00,2026-08-26 11:30,1.5h,6,6,FALSE,,,0.9798
+D_0.98이상,707,쿠팡,product_quality,2026-02-14 9:00,2026-02-14 20:15,11.3h,6,1,TRUE,legal_regulatory,,0.9980
+C_0.90-0.98,709,쿠팡,reputation_consumer,2026-02-14 16:30,2026-02-14 20:15,3.8h,1,1,FALSE,,"욕설, 내용 없음",0.9271
+D_0.98이상,779,쿠팡,security_privacy,2026-08-28 0:00,2026-08-28 6:15,6.3h,5,3,TRUE,legal_regulatory,,0.9947
+B_0.75-0.90,629,11번가,reputation_consumer,2026-08-26 10:30,2026-08-26 11:15,0.8h,2,0,FALSE,,,0.8961
+C_0.90-0.98,539,올리브영,reputation_consumer,2026-08-27 6:00,2026-08-27 6:45,0.8h,6,0,FALSE,,,0.9226
+D_0.98이상,637,카카오,reputation_consumer,2026-08-27 15:00,2026-08-27 15:45,0.8h,6,4,FALSE,,,0.9914
+B_0.75-0.90,609,마켓컬리,product_quality,2026-08-19 9:45,2026-08-19 11:00,1.3h,2,2,TRUE,product_quality,,0.8384
