@@ -2024,8 +2024,61 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 /* 메인 경로 요약도 같은 이유로 첫 블록을 조금 세운다. */
 .draft-summary li { color: #2e1f14; font-size: .74rem; font-weight: 600; }
 
-/* 시나리오 카드 펼치기 버튼. 관점을 비교하려면 접힌 상태가 기본이어야 한다 - 카드 하나가
-   화면 서너 개 분량이라 다 펼치면 나란히 놓고 볼 수 없다. 머리 오른쪽 끝에 붙인다. */
-.response-scenario > header .scenario-toggle { margin-left: auto; border: 1px solid #cbc8bd; border-radius: 999px; background: transparent; color: #746d68; padding: 3px 10px; font-size: .62rem; font-weight: 800; cursor: pointer; }
-.response-scenario > header .scenario-toggle:hover { border-color: #a84f32; color: #a84f32; }
-.response-scenario > header .scenario-toggle[aria-expanded="true"] { border-color: #a84f32; color: #a84f32; }
+/* v3 대응방안 화면. 세 영역(현재 상황 / 우선 대응 계획 / 커뮤니케이션 방향)을 카드 하나
+   안에서 여백으로 나눈다. 작은 카드를 반복하면 위에서 아래로 읽는 흐름이 끊긴다. */
+.response-draft-v3 .draft-block { display: grid; gap: 9px; padding-top: 14px; }
+.response-draft-v3 .draft-block + .draft-block { border-top: 1px solid rgba(48,43,41,.10); }
+.response-draft-v3 .draft-block > h4 { margin: 0; color: #a84f32; font-size: .78rem; font-weight: 800; }
+.response-draft-v3 .draft-block h5 { margin: 6px 0 0; color: #5c4432; font-size: .68rem; font-weight: 800; }
+
+/* 핵심 판단 한 줄. 이 카드에서 가장 먼저 읽혀야 한다. */
+.draft-lead { margin: 0; color: #2e1f14; font-size: .82rem; font-weight: 700; line-height: 1.6; }
+.draft-points { margin: 0; padding-left: 17px; display: grid; gap: 5px; color: #4a4340; font-size: .72rem; line-height: 1.6; }
+.draft-body { margin: 0; color: #5c554f; font-size: .72rem; line-height: 1.65; }
+
+/* 대응 방향·커뮤니케이션 항목. 테두리 대신 왼쪽 선과 여백으로 묶는다. */
+.draft-directions { display: grid; gap: 9px; }
+.draft-direction { display: grid; gap: 3px; padding-left: 11px; border-left: 2px solid #e2d9c4; }
+.draft-direction strong { color: #2e1f14; font-size: .74rem; font-weight: 800; }
+.draft-direction p { margin: 0; color: #5c554f; font-size: .72rem; line-height: 1.6; }
+
+/* 시간 흐름. 과제와 일정을 한 줄기로 읽게 한다. */
+.draft-timeline { margin: 0; padding: 0; list-style: none; display: grid; gap: 13px; }
+.draft-step { display: grid; grid-template-columns: 92px 1fr; gap: 11px; align-items: start; }
+.draft-step-time { padding: 3px 9px; border-radius: 999px; background: #f8ecd9; color: #a84f32; font-size: .64rem; font-weight: 800; text-align: center; }
+.draft-step-items { margin: 0; padding-left: 17px; display: grid; gap: 6px; color: #3f3936; font-size: .74rem; line-height: 1.6; }
+
+/* 유의사항. 확정 문구로 읽히지 않도록 성격을 먼저 밝힌다. */
+.draft-caution { display: grid; gap: 4px; padding: 11px 13px; border-radius: 8px; background: #faf6ec; }
+.draft-caution-label { color: #a84f32; font-size: .62rem; font-weight: 800; }
+.draft-caution p { margin: 0; color: #5c554f; font-size: .7rem; line-height: 1.6; }
+
+/* 관점 전환 탭. 세 안을 동시에 펼치면 같은 구조가 반복돼 비교가 안 된다. */
+.draft-stance-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.draft-stance-tab { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #cbc8bd; border-radius: 999px; background: transparent; color: #746d68; padding: 5px 13px; font-size: .68rem; font-weight: 800; cursor: pointer; }
+.draft-stance-tab:hover { border-color: #a84f32; color: #a84f32; }
+.draft-stance-tab.active { border-color: #a84f32; background: #a84f32; color: #fffdf7; }
+.draft-stance-tab em { font-style: normal; font-size: .58rem; opacity: .75; }
+
+/* 근거 자료 접이 영역. 실행할 때가 아니라 근거를 따질 때 보는 것이라 맨 아래에 접어 둔다. */
+.draft-appendix { display: grid; gap: 11px; padding-top: 13px; border-top: 1px solid rgba(48,43,41,.12); }
+.draft-appendix .scenario-toggle { justify-self: start; border: 1px solid #cbc8bd; border-radius: 999px; background: transparent; color: #746d68; padding: 5px 13px; font-size: .66rem; font-weight: 800; cursor: pointer; }
+.draft-appendix .scenario-toggle:hover, .draft-appendix .scenario-toggle[aria-expanded="true"] { border-color: #a84f32; color: #a84f32; }
+.draft-appendix-body { display: grid; gap: 13px; }
+
+/* 자동 줄바꿈. 긴 한국어 문장·URL·법령명이 컨테이너를 밀어내 가로 스크롤이 생기던 것을
+   막는다. min-width:0이 없으면 grid/flex 자식이 내용 너비만큼 벌어져 줄바꿈이 안 걸린다. */
+.response-draft-v3, .response-draft-hold { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.response-draft-v3 *, .response-draft-hold * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.response-draft-v3 p, .response-draft-v3 li, .response-draft-v3 strong, .response-draft-v3 span,
+.response-draft-hold p, .response-draft-hold dd { white-space: normal; }
+.response-draft-v3 a { overflow-wrap: anywhere; }
+
+/* 관점 탭. "1안 · 쉬운 이름" 두 조각으로 읽히게 한다. */
+.draft-stance-no { font-variant-numeric: tabular-nums; opacity: .7; }
+.draft-stance-name { font-weight: 800; }
+
+/* 본문 안에 끼우는 작은 펼치기 버튼(판단 근거 등). 카드 버튼보다 눈에 덜 띄어야 한다. */
+.draft-inline-toggle { justify-self: start; border: 0; background: transparent; color: #a84f32; padding: 0; font-size: .66rem; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.draft-inline-toggle:hover { color: #8e3f26; }
+.response-draft-v3 .draft-basis { display: grid; gap: 6px; justify-items: start; }

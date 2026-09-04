@@ -1,22 +1,25 @@
 // 메인 기업 대응방안(schema_version 3)을 그린다.
 //
-// v2와 키가 하나도 겹치지 않는다. v2는 scenarios[].title/assumption/recommended_actions를
-// 읽는데, v3는 scenarios[]가 {stance, tradeoff, merged_stances, report, verification}이고
-// 실제 내용은 report 안에 들어 있다. 그래서 기존 렌더러에 분기를 얹는 대신 파일을 나눴다.
+// 화면은 세 영역만 둔다. 담당자가 위에서 아래로 읽으면서 "지금 상황이 무엇이고 → 무엇을
+// 언제 하고 → 밖에 어떻게 말할 것인가"를 순서대로 이해하게 하려는 것이다. 작은 카드가
+// 반복되면 그 흐름이 끊긴다.
 //
-// 동종 경로(content_kind: "peer_recommendation")와 근거부족 보류는 여기서 다루지 않는다.
+//   1. 현재 상황 및 대응 방향   summary_points · judgment_basis · strategies(대외 발화 외)
+//   2. 우선 대응 계획           checklist를 시간대로 묶은 타임라인
+//   3. 커뮤니케이션 방향        strategies(소통·정정) · monitoring_metrics · limitations
+//   + 근거 자료                 법령·사례. 실행할 때가 아니라 따질 때 보는 것이라 접어 둔다
 //
-// 시나리오는 접어 두고 눌러서 펼친다. 세 관점을 한꺼번에 펼치면 카드 하나가 화면
-// 서너 개 분량이라 담당자가 관점을 비교하지 못하고 스크롤만 하게 된다. 어느 것을
-// 펼쳤는지는 화면에서만 쓰는 상태라 저장하지 않는다 - 고르는 기능이 아니다.
+// 시나리오가 여럿이면 위쪽 탭으로 갈아 끼운다. 세 관점을 동시에 펼치면 같은 구조가 세 번
+// 반복돼 비교가 안 된다. 어느 것을 보고 있는지는 화면에서만 쓰는 상태라 저장하지 않는다 -
+// 담당자가 하나를 확정하는 기능이 아니다.
+//
+// 화면에서 뺀 값도 content에는 그대로 남는다(risk_assessment, scenario_tradeoff 등).
+// 생성 로직과 저장 구조는 건드리지 않았다.
+//
+// v2와 키가 하나도 겹치지 않아 파일을 나눴다. 동종 경로(peer_recommendation)는
+// PeerRecommendationContent가 그린다.
 
 import { useState } from "react";
-
-const RESPONSIBILITY_LABELS = {
-  피해자: "우리도 피해자에 가까움",
-  사고: "관리 범위에서 벌어진 사고",
-  예방가능: "예방할 수 있었던 사안",
-};
 
 const STANCE_LABELS = {
   선제_공개: "선제 공개",
@@ -24,20 +27,142 @@ const STANCE_LABELS = {
   피해구제_중심: "피해 구제 중심",
 };
 
-// 담당자가 마감을 시간 숫자로 읽으면 감이 안 온다. 익숙한 단위로 바꿔 준다.
-function deadlineLabel(hours) {
-  if (typeof hours !== "number" || Number.isNaN(hours)) return null;
-  if (hours <= 1) return "즉시";
-  if (hours < 24) return `${hours}시간 이내`;
-  const days = Math.round(hours / 24);
-  return days <= 1 ? "24시간 이내" : `${days}일 이내`;
+// 대외 발화에 관한 전략은 3번 영역으로 보낸다. 나머지는 1번의 대응 방향에 남는다.
+// 한 전략이 두 곳에 겹쳐 나오면 같은 내용을 두 번 읽게 된다.
+const COMMUNICATION_TYPES = new Set(["소통강화", "사실관계_정정"]);
+
+// 체크리스트를 시간대로 묶는다. 마감을 시간 숫자로 나열하면 급한 정도가 안 잡힌다.
+const TIME_BANDS = [
+  { label: "즉시", limit: 6 },
+  { label: "24시간 이내", limit: 24 },
+  { label: "72시간 이내", limit: 72 },
+  { label: "이후", limit: Infinity },
+];
+
+function bandsOf(checklist) {
+  const buckets = TIME_BANDS.map((b) => ({ ...b, items: [] }));
+  for (const item of checklist ?? []) {
+    const hours = typeof item.deadline_hours === "number" ? item.deadline_hours : Infinity;
+    const bucket = buckets.find((b) => hours <= b.limit) ?? buckets[buckets.length - 1];
+    bucket.items.push(item);
+  }
+  return buckets.filter((b) => b.items.length > 0);
+}
+
+// 판단 근거는 수치가 몰려 있는 대목이라 접어 둔다. 위쪽 설명은 쉬운 말로 읽히게 두고,
+// 숫자로 확인하고 싶은 사람만 펼치게 한다.
+function JudgmentBasis({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="draft-basis">
+      <button
+        type="button"
+        className="draft-inline-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {open ? "판단 근거 접기" : "판단 근거 (수치) 보기"}
+      </button>
+      {open && <p className="draft-body">{text}</p>}
+    </div>
+  );
+}
+
+// 1. 현재 상황 및 대응 방향
+function SituationSection({ report }) {
+  const points = report?.summary_points ?? [];
+  const directions = (report?.strategies ?? []).filter(
+    (s) => !COMMUNICATION_TYPES.has(s.strategy_type)
+  );
+  if (!points.length && !report?.judgment_basis && !directions.length) return null;
+
+  return (
+    <section className="draft-block">
+      <h4>현재 상황의 핵심</h4>
+      {points.length > 0 && <p className="draft-lead">{points[0]}</p>}
+      {points.length > 1 && (
+        <ul className="draft-points">
+          {points.slice(1).map((p, i) => (
+            <li key={`sp-${i}`}>{p}</li>
+          ))}
+        </ul>
+      )}
+      {report?.judgment_basis && <JudgmentBasis text={report.judgment_basis} />}
+
+      {directions.length > 0 && (
+        <div className="draft-directions">
+          <h5>대응 방향</h5>
+          {directions.map((s, i) => (
+            <div className="draft-direction" key={`dir-${i}`}>
+              <strong>{s.title}</strong>
+              <p>{s.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// 2. 우선 대응 계획 - 과제와 일정을 한 흐름으로 합친다. 따로 두면 같은 내용을 두 번 읽는다.
+function PlanSection({ report }) {
+  const bands = bandsOf(report?.checklist);
+  if (!bands.length) return null;
+  return (
+    <section className="draft-block">
+      <h4>우선 대응 계획</h4>
+      <ol className="draft-timeline">
+        {bands.map((band) => (
+          <li className="draft-step" key={band.label}>
+            <span className="draft-step-time">{band.label}</span>
+            <ul className="draft-step-items">
+              {band.items.map((item, i) => (
+                <li key={`t-${i}`}>{item.task}</li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+// 3. 커뮤니케이션 방향
+function CommunicationSection({ report }) {
+  const comms = (report?.strategies ?? []).filter((s) =>
+    COMMUNICATION_TYPES.has(s.strategy_type)
+  );
+  const watch = report?.monitoring_metrics ?? [];
+  if (!comms.length && !report?.limitations && !watch.length) return null;
+
+  return (
+    <section className="draft-block">
+      <h4>커뮤니케이션 방향</h4>
+      {comms.map((s, i) => (
+        <div className="draft-direction" key={`cm-${i}`}>
+          <strong>{s.title}</strong>
+          <p>{s.detail}</p>
+        </div>
+      ))}
+      {watch.length > 0 && (
+        <p className="draft-body">
+          대응 이후 <strong>{watch.join(" · ")}</strong>의 변화를 보며 수위를 조정합니다.
+        </p>
+      )}
+      {report?.limitations && (
+        <div className="draft-caution">
+          <span className="draft-caution-label">이 초안을 쓸 때 유의할 점</span>
+          <p>{report.limitations}</p>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function VerificationBadge({ verification }) {
-  if (!verification) return null;
-  const violations = verification.violations ?? [];
-  // 통과했으면 굳이 알릴 것이 없다. 담당자가 봐야 하는 건 걸린 항목뿐이다.
-  if (verification.passed && violations.length === 0) return null;
+  const violations = verification?.violations ?? [];
+  // 통과했으면 알릴 것이 없다. 담당자가 봐야 하는 건 걸린 항목뿐이다.
+  if (!verification || (verification.passed && violations.length === 0)) return null;
   return (
     <div className="draft-verification">
       <strong>검증에서 걸린 항목</strong>
@@ -50,123 +175,85 @@ function VerificationBadge({ verification }) {
   );
 }
 
-function ScenarioReport({ report }) {
-  if (!report) return null;
-  const risk = report.risk_assessment ?? {};
+// 근거 자료. 대응을 실행할 때가 아니라 근거를 따질 때 보는 것이라 맨 아래에 접어 둔다.
+// 초안 전체에 공통이므로 시나리오 밖에 한 번만 놓는다.
+function DraftAppendix({ content }) {
+  const [open, setOpen] = useState(false);
+  const regulations = content.regulations ?? [];
+  // 사례는 두 갈래다. precedents는 수집된 원본이고, case_insights는 그 사례에서 뽑은
+  // 해석이다. 같은 자리에 놓아야 어느 사례가 어떻게 쓰였는지 읽힌다.
+  const insights = (content.scenarios ?? []).flatMap((sc) => sc.report?.case_insights ?? []);
+  const precedents = content.precedents ?? [];
+  if (!regulations.length && !precedents.length && !insights.length) return null;
+
   return (
-    <>
-      {report.summary_points?.length > 0 && (
-        <section className="draft-summary">
-          <h5>요약</h5>
-          <ul>
-            {report.summary_points.map((point, i) => (
-              <li key={`s-${i}`}>{point}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+    <section className="draft-appendix">
+      <button
+        type="button"
+        className="scenario-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {open
+          ? "근거 자료 접기"
+          : `근거 자료 보기 (법령 ${regulations.length} · 사례 ${precedents.length + insights.length})`}
+      </button>
 
-      {report.judgment_basis && (
-        <section className="draft-basis">
-          <h5>판단 근거</h5>
-          <p>{report.judgment_basis}</p>
-        </section>
-      )}
-
-      {(risk.responsibility || risk.primary_risks?.length > 0) && (
-        <section className="draft-risk">
-          <h5>위험 평가</h5>
-          {risk.responsibility && (
-            <p className="responsibility">
-              {RESPONSIBILITY_LABELS[risk.responsibility] ?? risk.responsibility}
-            </p>
-          )}
-          {risk.primary_risks?.length > 0 && (
-            <>
-              <strong>주요 위험</strong>
+      {open && (
+        <div className="draft-appendix-body">
+          {regulations.length > 0 && (
+            <div className="draft-regulations">
+              <h5>적용 법령</h5>
               <ul>
-                {risk.primary_risks.map((r, i) => (
-                  <li key={`pr-${i}`}>{r}</li>
+                {regulations.map((r, i) => (
+                  <li key={`rg-${i}`}>
+                    <strong>
+                      {r.law_name} {r.article}
+                    </strong>
+                    <span>{r.requirement}</span>
+                    {r.is_upcoming && <em className="upcoming">시행 예정</em>}
+                  </li>
                 ))}
               </ul>
-            </>
-          )}
-          {risk.secondary_risks?.length > 0 && (
-            <>
-              <strong>파생 위험</strong>
-              <ul>
-                {risk.secondary_risks.map((r, i) => (
-                  <li key={`sr-${i}`}>{r}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </section>
-      )}
-
-      {report.strategies?.length > 0 && (
-        <section className="draft-strategies">
-          <h5>대응 전략</h5>
-          {report.strategies.map((s, i) => (
-            <article className="draft-strategy" key={`st-${i}`}>
-              <header>
-                <strong>{s.title}</strong>
-                {s.target_stakeholder && <span className="target">{s.target_stakeholder}</span>}
-              </header>
-              <p>{s.detail}</p>
-            </article>
-          ))}
-        </section>
-      )}
-
-      {report.checklist?.length > 0 && (
-        <section className="draft-checklist">
-          <h5>실행 체크리스트</h5>
-          <ul>
-            {report.checklist.map((item, i) => {
-              const due = deadlineLabel(item.deadline_hours);
-              return (
-                <li key={`c-${i}`}>
-                  <span className="task">{item.task}</span>
-                  {item.owner && <span className="owner">{item.owner}</span>}
-                  {due && <span className="due">{due}</span>}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {report.monitoring_metrics?.length > 0 && (
-        <section className="draft-monitoring">
-          <h5>관찰 지표</h5>
-          <ul>
-            {report.monitoring_metrics.map((m, i) => (
-              <li key={`m-${i}`}>{m}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {report.case_insights?.length > 0 && (
-        <section className="draft-cases">
-          <h5>참고 사례</h5>
-          {report.case_insights.map((c, i) => (
-            <div className="draft-case" key={`ci-${i}`}>
-              <strong>{c.case_title}</strong>
-              <p>{c.insight}</p>
             </div>
-          ))}
-        </section>
-      )}
+          )}
 
-      {report.limitations && (
-        <p className="draft-limitations">
-          <strong>한계</strong>
-          {report.limitations}
-        </p>
+          {insights.length > 0 && (
+            <div className="draft-cases">
+              <h5>참고 사례</h5>
+              {insights.map((c, i) => (
+                <div className="draft-case" key={`ci-${i}`}>
+                  <strong>{c.case_title}</strong>
+                  <p>{c.insight}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {precedents.length > 0 && (
+            <div className="draft-precedents">
+              <h5>인용 근거</h5>
+              <ul>
+                {precedents.map((p, i) => (
+                  <li key={`pc-${i}`}>
+                    {p.url ? (
+                      <a href={p.url} target="_blank" rel="noreferrer">
+                        {p.title}
+                      </a>
+                    ) : (
+                      <span>{p.title}</span>
+                    )}
+                    {p.verification_status === "candidate" && (
+                      <em className="unverified">미검수 · 참고용</em>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
-    </>
+    </section>
   );
 }
 
@@ -214,20 +301,18 @@ export function NoEvidenceNotice({ content }) {
   );
 }
 
-
 export default function MainResponseContent({ content }) {
+  const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
+  const [active, setActive] = useState(0);
+
   // 시나리오가 비어 있다고 다 같은 상태가 아니다. 근거부족 보류는 LLM을 부르지 않고
-  // 사람이 확인할 사유만 담아 저장하므로, 빈 목록으로 뭉뚱그리면 그 사유가 화면에서
-  // 사라진다. 생성 실패와 구분해서 전용 화면으로 보낸다.
+  // 사람이 확인할 사유만 담아 저장하므로, 빈 목록으로 뭉뚱그리면 그 사유가 사라진다.
   if (content.status === "근거부족_보류") {
     return <NoEvidenceNotice content={content} />;
   }
-  const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
-  // 담당자가 고를 수 있게 여러 관점을 만든다. 결론이 사실상 같으면 엔진이 접어서
-  // 하나만 올 수도 있으므로 개수를 가정하지 않는다.
-  const selected = content.selected_stance;
 
-  const [openStance, setOpenStance] = useState(selected ?? scenarios[0]?.stance ?? null);
+  const current = scenarios[active] ?? scenarios[0];
+  const selected = content.selected_stance;
 
   return (
     <div className="response-draft response-draft-v3">
@@ -242,96 +327,43 @@ export default function MainResponseContent({ content }) {
         <span className="draft-kind main">나의 기업 직접 대응</span>
       </div>
 
-      {content.stakeholder && (
-        <p className="draft-stakeholder">주요 이해관계자: {content.stakeholder}</p>
+      {scenarios.length > 1 && (
+        <div className="draft-stance-tabs" role="tablist">
+          {scenarios.map((sc, i) => {
+            // 모델이 지은 짧은 이름을 쓴다. 예전 초안에는 이 필드가 없으므로 stance
+            // 라벨로 폴백한다 - 없다고 탭이 비면 무엇을 고르는지 알 수 없다.
+            const headline =
+              sc.report?.scenario_headline || STANCE_LABELS[sc.stance] || sc.stance;
+            return (
+              <button
+                type="button"
+                role="tab"
+                key={`${sc.stance ?? "s"}-${i}`}
+                className={`draft-stance-tab${i === active ? " active" : ""}`}
+                aria-selected={i === active}
+                onClick={() => setActive(i)}
+              >
+                <span className="draft-stance-no">{i + 1}안</span>
+                {headline && <span className="draft-stance-name">{headline}</span>}
+                {sc.stance && sc.stance === selected && <em>기본</em>}
+              </button>
+            );
+          })}
+        </div>
       )}
 
-      {scenarios.length === 0 && <p className="draft-empty">생성된 시나리오가 없습니다.</p>}
-
-      <div className="response-scenario-list">
-        {scenarios.map((scenario, index) => {
-          const stance = scenario.stance;
-          const label = STANCE_LABELS[stance] ?? stance ?? `${index + 1}번째 대응안`;
-          const key = stance ?? `scenario-${index}`;
-          const open = openStance === key;
-          return (
-            <article
-              className={`response-scenario${stance && stance === selected ? " selected" : ""}`}
-              key={`${stance ?? "scenario"}-${index}`}
-            >
-              <header>
-                <span>안 {String(index + 1).padStart(2, "0")}</span>
-                <h4>{label}</h4>
-                {stance && stance === selected && <span className="selected-mark">기본 선택</span>}
-                <button
-                  type="button"
-                  className="scenario-toggle"
-                  aria-expanded={open}
-                  onClick={() => setOpenStance(open ? null : key)}
-                >
-                  {open ? "접기" : "자세히"}
-                </button>
-              </header>
-              {scenario.tradeoff && (
-                <p className="draft-tradeoff">
-                  <strong>이 관점의 득실</strong>
-                  {scenario.tradeoff}
-                </p>
-              )}
-              {scenario.merged_stances?.length > 0 && (
-                <p className="draft-merged">
-                  결론이 같아 합쳐진 관점: {scenario.merged_stances.join(", ")}
-                </p>
-              )}
-              {open && (
-                <>
-                  <ScenarioReport report={scenario.report} />
-                  <VerificationBadge verification={scenario.verification} />
-                </>
-              )}
-            </article>
-          );
-        })}
-      </div>
-
-      {content.regulations?.length > 0 && (
-        <section className="draft-regulations">
-          <h5>적용 법령</h5>
-          <ul>
-            {content.regulations.map((r, i) => (
-              <li key={`rg-${i}`}>
-                <strong>
-                  {r.law_name} {r.article}
-                </strong>
-                <span>{r.requirement}</span>
-                {r.is_upcoming && <em className="upcoming">시행 예정</em>}
-              </li>
-            ))}
-          </ul>
-        </section>
+      {current ? (
+        <>
+          <SituationSection report={current.report} />
+          <PlanSection report={current.report} />
+          <CommunicationSection report={current.report} />
+          <VerificationBadge verification={current.verification} />
+        </>
+      ) : (
+        <p className="draft-empty">생성된 시나리오가 없습니다.</p>
       )}
 
-      {content.precedents?.length > 0 && (
-        <section className="draft-precedents">
-          <h5>인용 근거</h5>
-          <ul>
-            {content.precedents.map((p, i) => (
-              <li key={`pc-${i}`}>
-                {p.url ? (
-                  <a href={p.url} target="_blank" rel="noreferrer">
-                    {p.title}
-                  </a>
-                ) : (
-                  <span>{p.title}</span>
-                )}
-                {p.verification_status === "candidate" && (
-                  <em className="unverified">미검수 · 참고용</em>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <DraftAppendix content={content} />
     </div>
   );
 }

@@ -1,0 +1,72 @@
+{
+ "alert_id": "PEER-B",
+ "company_id": "coupang",
+ "company_name": "11번가",
+ "industry": "이커머스 플랫폼",
+ "main_services": "로켓배송, 오픈마켓, 쿠팡이츠",
+ "window_start": "2026-08-18",
+ "window_end": "2026-08-25",
+ "snapshot_at": "2026-08-25T09:00:00+09:00",
+ "crisis_probability": 0.87,
+ "model_version": "lgbm_v1",
+ "attribution": [
+  {
+   "feature": "negative_ratio_7d",
+   "value": 0.71,
+   "baseline": 0.22,
+   "percentile": 99.1,
+   "direction": "up"
+  },
+  {
+   "feature": "daily_growth_rate",
+   "value": 4.2,
+   "baseline": 1.0,
+   "percentile": 98.4,
+   "direction": "up"
+  }
+ ],
+ "mention_count": 31,
+ "baseline_mean": 22.0,
+ "negative_ratio": 0.4,
+ "negative_ratio_baseline": 0.25,
+ "source_mix": {
+  "youtube": 0.62,
+  "news": 0.38
+ },
+ "n_unique_channels": 14,
+ "n_mentions_7d": 412,
+ "baseline_days": 180,
+ "is_warmup": false,
+ "daily_series": [
+  {
+   "date": "2026-08-22",
+   "mention_count": 61
+  },
+  {
+   "date": "2026-08-23",
+   "mention_count": 118
+  },
+  {
+   "date": "2026-08-24",
+   "mention_count": 203
+  }
+ ],
+ "mentions": [
+  {
+   "mention_id": "p_1",
+   "source": "youtube",
+   "text": "11번가 본사 앞 주차가 너무 불편해서 근처 상인들이 민원 넣었대요",
+   "sentiment": "negative"
+  },
+  {
+   "mention_id": "p_2",
+   "source": "news",
+   "text": "11번가 사옥 인근 주민들이 소음 문제로 구청에 민원을 제기했다",
+   "sentiment": "negative"
+  }
+ ],
+ "role": "peer",
+ "my_company": "쿠팡",
+ "main_company_industry": "이커머스 플랫폼",
+ "main_company_services": "로켓배송, 오픈마켓"
+}
