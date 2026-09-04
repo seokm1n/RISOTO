@@ -521,6 +521,13 @@ def classify_article(
     product_in_title = any(
         evidence.startswith("product_in_title:") for evidence in relevance_evidence
     )
+    # 사람이 매긴 정답지(2026-09-04, docs/2026-09-04-model-quality-devlog.md 1-1)로 측정한 결과,
+    # 제목 언급은 71% 유효한 반면 본문에만 있는 언급은 32%만 유효했다. 통과시킨 기사의 60%가
+    # 본문 전용 언급이라 필터 정밀도(48.7%)를 크게 끌어내리고 있었다.
+    mentioned_in_body_only = not identity_in_title and not product_in_title and any(
+        evidence.startswith("identity_in_summary:") or evidence.startswith("product_in_summary:")
+        for evidence in relevance_evidence
+    )
     ai_used = False
     ai_relevance: float | None = None
     advertising_score, advertising_evidence = _advertising_rules(item)
@@ -566,6 +573,11 @@ def classify_article(
             relevance_score = max(0.76, 0.45 * relevance_score + 0.55 * model_relevance)
         elif product_in_title:
             relevance_score = max(0.70, 0.35 * relevance_score + 0.65 * model_relevance)
+        elif mentioned_in_body_only:
+            # Reranker confidence alone isn't enough evidence here (measured 32% precision on
+            # this exact case). Cap below the accept threshold so these route to review instead
+            # of auto-passing.
+            relevance_score = min(0.55, 0.30 * relevance_score + 0.70 * model_relevance)
         elif relevance_score > 0:
             relevance_score = 0.25 * relevance_score + 0.75 * model_relevance
         else:
