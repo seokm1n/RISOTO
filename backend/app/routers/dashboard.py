@@ -7,6 +7,7 @@ from sqlalchemy import Numeric, case, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
+from app.config import get_settings
 from app.database import get_db
 from app.models import (
     CollectionIncident,
@@ -15,6 +16,7 @@ from app.models import (
     CompanyFeatureWindow,
     NewsArticle,
     RiskEvent,
+    RiskEventArticle,
     StoryClusterArticle,
 )
 from app.presenters import risk_event_read
@@ -32,6 +34,22 @@ from app.services.period_aggregation import seoul_day_bucket, seoul_period_start
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
+def _reportable_risk_filters(settings) -> tuple:
+    filters = (RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),)
+    if not settings.story_risk_engine_enabled:
+        return filters
+    eligible_ids = (
+        select(RiskEventArticle.risk_event_id)
+        .group_by(RiskEventArticle.risk_event_id)
+        .having(
+            func.count(func.distinct(RiskEventArticle.article_id))
+            >= settings.story_event_min_articles
+        )
+    )
+    return (*filters, RiskEvent.event_source == "story_v2",
+            RiskEvent.story_cluster_id.is_not(None), RiskEvent.id.in_(eligible_ids))
+
+
 @router.get("/overview", response_model=DashboardOverview)
 def get_dashboard_overview(
     days: int = Query(default=7, ge=1, le=90),
@@ -40,6 +58,7 @@ def get_dashboard_overview(
 ) -> DashboardOverview:
     """선택 기간의 기업·기사·감성·위험 현황을 대시보드용 통계로 집계한다."""
     _, cutoff = seoul_period_start(days)
+    risk_filters = _reportable_risk_filters(get_settings())
     # 발행일이 없는 기사도 누락되지 않도록 저장 시각을 통계 기준 시각으로 대체한다.
     article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
 
@@ -77,7 +96,7 @@ def get_dashboard_overview(
         ).where(
             Company.user_id == auth.user_id,
             RiskEvent.opened_at >= cutoff,
-            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+            *risk_filters,
         )
     ) or 0
 
@@ -125,7 +144,7 @@ def get_dashboard_overview(
             .where(
                 Company.user_id == auth.user_id,
                 RiskEvent.opened_at >= cutoff,
-                RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+                *risk_filters,
             )
             .group_by("day")
         ).all()
@@ -188,7 +207,7 @@ def get_dashboard_overview(
         .where(
             RiskEvent.company_id == Company.id,
             RiskEvent.opened_at >= cutoff,
-            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+            *risk_filters,
         )
         .correlate(Company)
         .scalar_subquery()
@@ -223,7 +242,7 @@ def get_dashboard_overview(
         .where(
             Company.user_id == auth.user_id,
             RiskEvent.opened_at >= cutoff,
-            RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
+            *risk_filters,
         )
         .order_by(RiskEvent.opened_at.desc())
         .limit(10)

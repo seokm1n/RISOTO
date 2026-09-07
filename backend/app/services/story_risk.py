@@ -487,13 +487,15 @@ def _aggregate_story_event(
     primary_type: str | None,
     settings: Settings,
 ) -> tuple[int | None, bool]:
-    """Open or update one event per company/story and attach all related sources.
+    """Dispatch the active story scorer; the disabled-model branch preserves legacy behavior."""
+    if settings.story_risk_model_enabled:
+        from app.services.story_model_events import refresh_story_model_events
 
-    Only articles individually classified as risk can satisfy the opening
-    threshold. Once that threshold is met, every accepted article in the same
-    story is retained as evidence so publisher/source counts describe actual
-    coverage rather than only the subset whose classifier score crossed 0.65.
-    """
+        result = refresh_story_model_events(db, company_id, [cluster_id], settings=settings)
+        event_id = db.scalar(select(RiskEvent.id).where(
+            RiskEvent.event_key == f"{EVENT_KEY_PREFIX}:{company_id}:{cluster_id}"
+        ))
+        return event_id, event_id in result["event_ids_to_enqueue"]
     rows = db.execute(
         select(ArticleRiskAssessment, NewsArticle, StoryClusterArticle)
         .join(NewsArticle, NewsArticle.id == ArticleRiskAssessment.article_id)
@@ -731,6 +733,12 @@ def process_company_risk_articles(
     settings = get_settings()
     if not settings.story_risk_engine_enabled:
         return {"assessed": 0, "llm_attempted": 0, "events_changed": 0, "drafts_enqueued": 0}
+    if settings.story_risk_model_enabled:
+        from app.services.story_model_runtime import resolve_story_risk_runtime
+
+        runtime = resolve_story_risk_runtime(settings)
+        if not runtime.available:
+            raise ValueError(runtime.message)
     enqueue_ids: set[int] = set()
     assessed = 0
     changed = 0
@@ -759,6 +767,9 @@ def process_company_risk_articles(
             if llm_max_attempts is None
             else llm_max_attempts,
         )
+        if settings.story_risk_model_enabled:
+            # 기사 유형·근거 점수는 유지하지만 최종 스토리 판정을 위한 LLM 보정은 종료한다.
+            llm_remaining = 0
         prepared: list[tuple[NewsArticle, StoryClusterArticle, float]] = []
         local_items: list[tuple[NewsArticle, float]] = []
         for article, cluster in rows:
@@ -800,7 +811,7 @@ def process_company_risk_articles(
                 llm_remaining -= 1
                 llm_attempted += 1
             assessed += 1
-            if (
+            if settings.story_risk_model_enabled or (
                 assessment.decision != "failed"
                 and (
                     assessment.decision == "risk"
@@ -826,14 +837,25 @@ def process_company_risk_articles(
                 )
                 if cluster_id is not None
             )
-        for cluster_id in sorted(touched):
-            event_id, should_generate = _aggregate_story_event(
-                db, company_id, cluster_id, None, settings
+        if settings.story_risk_model_enabled:
+            from app.services.story_model_events import refresh_story_model_events
+
+            result = refresh_story_model_events(
+                db, company_id, None if article_ids is None else sorted(touched),
+                settings=settings, enqueue_drafts=enqueue_drafts,
             )
-            if event_id is not None:
-                changed += 1
-            if event_id is not None and should_generate:
-                enqueue_ids.add(event_id)
+            changed = result["events_changed"]
+            enqueue_ids.update(result["event_ids_to_enqueue"])
+            _reconcile_story_event_lifecycle(db, settings, company_id=company_id)
+        else:
+            for cluster_id in sorted(touched):
+                event_id, should_generate = _aggregate_story_event(
+                    db, company_id, cluster_id, None, settings
+                )
+                if event_id is not None:
+                    changed += 1
+                if event_id is not None and should_generate:
+                    enqueue_ids.add(event_id)
         db.commit()
 
     if enqueue_drafts and enqueue_ids:
@@ -880,6 +902,12 @@ def _reconcile_story_event_lifecycle(
         RiskEvent.last_evidence_at.is_not(None),
         RiskEvent.last_evidence_at < cutoff,
     )
+    if settings.story_risk_model_enabled:
+        close_query = close_query.where(RiskEvent.id.notin_(
+            select(RiskEventLabel.risk_event_id).where(
+                RiskEventLabel.status.in_(["confirmed", "adjudicated"])
+            )
+        ))
     if company_id is not None:
         close_query = close_query.where(RiskEvent.company_id == company_id)
     closed_events = list(db.scalars(close_query))
@@ -1002,6 +1030,16 @@ def rebuild_recent_story_events(
         raise ValueError("hours는 1 이상이어야 합니다.")
     if draft_limit is not None and draft_limit < 1:
         raise ValueError("draft_limit은 1 이상이어야 합니다.")
+    if settings.story_risk_model_enabled and not recluster:
+        # 재사용할 기사 risk 라벨 유무와 무관하게 모든 해당 스토리를 재평가한다.
+        from app.services.story_model_backfill import reapply_story_model
+
+        return reapply_story_model(
+            company_id=company_id,
+            hours=None if all_history else (hours or settings.story_event_rebuild_hours),
+            enqueue_drafts=enqueue_drafts,
+            draft_limit=draft_limit,
+        )
     effective_hours = hours or settings.story_event_rebuild_hours
     cutoff = None if all_history else datetime.now(timezone.utc) - timedelta(hours=effective_hours)
     recluster_result: dict[str, int | bool] = {
@@ -1159,11 +1197,12 @@ def rebuild_recent_story_events(
                 .join(NewsArticle, NewsArticle.id == ArticleRiskAssessment.article_id)
                 .where(
                     ArticleRiskAssessment.company_id == target_id,
-                    ArticleRiskAssessment.decision == "risk",
                 )
                 .distinct()
                 .order_by(ArticleRiskAssessment.story_cluster_id)
             )
+            if not settings.story_risk_model_enabled:
+                cluster_query = cluster_query.where(ArticleRiskAssessment.decision == "risk")
             if cutoff is not None:
                 cluster_query = cluster_query.where(
                     func.coalesce(NewsArticle.published_at, NewsArticle.created_at) >= cutoff

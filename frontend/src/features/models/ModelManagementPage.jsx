@@ -10,6 +10,9 @@ import {
   formatDate,
   formatNumber,
   formatPercent,
+  isRiskDetectionAvailable,
+  riskModelLabel,
+  riskModelStateLabel,
 } from "../../shared/presentation";
 
 // 현재 사용 중인 운영 모델과 수집·분석 품질 상태를 확인하는 화면이다.
@@ -110,17 +113,21 @@ export default function ModelManagementPage() {
       note: "로컬 KLUE-RoBERTa 모델로 긍정·중립·부정 감성을 분석합니다.",
     },
     {
-      id: "runtime-lightgbm", task: "risk_detector", version: riskStatus?.model_version ?? runtimeStatus.external_lightgbm_model_name ?? "external-lightgbm",
-      status: riskStatus?.risk_detection_status === "available" ? "production" : "unavailable",
-      base_model: "LightGBM", runtime: true,
-      note: riskStatus?.risk_detection_status === "available" ? riskStatus.message : runtimeStatus.external_lightgbm_message,
+      id: "runtime-risk", task: "risk_detector", version: riskStatus?.model_version ?? runtimeStatus.risk_model_name ?? "연결 대기",
+      status: isRiskDetectionAvailable(riskStatus) ? riskStatus.model_state : "unavailable",
+      base_model: riskModelLabel(riskStatus), runtime: true,
+      note: riskStatus?.message ?? runtimeStatus.risk_model_message,
     },
   ] : [];
   const displayedModels = [
-    ...runtimeModels.filter((model) => model.status === "production"),
-    ...versions.filter((model) => model.status === "production"),
+    ...runtimeModels.filter((model) => ["production", "provisional"].includes(model.status)),
+    ...versions.filter((model) => model.status === "production").map((model) => (
+      riskStatus?.scoring_scope === "story" && ["risk_detector", "isolation_forest"].includes(model.task)
+        ? { ...model, task: `window_${model.task}` }
+        : model
+    )),
   ];
-  const productionCount = displayedModels.filter((model) => model.status === "production").length;
+  const activeModelCount = displayedModels.length;
   const monthlyReviewCount = llmLabeling?.audit
     ? `${formatNumber(llmLabeling.audit.reviewed_count)}/${formatNumber(llmLabeling.audit.target_sample_size)}건`
     : "-";
@@ -128,7 +135,7 @@ export default function ModelManagementPage() {
   return <section className="workspace model-workspace">
     <div className="workspace-head"><div><span className="eyebrow">MODEL OPERATIONS</span><h1>운영 관리</h1><p>현재 사용 중인 모델과 수집·분석 상태를 확인합니다.</p></div></div>
     {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
-    <div className="metric-grid dashboard-metrics model-metrics"><Metric label="운영 모델" value={productionCount} /><Metric label="월간 검수량" value={monthlyReviewCount} small /><Metric label="검수 대기" value={llmLabeling?.pending_backlog ?? 0} /><Metric label="최종 위험 판정" value={riskStatus?.risk_detection_status === "available" ? "운영 중" : "판정 대기"} tone={riskStatus?.risk_detection_status === "available" ? "" : "pending"} small /></div>
+    <div className="metric-grid dashboard-metrics model-metrics"><Metric label="사용 중인 모델" value={activeModelCount} /><Metric label="월간 검수량" value={monthlyReviewCount} small /><Metric label="검수 대기" value={llmLabeling?.pending_backlog ?? 0} /><Metric label="최종 위험 판정" value={riskModelStateLabel(riskStatus)} tone={riskStatus?.model_state === "production" ? "" : "pending"} small /></div>
     <section className="panel analysis-status">
       <div className="model-quality-head">
         <PanelTitle kicker="ANALYSIS RUNTIME" title="운영 분석 상태" />
@@ -150,9 +157,9 @@ export default function ModelManagementPage() {
           <small>{runtimeStatus?.sentiment_model_available ? runtimeStatus.sentiment_model_name : "감성 모델을 찾지 못했습니다."}</small>
         </article>
         <article className={riskStatus?.risk_detection_status === "available" ? "active" : "pending"}>
-          <span>LightGBM 최종 위험 판정</span>
-          <strong>{riskStatus?.risk_detection_status === "available" ? `${riskStatus.model_version ?? "LightGBM"} 운영 중` : "모델 등록 대기"}</strong>
-          <small>{riskStatus?.message ?? runtimeStatus?.external_lightgbm_message ?? "운영 상태를 확인하고 있습니다."}</small>
+          <span>{riskModelLabel(riskStatus)} 최종 위험 판정</span>
+          <strong>{riskModelStateLabel(riskStatus)}</strong>
+          <small>{riskStatus?.model_version && `${riskStatus.model_version} · `}{riskStatus?.message ?? runtimeStatus?.risk_model_message ?? "모델 연결 상태를 확인하고 있습니다."}</small>
         </article>
       </div>
     </section>

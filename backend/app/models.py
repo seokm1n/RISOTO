@@ -715,6 +715,31 @@ class StoryClusterArticle(Base):
     )
 
 
+class StoryRiskScore(Base):
+    """사람 라벨과 분리한 기업·스토리 모델의 최신 추론 및 재현 입력."""
+
+    __tablename__ = "story_risk_scores"
+    __table_args__ = (
+        CheckConstraint("risk_probability >= 0 AND risk_probability <= 1", name="ck_story_risk_scores_probability"),
+        Index("ix_story_risk_scores_model", "model_version"),
+    )
+    company_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True)
+    story_cluster_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("story_clusters.id", ondelete="CASCADE"), primary_key=True)
+    risk_probability: Mapped[float] = mapped_column(Float, nullable=False)
+    is_risk: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    anomaly_score: Mapped[float] = mapped_column(Float, nullable=False)
+    anomaly_percentile: Mapped[float] = mapped_column(Float, nullable=False)
+    threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    model_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_state: Mapped[str] = mapped_column(String(20), nullable=False, default="provisional")
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    article_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
 class ArticleRiskAssessment(Base):
     """기업별 정제 기사에 대한 운영용 위험 판정 결과다.
 
