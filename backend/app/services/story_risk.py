@@ -48,14 +48,12 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="story-risk")
 ENGINE_VERSION = "story-risk-hybrid-v1"
 EVENT_ENGINE_VERSION = "story-event-hybrid-v2"
 EVENT_KEY_PREFIX = "story-v3"
-# 사람 라벨 80건(전부 window_v1, 2026-09) 재구성 검증: story_v2 단독 재현 AUC 0.773.
-# window_v1(LightGBM)의 원점수는 이미 알람이 뜬 창들에서만 평가하면 0.86+에 몰려있어
-# 그대로 섞으면 도움이 안 되지만, 전체 스코어링된 창(~8500개, 대부분 평온) 대비
-# percentile로 정규화하면 5-fold 교차검증에서 w=0.1~0.4 구간이 평탄하게 개선된다
-# (mean AUC 0.769->0.81 안팎). 사람 라벨 사건의 44%는 그 15분 창에 매칭된 기사가
-# 0건이라 story_v2가 원천적으로 못 보는 구간인데, window_v1의 집계 이상탐지가
-# 그 공백을 메운다. w=0.2는 이 평탄 구간 중앙값이다.
-WINDOW_SIGNAL_BLEND_WEIGHT = 0.2
+# 2026-09-07: w=0.2는 window_v1 사건 80건(전부 이미 알람이 뜬, 치우친 표본)으로만
+# 검증한 값이었다. story_v2 자체 라벨 117건(story_v2_label_candidates.csv, 처음으로
+# story_v2를 직접 검증)이 나온 뒤 재확인하니 반대 결과가 나왔다: story_v2 단독
+# AUC 0.8343 -> 블렌드 AUC 0.8196로 오히려 나빠짐. 표본이 작아(양성 25건) 확정적은
+# 아니지만 방향이 뒤집혀서, 근거 있는 가중치를 다시 잡기 전까지는 꺼둔다.
+WINDOW_SIGNAL_BLEND_WEIGHT = 0.0
 GOVERNMENT_SUFFIXES = (".go.kr", ".gov", ".gov.kr")
 SEOUL = ZoneInfo("Asia/Seoul")
 
@@ -608,7 +606,7 @@ def _aggregate_story_event(
             + 0.02 * max(0, len(candidates) - 1),
         )
     )
-    if latest_window is not None and latest_window.risk_probability is not None:
+    if WINDOW_SIGNAL_BLEND_WEIGHT > 0 and latest_window is not None and latest_window.risk_probability is not None:
         detector = resolve_production_risk_detector(db)
         window_percentile = (
             risk_detector_percentile(detector.payload, float(latest_window.risk_probability))

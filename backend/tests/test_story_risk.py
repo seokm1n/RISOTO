@@ -347,12 +347,20 @@ class StoryRiskDatabaseTests(unittest.TestCase):
         )
         self.assertEqual(event.closure_reason, "no_related_articles_3_days")
 
+    @patch("app.services.story_risk.WINDOW_SIGNAL_BLEND_WEIGHT", 0.2)
     @patch("app.services.story_risk.resolve_production_risk_detector")
     def test_window_signal_blends_into_story_probability(self, resolve_detector):
-        """window_v1의 LightGBM 신호를 percentile로 정규화해 스토리 확률에 섞는다."""
-        from app.models import CompanyFeatureWindow
-        from app.services.story_risk import WINDOW_SIGNAL_BLEND_WEIGHT, _clamp
+        """블렌드를 켰을 때(w=0.2) window_v1 신호가 percentile로 정규화돼 섞이는지 검증.
 
+        2026-09-07 현재 기본 가중치는 0.0(꺼짐)이다 -- story_v2 자체 라벨 117건으로
+        재검증하니 블렌드가 오히려 정확도를 낮췄기 때문(AUC 0.8343 -> 0.8196). 이
+        테스트는 나중에 근거를 다시 만들어 가중치를 올릴 때 메커니즘 자체가 여전히
+        맞는지 보려고 값을 강제로 켜서 검증한다.
+        """
+        from app.models import CompanyFeatureWindow
+        from app.services.story_risk import _clamp
+
+        WINDOW_SIGNAL_BLEND_WEIGHT = 0.2
         timestamp = datetime(2098, 1, 2, tzinfo=timezone.utc)
         cluster = StoryCluster(
             fingerprint="story-risk-test-window-blend",
@@ -439,6 +447,83 @@ class StoryRiskDatabaseTests(unittest.TestCase):
         )
         self.assertAlmostEqual(event.risk_probability, expected, places=6)
         self.assertNotEqual(event.risk_probability, base_probability)
+
+    @patch("app.services.story_risk.resolve_production_risk_detector")
+    def test_window_signal_is_a_noop_at_the_current_zero_weight(self, resolve_detector):
+        """현재 기본값(w=0.0)에서는 window 신호를 아예 조회하지 않는다."""
+        from app.models import CompanyFeatureWindow
+
+        timestamp = datetime(2098, 1, 3, tzinfo=timezone.utc)
+        cluster = StoryCluster(
+            fingerprint="story-risk-test-window-blend-off",
+            representative_title="공급망 이상 신호 2",
+            first_published_at=timestamp,
+            last_published_at=timestamp,
+        )
+        self.db.add(cluster)
+        self.db.flush()
+        self.db.add(
+            CompanyFeatureWindow(
+                company_id=self.company_id,
+                window_start=timestamp - timedelta(minutes=15),
+                window_end=timestamp,
+                data_quality="complete",
+                risk_probability=0.99,  # would drag the blend way up if it were used
+            )
+        )
+        article = NewsArticle(
+            source="test", title="공급망 이상 신호 2 최초 보도",
+            url="https://story-risk-test.example/window-blend-off-primary",
+            published_at=timestamp, negative_probability=0.7,
+        )
+        self.db.add(article)
+        self.db.flush()
+        self.db.add(
+            StoryClusterArticle(
+                article_id=article.id, story_cluster_id=cluster.id,
+                similarity=1.0, is_representative=True,
+            )
+        )
+        self.db.add(
+            ArticleRiskAssessment(
+                company_id=self.company_id, article_id=article.id, story_cluster_id=cluster.id,
+                decision="risk", risk_probability=0.70, type_scores={"supply_operations": 0.7},
+                primary_type="supply_operations", relevance_score=0.9,
+                source_domain="story-risk-test.example", source_credibility=0.65,
+                classifier_kind="test", model_version="test", reason="test fixture",
+            )
+        )
+        follow_up = NewsArticle(
+            source="test", title="공급망 이상 신호 2 후속 보도",
+            url="https://story-risk-test.example/window-blend-off-followup",
+            published_at=timestamp + timedelta(minutes=5), negative_probability=0.5,
+        )
+        self.db.add(follow_up)
+        self.db.flush()
+        self.db.add(
+            StoryClusterArticle(
+                article_id=follow_up.id, story_cluster_id=cluster.id,
+                similarity=0.9, is_representative=False,
+            )
+        )
+        self.db.add(
+            ArticleRiskAssessment(
+                company_id=self.company_id, article_id=follow_up.id, story_cluster_id=cluster.id,
+                decision="non_risk", risk_probability=0.30, type_scores={"supply_operations": 0.3},
+                primary_type=None, relevance_score=0.9,
+                source_domain="story-risk-test.example", source_credibility=0.65,
+                classifier_kind="test", model_version="test", reason="test fixture",
+            )
+        )
+        self.db.flush()
+
+        event_id, _ = _aggregate_story_event(
+            self.db, self.company_id, cluster.id, "supply_operations", self.settings,
+        )
+
+        event = self.db.get(RiskEvent, event_id)
+        self.assertEqual(event.risk_probability, 0.70)
+        resolve_detector.assert_not_called()
 
 
 if __name__ == "__main__":
