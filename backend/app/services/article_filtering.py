@@ -86,6 +86,16 @@ NON_ARTICLE_PAGE_HOST_FRAGMENTS = (
     "theqoo.net", "instiz.net", "todayhumor.co.kr", "82cook.com",
     "ilbe.com", "ygosu.com", "mlbpark.donga.com", "bobaedream.co.kr",
     "humoruniv.com",
+    # 채용 게시판·쇼핑몰·정보성 블로그 모음: 사람 라벨 578건에서 identity/product_in_title
+    # 하한선을 타고 그대로 통과한 광고성 페이지의 실제 호스트다
+    # (2026-09-04 실측, 광고 110건 중 5건 유출).
+    "worker.co.kr", "sisopick.com", "ye-ah.net",
+)
+# 쇼핑몰 상품 목록·상세 페이지에만 붙는 필터/정렬 파라미터다. 뉴스 기사 URL에는 거의
+# 등장하지 않아 오탐 위험이 낮다. 회사 자사몰(예: musinsa.com/brand/...)처럼 개별
+# 호스트를 다 나열할 수 없는 경우를 이 신호로 잡는다.
+ECOMMERCE_QUERY_PARAM_FRAGMENTS = (
+    "colorcodes=", "sortcode=", "page_kind=brandshop", "list_kind=small",
 )
 # topical_relevance 모델이 실제 라벨링 데이터로 학습한 기업만 나열한다. 이 밖의(사용자가 새로
 # 등록한) 기업에는 모델이 어떻게 반응할지 검증되지 않아 적용하지 않는다.
@@ -425,9 +435,13 @@ def _non_article_page_evidence(item: object) -> list[str]:
     title = normalize_text(getattr(item, "title", ""))
     if any(pattern.search(title) for pattern in NON_ARTICLE_PAGE_TITLE_PATTERNS):
         return ["generic_listing_title"]
-    host = urlsplit(getattr(item, "url", "") or "").netloc.casefold()
+    url = getattr(item, "url", "") or ""
+    host = urlsplit(url).netloc.casefold()
     if any(fragment in host for fragment in NON_ARTICLE_PAGE_HOST_FRAGMENTS):
         return ["non_article_host"]
+    query = urlsplit(url).query.casefold()
+    if any(fragment in query for fragment in ECOMMERCE_QUERY_PARAM_FRAGMENTS):
+        return ["ecommerce_listing_query"]
     return []
 
 
