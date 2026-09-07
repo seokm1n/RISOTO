@@ -34,6 +34,7 @@ backend/model_artifacts/
 backend/ground_truth_labels.sql
 backend/training_data/story_model_applications/
 exports/
+/tmp/story_retest_dependencies/
 
 # IDE and operating system
 .vscode/
