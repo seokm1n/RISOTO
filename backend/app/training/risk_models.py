@@ -20,7 +20,7 @@ from app.services.risk_analysis import (
     isolation_forest_artifact_is_valid,
 )
 from app.services.risk_ground_truth import authoritative_risk_label
-from app.training.common import chronological_group_split, dataset_hash, register_candidate, version_stamp
+from app.training.common import dataset_hash, register_candidate, version_stamp
 
 
 # Backward-compatible training-module name; serving owns the canonical contract.
@@ -196,10 +196,21 @@ def _best_f2_threshold(targets: np.ndarray, probabilities: np.ndarray) -> float:
 
 
 def train_risk_detector(output_root: Path, isolation_artifact: Path | None = None) -> dict:
-    """Train a pooled classifier with event-group splitting and equalized event/company weights."""
+    """Train a pooled classifier with equalized event/company weights.
+
+    Validation uses stratified group k-fold instead of a single chronological
+    split. With only ~23 positive event groups total, a 70/15/15 time-ordered
+    split can (and did) leave validation/test with zero positive events --
+    every recall/pr_auc/f2 number then reports as 0.0 or undefined regardless
+    of true model quality, and the F2-optimal decision threshold degenerates
+    to whatever value the search happens to hit first. K-fold guarantees every
+    labeled window is scored out-of-fold exactly once, so the reported metrics
+    and the chosen threshold are both honest even with this little data.
+    """
     import joblib
     from lightgbm import LGBMClassifier
-    from sklearn.metrics import average_precision_score, f1_score, fbeta_score, recall_score
+    from sklearn.metrics import average_precision_score, f1_score, fbeta_score, recall_score, roc_auc_score
+    from sklearn.model_selection import StratifiedGroupKFold
 
     records, independent = _labeled_windows()
     if independent["positive_events"] < 20 or independent["negative_events"] < 60:
@@ -207,11 +218,6 @@ def train_risk_detector(output_root: Path, isolation_artifact: Path | None = Non
             "위험/정상 독립 사건 "
             f"{independent['positive_events']}/{independent['negative_events']}건: 최소 20/60건 필요"
         )
-    splits = chronological_group_split(
-        records,
-        group_key=lambda row: str(row["event_id"]),
-        time_key=lambda row: row["time"],
-    )
     with SessionLocal() as db:
         production_if_versions = list(
             db.scalars(
@@ -259,77 +265,85 @@ def train_risk_detector(output_root: Path, isolation_artifact: Path | None = Non
         values["anomaly_percentile"] = percentile
         return [float(values.get(name, 0.0)) for name in RISK_FEATURE_NAMES]
 
-    train = splits["train"]
-    X_train = np.asarray([row_features(row) for row in train], dtype=float)
-    y_train = np.asarray([row["target"] for row in train], dtype=int)
-    event_sizes = Counter(row["event_id"] for row in train)
-    company_sizes = Counter(row["company_id"] for row in train)
-    weights = np.asarray(
-        [1.0 / event_sizes[row["event_id"]] / company_sizes[row["company_id"]] for row in train],
-        dtype=float,
-    )
-    weights *= len(weights) / weights.sum()
-    model = LGBMClassifier(
-        objective="binary",
-        n_estimators=250,
-        learning_rate=0.03,
-        num_leaves=15,
-        min_child_samples=10,
-        subsample=0.85,
-        colsample_bytree=0.85,
-        reg_lambda=1.0,
-        random_state=42,
-        n_jobs=-1,
-        verbosity=-1,
-    )
-    model.fit(X_train, y_train, sample_weight=weights)
-    validation = splits["validation"] or splits["test"]
-    X_validation = np.asarray([row_features(row) for row in validation], dtype=float)
-    y_validation = np.asarray([row["target"] for row in validation], dtype=int)
-    validation_probabilities = model.predict_proba(X_validation)[:, 1]
-    global_threshold = _best_f2_threshold(y_validation, validation_probabilities)
-    per_company: dict[str, float] = {}
-    for company_id in sorted({row["company_id"] for row in validation}):
-        indices = [index for index, row in enumerate(validation) if row["company_id"] == company_id]
-        targets = y_validation[indices]
-        if len(indices) >= 10 and len(set(targets.tolist())) == 2 and int(targets.sum()) >= 3:
-            per_company[str(company_id)] = _best_f2_threshold(targets, validation_probabilities[indices])
+    def fit_weighted(X: np.ndarray, y: np.ndarray, rows: list[dict]) -> LGBMClassifier:
+        event_sizes = Counter(row["event_id"] for row in rows)
+        company_sizes = Counter(row["company_id"] for row in rows)
+        weights = np.asarray(
+            [1.0 / event_sizes[row["event_id"]] / company_sizes[row["company_id"]] for row in rows],
+            dtype=float,
+        )
+        weights *= len(weights) / weights.sum()
+        fitted = LGBMClassifier(
+            objective="binary",
+            n_estimators=250,
+            learning_rate=0.03,
+            num_leaves=15,
+            min_child_samples=10,
+            subsample=0.85,
+            colsample_bytree=0.85,
+            reg_lambda=1.0,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=-1,
+        )
+        fitted.fit(X, y, sample_weight=weights)
+        return fitted
 
-    metrics: dict[str, float] = {}
-    for split_name, split_rows in splits.items():
-        if not split_rows:
-            continue
-        targets = np.asarray([row["target"] for row in split_rows], dtype=int)
-        probabilities = model.predict_proba(np.asarray([row_features(row) for row in split_rows]))[:, 1]
-        predictions = probabilities >= global_threshold
-        metrics[f"{split_name}_pr_auc"] = float(average_precision_score(targets, probabilities)) if len(set(targets)) > 1 else 0.0
-        metrics[f"{split_name}_macro_f1"] = float(
-            f1_score(targets, predictions, average="macro", zero_division=0)
+    X_all = np.asarray([row_features(row) for row in records], dtype=float)
+    y_all = np.asarray([row["target"] for row in records], dtype=int)
+    groups = np.asarray([row["event_id"] for row in records])
+
+    n_splits = min(5, independent["positive_events"])
+    if n_splits < 2:
+        raise ValueError("StratifiedGroupKFold을 위한 양성 사건이 최소 2건 필요합니다.")
+    splitter = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    oof_probabilities = np.zeros(len(records), dtype=float)
+    for train_idx, held_idx in splitter.split(X_all, y_all, groups=groups):
+        fold_rows = [records[i] for i in train_idx]
+        fold_model = fit_weighted(X_all[train_idx], y_all[train_idx], fold_rows)
+        oof_probabilities[held_idx] = fold_model.predict_proba(X_all[held_idx])[:, 1]
+
+    global_threshold = _best_f2_threshold(y_all, oof_probabilities)
+    per_company: dict[str, float] = {}
+    for company_id in sorted({row["company_id"] for row in records}):
+        indices = [index for index, row in enumerate(records) if row["company_id"] == company_id]
+        targets = y_all[indices]
+        if len(indices) >= 10 and len(set(targets.tolist())) == 2 and int(targets.sum()) >= 3:
+            per_company[str(company_id)] = _best_f2_threshold(targets, oof_probabilities[indices])
+
+    # Every window above was scored by a fold that never trained on it, so these
+    # numbers are an honest generalization estimate -- unlike the old single
+    # chronological split, no class can be entirely absent from the held-out set.
+    predictions = oof_probabilities >= global_threshold
+    metrics: dict[str, float] = {
+        "cv_folds": float(n_splits),
+        "oof_pr_auc": float(average_precision_score(y_all, oof_probabilities)),
+        "oof_roc_auc": float(roc_auc_score(y_all, oof_probabilities)),
+        "oof_macro_f1": float(f1_score(y_all, predictions, average="macro", zero_division=0)),
+        "oof_f2": float(fbeta_score(y_all, predictions, beta=2, zero_division=0)),
+        "oof_recall": float(recall_score(y_all, predictions, zero_division=0)),
+    }
+    company_days = {(row["company_id"], row["time"].date()) for row in records}
+    false_positives = sum(int(target == 0 and prediction) for target, prediction in zip(y_all, predictions))
+    metrics["oof_daily_false_alarms_per_company"] = (
+        float(false_positives / len(company_days)) if company_days else 0.0
+    )
+    for company_id in sorted({row["company_id"] for row in records}):
+        indices = [index for index, row in enumerate(records) if row["company_id"] == company_id]
+        dates = {records[index]["time"].date() for index in indices}
+        company_false_positives = sum(
+            int(y_all[index] == 0 and predictions[index]) for index in indices
         )
-        metrics[f"{split_name}_f2"] = float(fbeta_score(targets, predictions, beta=2, zero_division=0))
-        metrics[f"{split_name}_recall"] = float(recall_score(targets, predictions, zero_division=0))
-        company_days = {
-            (row["company_id"], row["time"].date()) for row in split_rows
-        }
-        false_positives = sum(
-            int(target == 0 and prediction)
-            for target, prediction in zip(targets, predictions)
+        metrics[f"oof_company_{company_id}_daily_false_alarms"] = (
+            float(company_false_positives / len(dates)) if dates else 0.0
         )
-        metrics[f"{split_name}_daily_false_alarms_per_company"] = (
-            float(false_positives / len(company_days)) if company_days else 0.0
-        )
-        for company_id in sorted({row["company_id"] for row in split_rows}):
-            indices = [
-                index for index, row in enumerate(split_rows)
-                if row["company_id"] == company_id
-            ]
-            dates = {split_rows[index]["time"].date() for index in indices}
-            company_false_positives = sum(
-                int(targets[index] == 0 and predictions[index]) for index in indices
-            )
-            metrics[f"{split_name}_company_{company_id}_daily_false_alarms"] = (
-                float(company_false_positives / len(dates)) if dates else 0.0
-            )
+
+    # The artifact actually served in production is fit on every labeled window --
+    # with this little data, holding out a slice for the final fit costs real
+    # signal for no benefit now that the k-fold pass above already gives an
+    # honest generalization estimate.
+    model = fit_weighted(X_all, y_all, records)
+
     version = version_stamp("risk-lgbm")
     output = output_root / f"{version}.joblib"
     output.parent.mkdir(parents=True, exist_ok=True)
