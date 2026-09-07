@@ -37,7 +37,9 @@ from app.risk_taxonomy import RISK_TYPES
 from app.services.risk_analysis import (
     RISK_TYPE_PATTERNS,
     resolve_article_risk_type_scores_batch,
+    resolve_production_risk_detector,
     resolve_risk_type_scores,
+    risk_detector_percentile,
 )
 
 
@@ -46,6 +48,14 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="story-risk")
 ENGINE_VERSION = "story-risk-hybrid-v1"
 EVENT_ENGINE_VERSION = "story-event-hybrid-v2"
 EVENT_KEY_PREFIX = "story-v3"
+# 사람 라벨 80건(전부 window_v1, 2026-09) 재구성 검증: story_v2 단독 재현 AUC 0.773.
+# window_v1(LightGBM)의 원점수는 이미 알람이 뜬 창들에서만 평가하면 0.86+에 몰려있어
+# 그대로 섞으면 도움이 안 되지만, 전체 스코어링된 창(~8500개, 대부분 평온) 대비
+# percentile로 정규화하면 5-fold 교차검증에서 w=0.1~0.4 구간이 평탄하게 개선된다
+# (mean AUC 0.769->0.81 안팎). 사람 라벨 사건의 44%는 그 15분 창에 매칭된 기사가
+# 0건이라 story_v2가 원천적으로 못 보는 구간인데, window_v1의 집계 이상탐지가
+# 그 공백을 메운다. w=0.2는 이 평탄 구간 중앙값이다.
+WINDOW_SIGNAL_BLEND_WEIGHT = 0.2
 GOVERNMENT_SUFFIXES = (".go.kr", ".gov", ".gov.kr")
 SEOUL = ZoneInfo("Asia/Seoul")
 
@@ -598,6 +608,18 @@ def _aggregate_story_event(
             + 0.02 * max(0, len(candidates) - 1),
         )
     )
+    if latest_window is not None and latest_window.risk_probability is not None:
+        detector = resolve_production_risk_detector(db)
+        window_percentile = (
+            risk_detector_percentile(detector.payload, float(latest_window.risk_probability))
+            if detector.available
+            else None
+        )
+        if window_percentile is not None:
+            probability = _clamp(
+                (1 - WINDOW_SIGNAL_BLEND_WEIGHT) * probability
+                + WINDOW_SIGNAL_BLEND_WEIGHT * window_percentile
+            )
     severity = "critical" if probability >= 0.85 else "warning"
     created = event is None
     primary_candidate = max(candidates, key=lambda row: row[0].risk_probability)

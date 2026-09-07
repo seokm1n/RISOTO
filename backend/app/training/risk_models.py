@@ -344,6 +344,29 @@ def train_risk_detector(output_root: Path, isolation_artifact: Path | None = Non
     # honest generalization estimate.
     model = fit_weighted(X_all, y_all, records)
 
+    # Population reference for percentile-based consumers (see
+    # risk_analysis.risk_detector_percentile, used to blend this score into the
+    # per-article story pipeline). The labeled set above is deliberately
+    # concentrated near known events -- its own probabilities cluster near 1.0 and
+    # aren't representative of the mostly-quiet population this model actually
+    # scores in production, so score every window instead.
+    with SessionLocal() as db:
+        population_windows = list(
+            db.scalars(
+                select(CompanyFeatureWindow).where(
+                    CompanyFeatureWindow.data_quality != "unavailable",
+                    CompanyFeatureWindow.feature_values.is_not(None),
+                )
+            )
+        )
+    reference_probabilities = (
+        model.predict_proba(
+            np.asarray([_vector(window, RISK_FEATURE_NAMES) for window in population_windows], dtype=float)
+        )[:, 1].tolist()
+        if population_windows
+        else []
+    )
+
     version = version_stamp("risk-lgbm")
     output = output_root / f"{version}.joblib"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -355,6 +378,7 @@ def train_risk_detector(output_root: Path, isolation_artifact: Path | None = Non
         {
             "model": model,
             "feature_names": RISK_FEATURE_NAMES,
+            "reference_probabilities": reference_probabilities,
             **dependencies,
         },
         output,

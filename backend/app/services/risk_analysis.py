@@ -674,6 +674,28 @@ def resolve_production_risk_detector(db: Session) -> RiskDetectorRuntime:
     )
 
 
+def risk_detector_percentile(payload: dict | None, probability: float) -> float | None:
+    """Map a raw LightGBM probability onto its rank against the training population.
+
+    Human-labeled events (2026-09) are all drawn from windows the detector already
+    flagged, so their raw probabilities cluster near 1.0 (p25=0.86) -- comparing raw
+    values against a per-article score on a totally different scale barely helps.
+    Ranked against the full ~8500-window population (which is heavily right-skewed
+    toward 0, since most windows are quiet) the same signal becomes usable. Returns
+    None when the artifact predates this field so callers can skip the blend rather
+    than silently mis-scale against a missing reference.
+    """
+    if not isinstance(payload, dict):
+        return None
+    reference = payload.get("reference_probabilities")
+    if not reference:
+        return None
+    array = np.asarray(reference, dtype=float)
+    if array.size == 0:
+        return None
+    return float(np.mean(array <= probability))
+
+
 def _mark_risk_detection_unavailable(window: CompanyFeatureWindow) -> None:
     """Clear stale scores whenever final LightGBM judgment cannot run."""
     window.anomaly_score = None
