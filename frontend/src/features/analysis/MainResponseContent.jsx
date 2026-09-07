@@ -67,7 +67,7 @@ function bandsOf(checklist) {
 
 // 실행 계획 아래로는 전부 접어 둔다. 매번 읽는 것은 상황과 할 일이고, 나머지는
 // 따질 때만 펼친다.
-function FoldSection({ title, children }) {
+export function FoldSection({ title, children }) {
   return (
     <details className="response-fold">
       <summary><strong>{title}</strong></summary>
