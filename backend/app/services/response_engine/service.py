@@ -139,6 +139,9 @@ def _payload_from_event(
     return AlertPayload.from_dict({
         **_quant_from_event(db, event, company, evidence_article_ids),
         "alert_id": f"RE-{event.id}",
+        # 스토리 대표 제목. 분류기 입력의 첫 줄이 되어 사안을 규정한다 - 근거 원문이
+        # 댓글처럼 단편적일 때 이것 하나가 유형을 가른다.
+        "event_title": event.summary,
         "company_id": str(company.id),
         "company_name": company.name,
         "industry": _industry_name(db, company),

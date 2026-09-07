@@ -32,7 +32,7 @@ const STAGES = [
   { id: "sentiment", step: "03", label: "감성분석", kicker: "SENTIMENT ANALYSIS", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
   { id: "stories", step: "04", label: "스토리 군집화", kicker: "STORY CLUSTERING", description: "여러 출처의 유사 기사가 어떤 하나의 스토리로 묶였는지 확인합니다." },
   { id: "risk", step: "05", label: "위험판정", kicker: "RISK DETECTION", description: "스토리별 위험도와 유형, 사건 발생 근거를 확인합니다." },
-  { id: "response", step: "06", label: "대응", kicker: "RESPONSE MANAGEMENT", description: "위험 사건의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
+  { id: "response", step: "06", label: "대응", kicker: "", description: "위험 사건의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
 ];
 const STAGE_IDS = new Set(STAGES.map((stage) => stage.id));
 const FILTER_PAGE_SIZE = 5;
@@ -421,7 +421,7 @@ export default function AnalysisPipelinePage() {
   return <section className="analysis-pipeline-shell">
     <aside className="analysis-pipeline-sidebar"><div><span className="eyebrow">ANALYSIS PIPELINE</span><h2>분석 파이프라인</h2><p>수집부터 위험판정과 대응까지 단계별 결과를 확인합니다.</p></div><nav aria-label="분석 파이프라인">{STAGES.map((item, index) => <button type="button" className={stageId === item.id ? "active" : ""} aria-current={stageId === item.id ? "page" : undefined} onClick={() => moveStage(item.id)} key={item.id}><span>{item.step}</span><strong>{item.label}</strong>{index < STAGES.length - 1 && <i aria-hidden="true" />}</button>)}</nav></aside>
     <main className="workspace analysis-statistics-workspace analysis-pipeline-workspace">
-      <header className="pipeline-heading"><div><span className="eyebrow">{stage.kicker}</span><h1>{stage.label}</h1><p>{stage.description}</p></div><label><span>분석 기업</span><select value={selectedCompanyId} onChange={(event) => selectCompany(event.target.value)}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}</select></label></header>
+      <header className="pipeline-heading"><div>{stage.kicker && <span className="eyebrow">{stage.kicker}</span>}<h1>{stage.label}</h1><p>{stage.description}</p></div><label><span>분석 기업</span><select value={selectedCompanyId} onChange={(event) => selectCompany(event.target.value)}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}</select></label></header>
       {error && <div className="notice error">{error}</div>}
       {stageId !== "response" && loading && !Object.keys(data).length ? <p className="empty-state">{stage.label} 데이터를 불러오는 중입니다.</p> : !companies.length ? <p className="empty-state">먼저 기업을 등록해 주세요.</p> : <>
         {stageId === "collection" && <CollectionStage data={data} date={collectionDate} page={page} onDateChange={(value) => { if (!value) return; setCollectionDate(value); setPage(1); }} onPageChange={setPage} onOpenWindow={setArticleWindow} />}

@@ -105,6 +105,11 @@ export function FoldSection({ title, children }) {
 // "3.5%" 같은 숫자 가운데 마침표에는 걸리지 않는다.
 function toBullets(text) {
   if (typeof text !== "string") return [];
+  // 줄바꿈이 있으면 그것이 작성자가 의도한 경계다. 보고서 문체("~음", "~됨")는 마침표를
+  // 안 찍는 경우가 많아 문장부호만으로는 갈리지 않는다.
+  const byLine = text.split(/\r?\n+/).map((line) => line.trim()).filter(Boolean);
+  if (byLine.length > 1) return byLine;
+
   const sentences = [];
   let buffer = "";
   for (const chunk of text.split(/\s+/)) {
@@ -119,12 +124,13 @@ function toBullets(text) {
   return sentences;
 }
 
-function ScenarioSelector({ scenarios, active, onChange }) {
-  if (scenarios.length <= 1) return null;
+function ScenarioSelector({ scenarios, active, onChange, brief }) {
+  if (scenarios.length <= 1) return brief ? <section className="response-option-panel">{brief}</section> : null;
   return (
     <section className="response-option-panel" aria-label="대응안 선택">
       <span className="response-ui-kicker">대응 방향 선택</span>
-      <div className="response-option-tabs" role="tablist">
+      <div className="response-option-split">
+        <div className="response-option-tabs" role="tablist">
         {scenarios.map((scenario, index) => (
           <button
             type="button"
@@ -140,8 +146,15 @@ function ScenarioSelector({ scenarios, active, onChange }) {
                 humanize(scenario.stance) ||
                 `${index + 1}번째 대응안`}
             </strong>
-          </button>
-        ))}
+            {/* 세 카드를 나란히 놓는 이유는 비교하기 위해서다. 제목만으로는 무엇이
+                다른지 알 수 없어 한 줄짜리 대비를 붙인다. */}
+            {scenario.report?.scenario_contrast && (
+              <small>{scenario.report.scenario_contrast}</small>
+            )}
+            </button>
+          ))}
+        </div>
+        {brief}
       </div>
     </section>
   );
@@ -149,12 +162,30 @@ function ScenarioSelector({ scenarios, active, onChange }) {
 
 // summary_points를 "라벨 - 문장"으로 읽게 한다. 모델이 라벨을 붙여 오면 그대로 쓰고,
 // 없으면 자리로 채운다(프롬프트가 첫 항목은 상황, 나머지는 그래서 왜 중요한지로 쓰게 한다).
-function summaryRows(points) {
+function summaryRows(points, fallbackLabel) {
   return points.map((point, index) => {
     const labelled = /^\s*([^:：]{2,14})\s*[:：]\s*([\s\S]+)$/.exec(point);
     if (labelled) return { label: labelled[1].trim(), text: labelled[2].trim() };
+    if (fallbackLabel) return { label: index === 0 ? fallbackLabel : "", text: point };
     return { label: index === 0 ? "핵심 이슈" : "왜 중요한가", text: point };
   });
+}
+
+// 선택한 안이 무엇을 하자는 것인지 한 줄로 먼저 보여 준다. 대응 방향 선택 탭과 같은
+// 행에 놓아, 고른 결과가 어느 카드인지 눈으로 이어지게 한다.
+function BriefCard({ scenario }) {
+  const report = scenario?.report ?? {};
+  const headline =
+    report.scenario_headline ||
+    STANCE_LABELS[scenario?.stance] ||
+    humanize(scenario?.stance);
+  if (!headline) return null;
+  return (
+    <article className="recommended">
+      <h5>이 안의 방향</h5>
+      <p>{headline}</p>
+    </article>
+  );
 }
 
 function SituationSection({ scenario }) {
@@ -164,9 +195,15 @@ function SituationSection({ scenario }) {
   const primaryRisks = assessment.primary_risks ?? [];
   const secondaryRisks = assessment.secondary_risks ?? [];
 
-  if (!points.length && !primaryRisks.length && !secondaryRisks.length) return null;
-
   const rows = summaryRows(points);
+  if (!rows.length && !primaryRisks.length && !secondaryRisks.length) {
+    // 섹션을 감추면 담당자가 "없는 것"과 "안 나온 것"을 구별하지 못한다.
+    return (
+      <section className="response-overview-panel bare">
+        <p className="response-empty-note">상황 요약이 생성되지 않았습니다.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="response-overview-panel bare">
@@ -185,28 +222,33 @@ function SituationSection({ scenario }) {
           </article>
         )}
 
-        {(primaryRisks.length > 0 || secondaryRisks.length > 0) && (
-          <article className="response-risk-card">
-            <h5>우선 확인할 위험</h5>
-            {primaryRisks.length > 0 && (
-              <ul className="primary">
-                {primaryRisks.map((risk, index) => (
-                  <li key={`primary-risk-${index}`}>{risk}</li>
-                ))}
-              </ul>
-            )}
-            {secondaryRisks.length > 0 && (
-              <details className="response-minor-disclosure">
-                <summary>추가 위험 {secondaryRisks.length}건</summary>
-                <ul>
-                  {secondaryRisks.map((risk, index) => (
-                    <li key={`secondary-risk-${index}`}>{risk}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </article>
-        )}
+        <article className="response-risk-card">
+          <h5>우선 확인할 위험</h5>
+          {primaryRisks.length === 0 && secondaryRisks.length === 0 && (
+            <p className="response-empty-note">별도로 지목된 위험이 없습니다.</p>
+          )}
+          {primaryRisks.length > 0 && (
+            <dl className="response-summary-rows">
+              {summaryRows(primaryRisks, "주요 위험").map((row, index) => (
+                <div key={`primary-risk-${index}`}>
+                  <dt>{row.label}</dt>
+                  <dd>{row.text}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {/* 접지 않는다. 두 건뿐인 목록을 펼치게 하는 것은 클릭만 늘린다. */}
+          {secondaryRisks.length > 0 && (
+            <dl className="response-summary-rows response-minor-rows">
+              {summaryRows(secondaryRisks, "추가 위험").map((row, index) => (
+                <div key={`secondary-risk-${index}`}>
+                  <dt>{row.label}</dt>
+                  <dd>{row.text}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </article>
       </div>
     </section>
   );
@@ -214,17 +256,18 @@ function SituationSection({ scenario }) {
 
 function PlanSection({ report }) {
   const bands = bandsOf(report?.checklist);
-  if (!bands.length) return null;
 
   let order = 0;
   return (
     <section className="response-workboard">
       <header className="response-section-heading">
         <div>
-          <span>실행 계획</span>
-          <h4>지금부터 해야 할 일</h4>
+          <h4>실행 계획</h4>
         </div>
       </header>
+      {bands.length === 0 && (
+        <p className="response-empty-note">생성된 실행 과제가 없습니다.</p>
+      )}
       <div className="response-time-groups">
         {bands.map((band) => (
           <article className="response-time-group" key={band.label}>
@@ -240,7 +283,7 @@ function PlanSection({ report }) {
                     <span className="response-task-number">{String(order).padStart(2, "0")}</span>
                     <div className="response-task-copy">
                       <strong>{item.task}</strong>
-                      <small>{item.owner ? `담당 · ${item.owner}` : "담당 부서 확인 필요"}</small>
+                      <small>{item.owner ? `담당 : ${item.owner}` : "담당 부서 확인 필요"}</small>
                     </div>
                     <span className="response-task-due">{deadlineLabel(item.deadline_hours)}</span>
                   </li>
@@ -288,7 +331,7 @@ function StrategySection({ report }) {
 
 function FollowUpSection({ report }) {
   const metrics = report?.monitoring_metrics ?? [];
-  if (!metrics.length && !report?.limitations) return null;
+  if (!metrics.length) return null;
   return (
     <FoldSection title="대응 후 점검">
       <div className="response-followup-grid">
@@ -300,12 +343,6 @@ function FollowUpSection({ report }) {
                 <span key={`${metric}-${index}`}>{metric}</span>
               ))}
             </div>
-          </article>
-        )}
-        {report?.limitations && (
-          <article className="response-caution-card">
-            <h5>사용 전 확인</h5>
-            <p>{report.limitations}</p>
           </article>
         )}
       </div>
@@ -338,7 +375,19 @@ function AppendixSection({ content, report }) {
     <>
       {basis && (
         <FoldSection title="판단 근거 (수치)">
-          <p>{basis}</p>
+          {/* 줄글로 오면 수치가 문장에 묻힌다. 문장 단위로 끊어 항목으로 세운다. */}
+          {toBullets(basis).length > 1 ? (
+            <ol className="response-basis-list">
+              {summaryRows(toBullets(basis), "판단 근거").map((row, index) => (
+                <li key={`basis-${index}`}>
+                  {row.label && <strong>{row.label}</strong>}
+                  <span>{row.text}</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>{basis}</p>
+          )}
         </FoldSection>
       )}
 
@@ -433,6 +482,18 @@ function AppendixSection({ content, report }) {
   );
 }
 
+// 한계 고지는 접지 않는다. 이 초안이 법률 자문이 아니라는 사실과 확인이 필요한 항목은
+// 펼쳐야 보이면 안 되는 정보다.
+function LimitationsNotice({ report }) {
+  if (!report?.limitations) return null;
+  return (
+    <aside className="response-limitations" role="note">
+      <strong>사용 전 확인</strong>
+      <p>{report.limitations}</p>
+    </aside>
+  );
+}
+
 function VerificationNotice({ verification }) {
   const violations = verification?.violations ?? [];
   if (!verification || (verification.passed && violations.length === 0)) return null;
@@ -505,7 +566,12 @@ export default function MainResponseContent({ content }) {
 
   return (
     <div className="response-draft response-draft-v3 response-operations-view">
-      <ScenarioSelector scenarios={scenarios} active={active} onChange={setActive} />
+      <ScenarioSelector
+        scenarios={scenarios}
+        active={active}
+        onChange={setActive}
+        brief={current ? <BriefCard scenario={current} /> : null}
+      />
 
       {current ? (
         <div className="response-plan-content" role="tabpanel">
@@ -517,6 +583,7 @@ export default function MainResponseContent({ content }) {
             <AppendixSection content={content} report={report} />
             <VerificationNotice verification={current.verification} />
           </div>
+          <LimitationsNotice report={report} />
         </div>
       ) : (
         <p className="response-empty-state">생성된 대응안이 없습니다.</p>
