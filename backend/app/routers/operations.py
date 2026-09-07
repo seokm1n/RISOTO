@@ -1,6 +1,6 @@
 """Collection incident, health, feature-window and daily-summary APIs."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -217,19 +217,35 @@ def list_feature_windows(
 def list_daily_summaries(
     company_id: int,
     days: int = Query(default=30, ge=1, le=365),
+    start_date: date | None = None,
+    end_date: date | None = None,
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
 ) -> list[DailySummaryRead]:
     _user_company(db, company_id, auth.user_id)
     settings = get_settings()
     now = datetime.now(SEOUL)
-    cutoff_date, cutoff = seoul_period_start(days, now=now)
+    if (start_date is None) != (end_date is None):
+        raise HTTPException(status_code=422, detail="시작일과 종료일을 함께 선택해 주세요.")
+    if start_date is not None:
+        if start_date > end_date:
+            raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
+        if end_date > now.date():
+            raise HTTPException(status_code=422, detail="종료일은 오늘 이후로 선택할 수 없습니다.")
+        days = (end_date - start_date).days + 1
+        cutoff_date = start_date
+        cutoff = datetime.combine(start_date, time.min, tzinfo=SEOUL)
+    else:
+        cutoff_date, cutoff = seoul_period_start(days, now=now)
+        end_date = now.date()
+    period_end = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=SEOUL)
     stored = {
         item.summary_date: item
         for item in db.scalars(
             select(CompanyDailySummary).where(
                 CompanyDailySummary.company_id == company_id,
                 CompanyDailySummary.summary_date >= cutoff_date,
+                CompanyDailySummary.summary_date <= end_date,
             )
         )
     }
@@ -258,6 +274,7 @@ def list_daily_summaries(
             .where(
                 CompanyArticleMatch.company_id == company_id,
                 article_time >= cutoff,
+                article_time < period_end,
             )
             .group_by(article_day)
         ).mappings()
@@ -279,6 +296,7 @@ def list_daily_summaries(
             .where(
                 RiskEvent.company_id == company_id,
                 RiskEvent.opened_at >= cutoff,
+                RiskEvent.opened_at < period_end,
                 RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
                 RiskEvent.event_source == "story_v2",
                 RiskEvent.story_cluster_id.is_not(None),
@@ -312,7 +330,7 @@ def list_daily_summaries(
                 func.count(company_story_first.c.story_cluster_id),
             )
             .select_from(company_story_first)
-            .where(company_story_first.c.first_seen_at >= cutoff)
+            .where(company_story_first.c.first_seen_at >= cutoff, company_story_first.c.first_seen_at < period_end)
             .group_by(story_first_day)
         )
     }
@@ -421,7 +439,7 @@ def list_daily_summaries(
                 func.count(eligible_story_cohorts.c.story_cluster_id),
             )
             .select_from(eligible_story_cohorts)
-            .where(eligible_story_cohorts.c.eligible_at >= cutoff)
+            .where(eligible_story_cohorts.c.eligible_at >= cutoff, eligible_story_cohorts.c.eligible_at < period_end)
             .group_by(eligible_story_day)
         )
     }
@@ -446,7 +464,7 @@ def list_daily_summaries(
                 story_sentiment_scores.c.story_cluster_id
                 == eligible_story_cohorts.c.story_cluster_id,
             )
-            .where(eligible_story_cohorts.c.eligible_at >= cutoff)
+            .where(eligible_story_cohorts.c.eligible_at >= cutoff, eligible_story_cohorts.c.eligible_at < period_end)
             .group_by(eligible_story_day)
         ).mappings()
     }
@@ -465,6 +483,7 @@ def list_daily_summaries(
             )
             .where(
                 eligible_story_cohorts.c.eligible_at >= cutoff,
+                eligible_story_cohorts.c.eligible_at < period_end,
                 RiskEvent.company_id == company_id,
                 RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
                 RiskEvent.event_source == "story_v2",
@@ -488,6 +507,7 @@ def list_daily_summaries(
             )
             .where(
                 company_story_first.c.first_seen_at >= cutoff,
+                company_story_first.c.first_seen_at < period_end,
                 negative_story_condition,
             )
             .group_by(story_first_day)
@@ -509,15 +529,15 @@ def list_daily_summaries(
                 ArticleRiskAssessment.risk_probability
                 >= settings.article_risk_candidate_threshold,
                 article_time >= cutoff,
+                article_time < period_end,
             )
             .group_by(article_day)
         )
     }
 
     results: list[DailySummaryRead] = []
-    today = now.date()
     for offset in range(days):
-        summary_date = today - timedelta(days=offset)
+        summary_date = end_date - timedelta(days=offset)
         materialized = stored.get(summary_date)
         live = article_rows.get(summary_date, {})
         results.append(
@@ -560,4 +580,28 @@ def list_daily_summaries(
                 partial_window_count=materialized.partial_window_count if materialized else 0,
             )
         )
+    if start_date is not None:
+        # 기사 날짜와 이슈 날짜를 분리한다. 이슈 집계는 전체 연결 기사로
+        # 묶은 이슈의 최근 기사 날짜를 기준으로 동일한 집합을 한 번씩 집계한다.
+        from app.services.period_story_cohort import load_period_story_cohort
+
+        fields = (
+            "eligible_story_count", "eligible_risk_story_count",
+            "eligible_non_risk_story_count", "eligible_pending_story_count",
+            "eligible_positive_story_count", "eligible_neutral_story_count",
+            "eligible_negative_story_count",
+        )
+        by_date = {item.summary_date: dict.fromkeys(fields, 0) for item in results}
+        for story in load_period_story_cohort(db, company_id, start_date, end_date, include_unjudged=False):
+            counts = by_date[story["summary_date"]]
+            counts["eligible_story_count"] += 1
+            classification_field = {
+                "risk": "eligible_risk_story_count",
+                "non_risk": "eligible_non_risk_story_count",
+                "pending": "eligible_pending_story_count",
+            }[story["classification"]]
+            counts[classification_field] += 1
+            if story["sentiment"] in {"positive", "neutral", "negative"}:
+                counts[f"eligible_{story['sentiment']}_story_count"] += 1
+        results = [item.model_copy(update=by_date[item.summary_date]) for item in results]
     return results

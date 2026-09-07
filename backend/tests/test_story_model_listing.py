@@ -1,6 +1,6 @@
 """Story judgments display model scores without turning missing scores into negatives."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -15,9 +15,10 @@ from app.models import (
     RiskEvent, RiskEventArticle, StoryCluster, StoryClusterArticle,
     StoryRiskScore, User,
 )
-from app.routers.collection import get_monitoring_summary, list_risk_judgments_page
+from app.routers.collection import get_monitoring_summary, list_company_articles, list_risk_events_page, list_risk_judgments_page
 from app.routers.companies import _to_response
 from app.routers.dashboard import _reportable_risk_filters
+from app.services.period_story_cohort import load_period_story_cohort
 from tests.auth_helpers import auth_for_company
 
 
@@ -141,6 +142,106 @@ class StoryModelListingTests(unittest.TestCase):
         self.assertEqual(result.total, 1)
         self.assertEqual(result.items[0].risk_probability, 0.96)
         self.assertEqual(result.items[0].model_version, "old-article-model")
+
+    def test_period_cohort_partitions_grouping_and_keeps_missing_scores_pending(self):
+        self.now = datetime(2024, 1, 2, tzinfo=timezone.utc)
+        stories = {story_id: self.story(story_id, scored=story_id != 3,
+                                       article_count=1 if story_id == 6 else 3 if story_id == 8 else 2)
+                   for story_id in range(1, 9)}
+        event = self.event(1, stories[1])
+        event.last_evidence_at = datetime(2030, 1, 1, tzinfo=timezone.utc)
+        # Pipeline analysis requires current accepted provenance even for saved scores.
+        for article in stories[2][1]:
+            self.db.delete(self.db.get(ArticleFilterResult, article.id))
+        self.db.get(StoryRiskScore, (1, 4)).model_version = "old-story-model"
+        self.db.get(StoryRiskScore, (1, 5)).is_risk = True
+        stories[7][1][0].published_at = self.now - timedelta(days=2)
+        # Issue dates use the latest related article, regardless of older members.
+        stories[8][1][2].published_at = self.now + timedelta(days=2)
+        for index, article in enumerate(stories[7][1]):
+            article.positive_probability = 1.0 if index == 0 else 0.4
+            article.neutral_probability = 0.0
+            article.negative_probability = 0.0 if index == 0 else 0.6
+        for article in stories[8][1][:2]:
+            article.positive_probability = 0.4
+            article.neutral_probability = 0.0
+            article.negative_probability = 0.6
+        stories[8][1][2].positive_probability = 1.0
+        stories[8][1][2].neutral_probability = 0.0
+        stories[8][1][2].negative_probability = 0.0
+        self.db.flush()
+        period = dict(start_date=date(2024, 1, 2), end_date=date(2024, 1, 2))
+        cohort = load_period_story_cohort(self.db, 1, **period, settings=self.settings, runtime=self.runtime)
+        self.assertEqual({row["story_cluster_id"] for row in cohort}, {1, 3, 4, 5, 7})
+        self.assertEqual({row["summary_date"] for row in cohort}, {date(2024, 1, 2)})
+        self.assertEqual(next(row["sentiment"] for row in cohort if row["story_cluster_id"] == 7), "positive")
+        grouped_articles = list_company_articles(
+            1, page=1, page_size=100, source=None, q=None, date_from=None, date_to=None,
+            time_from=None, time_to=None, days=None, db=self.db, auth=self.auth,
+            period_basis="issues", analysis_only=True, **period,
+        )
+        self.assertEqual({item.story_cluster_id for item in grouped_articles.items}, {1, 3, 4, 5, 6, 7})
+        self.assertEqual(len([item for item in grouped_articles.items if item.story_cluster_id == 7]), 2)
+        with patch("app.routers.collection.get_settings", return_value=self.settings), patch(
+            "app.services.period_story_cohort.resolve_story_risk_runtime", return_value=self.runtime
+        ), patch("app.services.period_story_cohort.get_settings", return_value=self.settings):
+            pages = {classification: list_risk_judgments_page(
+                1, classification=classification, page=1, page_size=10, days=None,
+                db=self.db, auth=self.auth, **period,
+            ) for classification in ("risk", "non_risk", "pending")}
+            responses = list_risk_events_page(
+                1, view="all", page=1, page_size=10, days=None,
+                db=self.db, auth=self.auth, **period,
+            )
+            judged_groups = list_company_articles(
+                1, page=1, page_size=100, source=None, q=None, date_from=None, date_to=None,
+                time_from=None, time_to=None, days=None, db=self.db, auth=self.auth,
+                period_basis="issues", analysis_only=True, judged_only=True, **period,
+            )
+        self.assertEqual({item.story_cluster_id for item in judged_groups.items}, {1, 6, 7})
+        summary = pages["risk"].summary
+        self.assertEqual((summary.risk, summary.non_risk, summary.pending, summary.total), (1, 1, 0, 2))
+        self.assertEqual(sum(page.total for page in pages.values()), len(cohort))
+        self.assertEqual(responses.total, pages["risk"].total)
+        self.assertEqual({item.story_cluster_id for item in pages["non_risk"].items}, {7})
+        self.assertEqual({item.pending_reason for item in pages["pending"].items},
+                         {"missing_score", "stale_model", "risk_event_pending"})
+        self.assertTrue(all(item.risk_probability is None and item.anomaly_score is None
+                            for item in pages["pending"].items))
+        self.assertTrue(all(item.evidence_article_count == 2 for page in pages.values() for item in page.items))
+
+    def test_period_legacy_unknown_assessment_is_not_a_non_risk_prediction(self):
+        self.now = datetime(2024, 1, 2, tzinfo=timezone.utc)
+        _cluster, articles = self.story(1, scored=False)
+        for article in articles:
+            self.db.get(ArticleRiskAssessment, (1, article.id)).decision = "uncertain"
+        self.db.flush()
+        self.settings.story_risk_model_enabled = False
+        result = load_period_story_cohort(
+            self.db, 1, date(2024, 1, 2), date(2024, 1, 2), settings=self.settings,
+        )
+        self.assertEqual(result[0]["classification"], "pending")
+        self.assertIsNone(result[0]["risk_probability"])
+
+    def test_period_legacy_requires_assessment_for_every_accepted_member(self):
+        self.now = datetime(2024, 1, 2, tzinfo=timezone.utc)
+        _cluster, articles = self.story(1, scored=False)
+        assessments = [self.db.get(ArticleRiskAssessment, (1, article.id)) for article in articles]
+        for assessment in assessments:
+            assessment.decision = "non_risk"
+        self.db.flush()
+        self.settings.story_risk_model_enabled = False
+        def cohort(**options):
+            return load_period_story_cohort(
+                self.db, 1, date(2024, 1, 2), date(2024, 1, 2), settings=self.settings, **options,
+            )
+        self.assertEqual(cohort()[0]["classification"], "non_risk")
+        self.db.delete(assessments[0])
+        self.db.flush()
+        self.assertEqual(cohort()[0]["classification"], "pending")
+        self.assertEqual(cohort()[0]["pending_reason"], "missing_assessment")
+        self.assertIsNone(cohort()[0]["risk_probability"])
+        self.assertEqual(cohort(include_unjudged=False), [])
 
     def test_non_risk_eligibility_requires_current_accepted_membership_and_current_model(self):
         self.story(1)
