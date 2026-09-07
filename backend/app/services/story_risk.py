@@ -147,10 +147,18 @@ def _local_assessment_from_scores(
 ) -> dict:
     negative = float(article.negative_probability or 0.0)
     primary_type, type_probability = max(scores.items(), key=lambda item: item[1])
+    # 2026-09-07: 사람 라벨 55건(story_v2_label_candidates.csv)으로 뜯어보니
+    # type_probability는 TRUE/FALSE 구분 없이 항상 1.000(표준편차 0, 단독 AUC 0.500 --
+    # 완전 무정보)이었다. 일단 위험 후보가 되려면 이미 type_probability>=0.35가
+    # 필요해서, 후보가 된 시점엔 진짜 위험이든 아니든 이 항목이 거의 항상 포화된다.
+    # 반면 negative 단독 AUC는 0.900으로 제일 강한 신호였는데 옛 가중치(0.35)가
+    # 이를 희석시키고 있었다. 그리드서치 상위권(type 0.0~0.3, negative 0.6~0.9,
+    # relevance 0.1, AUC 0.90~0.91)에서 type을 완전히 죽이지 않는 보수적인 지점을
+    # 골랐다 (옛 공식 AUC 0.894 -> 0.906).
     probability = _clamp(
-        0.45 * float(type_probability)
-        + 0.35 * negative
-        + 0.20 * relevance_score
+        0.20 * float(type_probability)
+        + 0.70 * negative
+        + 0.10 * relevance_score
     )
     if type_probability < 0.20 or probability < settings.article_risk_uncertain_low:
         decision = "non_risk"
