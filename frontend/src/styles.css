@@ -527,7 +527,7 @@ button:disabled { cursor: default; }
 .main-risk-notice small { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); gap: 4px; color: #5c4432; font-size: var(--text-small); line-height: 1.5; }
 .main-risk-notice small .risk-event-display-title { font-size: var(--text-caption); }
 
-/* 위험 판정 기사와 부정 기사 건수를 같은 축의 두 선으로 비교한다. */
+/* 위험·부정 스토리 비율을 같은 축의 두 선으로 비교한다. */
 .main-overview-trend { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .main-overview-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .main-overview-legend span { display: inline-flex; align-items: center; gap: 6px; color: #5c4432; font-size: var(--text-small); font-weight: 800; }
@@ -622,7 +622,7 @@ button:disabled { cursor: default; }
 .collection-stream-group.competitor > header { border-bottom-color: rgba(182,84,50,.3); }
 .collection-group-empty { margin: 0; padding: 22px; background: rgba(248,245,236,.6); color: #807975; font-size: var(--text-small); text-align: center; }
 .collection-company-list { display: grid; gap: 10px; }
-.collection-company-row { display: grid; grid-template-columns: minmax(210px, .75fr) minmax(430px, 1.45fr) auto; align-items: center; gap: 22px; padding: 22px 24px; background: rgba(248,245,236,.82); }
+.collection-company-row { display: grid; grid-template-columns: minmax(210px, .75fr) minmax(430px, 1.45fr) auto; align-items: center; gap: 22px; padding: 22px 24px; background: rgba(248,245,236,.82); cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
 .collection-company-row > div:first-child { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .collection-company-row > div:first-child > div { display: grid; min-width: 0; gap: 5px; }
 .collection-company-row > div:first-child strong { overflow: hidden; font-size: 1.18rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -699,6 +699,7 @@ button:disabled { cursor: default; }
 .collection-workspace .monitor-control { border-radius: 10px; }
 .collection-workspace .collection-company-row > div:first-child strong { color: #2e1f14; font-weight: 800; }
 .collection-workspace .collection-company-row > div:first-child small { color: #5c4432; }
+.collection-workspace .collection-company-row:hover { border-color: rgba(180, 90, 40, .42); box-shadow: 0 11px 24px rgba(140, 76, 32, .11); transform: translateY(-1px); }
 
 /* 기업별 수집 기사 목록 모달 */
 .collection-articles-modal-layer { position: fixed; z-index: 360; inset: 0; display: grid; place-items: center; padding: 28px; }
@@ -1513,7 +1514,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .analysis-pipeline-shell { display: grid; min-height: calc(100svh - 76px); grid-template-columns: 250px minmax(0, 1fr); background: #eeeade; }
 .analysis-pipeline-sidebar { position: sticky; top: 76px; align-self: start; height: calc(100svh - 76px); overflow-y: auto; border-right: 1px solid var(--divider); background: #f6f0e4; padding: 24px 22px; }
 .analysis-pipeline-sidebar > div { padding: 0 8px 22px; border-bottom: 1px solid var(--divider); }
-.analysis-pipeline-sidebar h2 { margin: 10px 0 7px; color: #2e1f14; font: 800 var(--section-title-size)/1 var(--font-soft); letter-spacing: -.05em; word-break: keep-all; }
+.analysis-pipeline-sidebar h2 { margin: 10px 0 7px; color: #2e1f14; font: 800 1.5rem/1.1 var(--font-soft); letter-spacing: -.03em; white-space: nowrap; }
 .analysis-pipeline-sidebar p { margin: 0; color: #7a7069; font-size: var(--text-caption); line-height: 1.55; }
 .analysis-pipeline-sidebar nav { display: grid; padding-top: 17px; }
 .analysis-pipeline-sidebar nav button { position: relative; display: grid; min-height: 55px; grid-template-columns: 30px minmax(0,1fr); align-items: center; gap: 10px; border: 0; background: transparent; padding: 6px 8px; color: #817872; text-align: left; }
@@ -1625,6 +1626,8 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .pipeline-risk-metrics > div:last-child { border-right: 0; }
 .pipeline-risk-metrics span { color: #776e68; font-size: var(--text-caption); font-weight: 800; }
 .pipeline-risk-metrics strong { overflow: hidden; color: #543e31; font: 800 1.05rem/1.2 var(--font-soft); text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-evidence-heading { margin: 18px 0 0; color: #3d3029; font: 800 var(--text-small)/1.3 var(--font-soft); }
+.pipeline-evidence-heading + .pipeline-evidence-list { margin-top: 8px; }
 .pipeline-evidence-list { display: grid; gap: 8px; margin-top: 15px; }.pipeline-evidence-list a { display: grid; min-width: 0; gap: 4px; border: 1px solid rgba(48,43,41,.09); background: #faf5eb; padding: 10px 11px; color: inherit; text-decoration: none; }.pipeline-evidence-list a span { width: fit-content; border-radius: 999px; background: #eadfd0; padding: 3px 6px; color: #7f4b2e; font-size: var(--text-caption); font-weight: 900; }.pipeline-evidence-list a strong { overflow: hidden; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }.pipeline-evidence-list a small { color: #8b8179; font-size: var(--text-caption); }
 
 /* 태블릿과 모바일에서 다단 레이아웃을 순차적으로 단일 열로 축소한다. */

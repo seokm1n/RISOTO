@@ -20,15 +20,13 @@ function useElementSize() {
 }
 
 // 화면 목적에 따라 실제 기사 또는 판정 가능한 스토리를 같은 분모로 위험·부정 비율을 비교한다.
-<<<<<<< Updated upstream
-export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 판정 기사와 부정 기사 비율 추이", displayDates = null, basis = "stories" }) {
-=======
-export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, displayDates = null, basis = "stories", averageMode = false }) {
->>>>>>> Stashed changes
+export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, displayDates = null, basis = "stories" }) {
   const [canvasRef, { width: measuredWidth, height: measuredHeight }] = useElementSize();
   const [hoveredIndex, setHoveredIndex] = useState(null);
   useEffect(() => { setHoveredIndex(null); }, [basis, days, displayDates]);
   const usesArticleCounts = basis === "articles";
+  const populationLabel = usesArticleCounts ? "기사" : "스토리";
+  const chartAriaLabel = ariaLabel ?? `위험 ${populationLabel}와 부정 ${populationLabel} 비율 추이`;
   const displayDateSet = displayDates === null ? null : new Set(displayDates);
   const points = [...days]
     .sort((left, right) => left.summary_date.localeCompare(right.summary_date))
@@ -41,19 +39,12 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
         population_count: populationCount,
         risk_count: riskCount,
         negative_count: negativeCount,
-<<<<<<< Updated upstream
-        risk_ratio: populationCount > 0 ? Math.min(riskCount / populationCount, 1) : 0,
-        negative_ratio: populationCount > 0 ? Math.min(negativeCount / populationCount, 1) : 0,
-=======
-        display_risk_count: averageMode && !usesArticleCounts ? day.total_eligible_risk_story_count ?? riskCount : riskCount,
-        display_negative_count: averageMode && !usesArticleCounts ? day.total_eligible_negative_story_count ?? negativeCount : negativeCount,
         risk_ratio: !usesArticleCounts && Number.isFinite(day.eligible_risk_story_ratio)
           ? Math.min(Math.max(day.eligible_risk_story_ratio, 0), 1)
           : populationCount > 0 ? Math.min(riskCount / populationCount, 1) : 0,
         negative_ratio: !usesArticleCounts && Number.isFinite(day.eligible_negative_story_ratio)
           ? Math.min(Math.max(day.eligible_negative_story_ratio, 0), 1)
           : populationCount > 0 ? Math.min(negativeCount / populationCount, 1) : 0,
->>>>>>> Stashed changes
       };
     })
     .filter((day) => displayDateSet
@@ -104,11 +95,11 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
 
   return <div className="main-overview-trend">
     <div className="main-overview-legend" aria-hidden="true">
-      <span className="risk"><i />위험 판정 기사</span>
-      <span className="negative"><i />부정 기사</span>
+      <span className="risk"><i />위험 {populationLabel}</span>
+      <span className="negative"><i />부정 {populationLabel}</span>
     </div>
     <div className="main-chart-canvas" ref={canvasRef} onPointerLeave={() => setHoveredIndex(null)}>
-      <svg className="main-trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
+      <svg className="main-trend-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={chartAriaLabel}>
         {gridLevels.map((level) => <g key={level}>
           <line className="main-trend-grid-line" x1={left} x2={width - right} y1={yRatio(level)} y2={yRatio(level)} />
           <text className="main-trend-axis-label" x={left - 8} y={yRatio(level) + 4} textAnchor="end">{formatNumber(level * 100)}%</text>
@@ -131,7 +122,7 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
           fill="transparent"
           tabIndex="0"
           role="img"
-          aria-label={`${formatDay(day.summary_date)} 위험 ${formatPercent(day.risk_ratio)}, 부정 ${formatPercent(day.negative_ratio)}`}
+          aria-label={`${formatDay(day.summary_date)} 위험 ${populationLabel} ${formatPercent(day.risk_ratio)}, 부정 ${populationLabel} ${formatPercent(day.negative_ratio)}`}
           onPointerEnter={() => setHoveredIndex(index)}
           onFocus={() => setHoveredIndex(index)}
           onBlur={() => setHoveredIndex(null)}
@@ -140,13 +131,8 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
       </svg>
       {hoveredPoint && <div className={`main-trend-tooltip ${tooltipEdge} ${tooltipBelow ? "below" : "above"}`} style={{ left: `${hoveredX / width * 100}%`, top: `${tooltipY}px` }} role="tooltip">
         <strong>{formatDay(hoveredPoint.summary_date)}</strong>
-<<<<<<< Updated upstream
-        <span className="risk">위험 판정 <b>{formatPercent(hoveredPoint.risk_ratio)} · {formatNumber(hoveredPoint.risk_count)}건</b></span>
-        <span className="negative">부정 기사 <b>{formatPercent(hoveredPoint.negative_ratio)} · {formatNumber(hoveredPoint.negative_count)}건</b></span>
-=======
-        <span className="risk">위험 {populationLabel} <b>{formatPercent(hoveredPoint.risk_ratio)} · {formatNumber(hoveredPoint.display_risk_count)}건</b></span>
-        <span className="negative">부정 {populationLabel} <b>{formatPercent(hoveredPoint.negative_ratio)} · {formatNumber(hoveredPoint.display_negative_count)}건</b></span>
->>>>>>> Stashed changes
+        <span className="risk">위험 {populationLabel} <b>{formatPercent(hoveredPoint.risk_ratio)} · {formatNumber(hoveredPoint.risk_count)}건</b></span>
+        <span className="negative">부정 {populationLabel} <b>{formatPercent(hoveredPoint.negative_ratio)} · {formatNumber(hoveredPoint.negative_count)}건</b></span>
       </div>}
     </div>
   </div>;
