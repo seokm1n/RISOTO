@@ -27,6 +27,7 @@ from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.database import SessionLocal
+from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.models import (
     Company,
     CompanyArticleMatch,
@@ -286,38 +287,6 @@ def _no_evidence_content(event: RiskEvent, generation_kind: str, target_company:
     }
 
 
-def _unknown_type_content(event: RiskEvent, generation_kind: str, target_company: Company) -> dict:
-    """상위 유형이 비어 있을 때 저장할 내용. LLM을 부르지 않는다.
-
-    대응 세부 유형(13)은 탐지 유형(8)의 자식 중에서만 고르는 구조라, 부모를 모르면
-    고를 후보 자체가 없다. 예전 폴백(reputation_consumer)은 후보를 만들어 주는 대신
-    근거 없는 유형을 확정해 등급·법령·원칙까지 그 유형으로 끌고 갔다.
-    """
-    return {
-        "engine": "response_engine",
-        "status": "유형불명_보류",
-        "generation_kind": generation_kind,
-        "main_company_name": target_company.name,
-        "needs_review": True,
-        "review_reason": (
-            "이 위기 이벤트에 탐지 유형(primary_type)이 없어 대응방안을 생성하지 않았습니다. "
-            "대응 세부 유형은 탐지 유형의 하위에서만 고를 수 있으므로, 상위 분류가 채워진 뒤에 "
-            "다시 생성해야 합니다."
-        ),
-        "detection": {
-            "risk_probability": event.risk_probability,
-            "severity": event.severity,
-            "model_version": event.model_version,
-        },
-        "scenarios": [],
-        "recommendation": None,
-        "evidence": [],
-        "regulations": [],
-        "precedents": [],
-        "usage": {"input_tokens": 0, "output_tokens": 0, "calls": 0},
-    }
-
-
 def _industry_name(db, company: Company) -> str | None:
     """Company.industry_id -> 업종명. 조회 실패는 치명적이지 않으므로 None으로 넘긴다."""
     if not getattr(company, "industry_id", None):
@@ -430,10 +399,6 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             # 동종 경로는 상위 유형에 매이지 않는다(impact.analyze가 13개 전체에서 고른다).
             # 그래서 primary_type이 비어 있어도 그대로 진행한다.
             content, allowed_urls, model_name = _build_peer_content(db, payload)
-        elif _detection_scores(event) is None:
-            # 메인 경로는 상위 유형의 자식 중에서만 고른다. 부모가 없으면 후보가 없다.
-            content = _unknown_type_content(event, generation_kind, target_company)
-            allowed_urls, model_name = set(), response_model()
         else:
             content, allowed_urls, model_name = _build_content(
                 db, payload, event, generation_kind, target_company
@@ -463,34 +428,26 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
 
 def _safety_hold(cls: dict, event: RiskEvent, generation_kind: str,
                  target_company: Company, usage: dict) -> dict | None:
-    """분류 단계 안전장치에 걸리면 저장할 내용을 만든다. 통과하면 None."""
-    if not cls.get("is_actionable", True):
-        status = "대응불필요_종료"
-        reason = (
-            "분류 단계에서 이 기업이 대응할 사안이 아니라고 판단했습니다. "
-            "같은 이름의 다른 대상이거나, 다른 회사 사건에 곁들여 언급된 경우가 여기에 해당합니다. "
-            f"판단 근거: {cls.get('reason', '')}"
-        )
-    elif not cls.get("parent_fits", True):
-        suggested = cls.get("suggested_parent")
-        status = "유형불일치_보류"
-        reason = (
-            "탐지 단계에서 내려온 상위 유형이 이 사안과 맞지 않는다고 판단했습니다. "
-            + (f"분류기가 제시한 상위 유형은 {suggested}입니다. " if suggested else "")
-            + "대응 세부 유형은 상위 유형의 하위에서만 고를 수 있어 그대로 진행하면 "
-            "맞지 않는 유형의 초안이 나옵니다. "
-            f"판단 근거: {cls.get('reason', '')}"
-        )
-    else:
+    """분류 단계 안전장치에 걸리면 저장할 내용을 만든다. 통과하면 None.
+
+    **유형 불일치는 더 이상 보류 사유가 아니다.** 후보가 13개 전체가 되면서 상위가
+    틀려도 맞는 유형을 고를 수 있게 됐다. 불일치 사실은 classification에 기록해
+    탐지 단계 오류율을 계속 잰다.
+    """
+    if cls.get("is_actionable", True):
         return None
 
     return {
         "engine": "response_engine",
-        "status": status,
+        "status": "대응불필요_종료",
         "generation_kind": generation_kind,
         "main_company_name": target_company.name,
         "needs_review": True,
-        "review_reason": reason,
+        "review_reason": (
+            "분류 단계에서 이 기업이 대응할 사안이 아니라고 판단했습니다. "
+            "같은 이름의 다른 대상이거나, 다른 회사 사건에 곁들여 언급된 경우가 여기에 해당합니다. "
+            f"판단 근거: {cls.get('reason', '')}"
+        ),
         "classification": cls,
         "detection": {
             "risk_probability": event.risk_probability,
@@ -807,6 +764,18 @@ def enqueue_response_draft(risk_event_id: int, force: bool = False, auto: bool =
                 event.response_generation_status = status
                 event.response_generation_error = error
                 status_db.commit()
+
+    # 폐기·기각된 사건에는 만들지 않는다. legacy_candidate는 스토리 재군집으로 밀려난
+    # 사건이라 목록·리뷰 화면에서도 제외되는 상태다(NON_REPORTABLE_RISK_STATUSES).
+    # 실측상 v3 초안 66건 중 39건이 이 상태의 이벤트에 붙어 있었다.
+    with SessionLocal() as gate_db:
+        gate_event = gate_db.get(RiskEvent, risk_event_id)
+        if gate_event is not None and gate_event.status in NON_REPORTABLE_RISK_STATUSES:
+            logger.info(
+                "폐기된 사건이라 대응방안을 생성하지 않습니다 (risk_event=%s, status=%s)",
+                risk_event_id, gate_event.status,
+            )
+            return
 
     # 자동 생성만 스위치로 막는다. 담당자가 버튼으로 요청한 건은 의도가 명확하므로
     # 끄지 않는다. 생성 경로가 story_risk와 risk_analysis 두 갈래이고 서로 배타적이라
