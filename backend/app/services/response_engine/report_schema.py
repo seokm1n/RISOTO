@@ -43,6 +43,9 @@ REPORT_SCHEMA = {
         "type": "object",
         "properties": {
             "scenario_stance": {"type": "string"},
+            # 탭에 걸리는 짧은 이름. stance 코드(선제_공개 등)는 내부 용어라 담당자가
+            # 무엇이 다른지 알 수 없다. 사람이 읽을 이름을 모델이 직접 짓게 한다.
+            "scenario_headline": {"type": "string"},
             "scenario_tradeoff": {"type": "string"},
             "summary_points": {"type": "array", "items": {"type": "string"}},
             "judgment_basis": {"type": "string"},
@@ -106,6 +109,7 @@ REPORT_SCHEMA = {
         },
         "required": [
             "scenario_stance",
+            "scenario_headline",
             "scenario_tradeoff",
             "summary_points",
             "judgment_basis",

@@ -1,0 +1,105 @@
+{
+ "alert_id": "CPNG-20260825-01",
+ "company_id": "coupang",
+ "company_name": "쿠팡",
+ "industry": "이커머스 플랫폼",
+ "main_services": "로켓배송, 오픈마켓, 쿠팡이츠",
+ "window_start": "2026-08-18",
+ "window_end": "2026-08-25",
+ "snapshot_at": "2026-08-25T09:00:00+09:00",
+ "crisis_probability": 0.87,
+ "model_version": "lgbm_v1",
+ "attribution": [
+  {
+   "feature": "negative_ratio_7d",
+   "value": 0.71,
+   "baseline": 0.22,
+   "percentile": 99.1,
+   "direction": "up"
+  },
+  {
+   "feature": "daily_growth_rate",
+   "value": 4.2,
+   "baseline": 1.0,
+   "percentile": 98.4,
+   "direction": "up"
+  }
+ ],
+ "mention_count": 412,
+ "baseline_mean": 98.0,
+ "negative_ratio": 0.71,
+ "negative_ratio_baseline": 0.22,
+ "source_mix": {
+  "youtube": 0.62,
+  "news": 0.38
+ },
+ "n_unique_channels": 14,
+ "n_mentions_7d": 412,
+ "baseline_days": 180,
+ "is_warmup": false,
+ "daily_series": [
+  {
+   "date": "2026-08-22",
+   "mention_count": 61
+  },
+  {
+   "date": "2026-08-23",
+   "mention_count": 118
+  },
+  {
+   "date": "2026-08-24",
+   "mention_count": 203
+  }
+ ],
+ "mentions": [
+  {
+   "mention_id": "m_1",
+   "source": "youtube",
+   "text": "정산금이 두 달째 안 들어옵니다. 셀러들 다 난리났어요",
+   "url": "https://youtube.com/watch?v=a",
+   "published_at": "2026-08-24T21:04:00+09:00",
+   "like_count": 340,
+   "reply_count": 51,
+   "sentiment": "negative"
+  },
+  {
+   "mention_id": "m_2",
+   "source": "news",
+   "text": "입점 판매자들이 정산 지연으로 집단 소송을 준비 중인 것으로 확인됐다",
+   "url": "https://news.example/1",
+   "published_at": "2026-08-24T10:00:00+09:00",
+   "sentiment": "negative"
+  },
+  {
+   "mention_id": "m_3",
+   "source": "youtube",
+   "text": "수수료는 올리면서 정산은 미루는 건 너무하지 않나요",
+   "url": "https://youtube.com/watch?v=b",
+   "published_at": "2026-08-23T18:22:00+09:00",
+   "like_count": 87,
+   "reply_count": 12,
+   "sentiment": "negative"
+  },
+  {
+   "mention_id": "m_4",
+   "source": "youtube",
+   "text": "저는 지난달 정산 정상적으로 받았는데 케이스마다 다른가봐요",
+   "url": "https://youtube.com/watch?v=c",
+   "published_at": "2026-08-23T11:00:00+09:00",
+   "like_count": 5,
+   "sentiment": "neutral"
+  },
+  {
+   "mention_id": "m_5",
+   "source": "news",
+   "text": "정산 지연 사태로 입점사 대금 미지급 규모가 확대되고 있다는 지적이 나온다",
+   "url": "https://news.example/2",
+   "published_at": "2026-08-22T09:00:00+09:00",
+   "sentiment": "negative"
+  }
+ ],
+ "role": "peer",
+ "my_company": "11번가",
+ "main_company_industry": "이커머스 플랫폼(오픈마켓)",
+ "main_company_services": "오픈마켓 중개, 슈팅배송, 아마존 글로벌스토어"
+}

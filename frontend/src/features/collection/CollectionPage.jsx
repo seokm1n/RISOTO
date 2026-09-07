@@ -18,7 +18,25 @@ import {
   sentimentText,
 } from "../../shared/presentation";
 
-const INCIDENT_DISPLAY_LIMIT = 5;
+const INCIDENT_PAGE_SIZE = 100;
+
+async function loadAllCollectionIncidents(status) {
+  const firstResponse = await api.get(`/collection-incidents?status=${status}&page=1&page_size=${INCIDENT_PAGE_SIZE}`);
+  const firstItems = firstResponse.data?.items ?? [];
+  const total = firstResponse.data?.total ?? firstItems.length;
+  const pageCount = Math.ceil(total / INCIDENT_PAGE_SIZE);
+  if (pageCount <= 1) return firstItems;
+
+  const remainingResponses = await Promise.all(
+    Array.from({ length: pageCount - 1 }, (_, index) => (
+      api.get(`/collection-incidents?status=${status}&page=${index + 2}&page_size=${INCIDENT_PAGE_SIZE}`)
+    )),
+  );
+  return [
+    ...firstItems,
+    ...remainingResponses.flatMap((response) => response.data?.items ?? []),
+  ];
+}
 
 function incidentReasonText(incident) {
   const detail = (incident.error_summary ?? "").toLowerCase();
@@ -34,23 +52,19 @@ function incidentReasonText(incident) {
 
 function CollectionIncidentSummary({ companies, health, incidents }) {
   const companyNames = useMemo(() => new Map(companies.map((company) => [company.id, company.name])), [companies]);
-  const currentCompanyIds = useMemo(() => new Set(companies.map((company) => company.id)), [companies]);
   const failingSources = (health?.sources ?? []).filter((source) => ["partial", "down"].includes(source.status));
-  const failingSourceIds = new Set(failingSources.map((source) => source.source));
-  const visibleIncidents = incidents.filter((incident) => {
-    const affectsCurrentCompany = (incident.affected_company_ids ?? []).some((id) => currentCompanyIds.has(id));
-    const affectsFailingSource = (incident.sources ?? []).some((source) => failingSourceIds.has(source));
-    return affectsCurrentCompany && affectsFailingSource;
-  }).slice(0, INCIDENT_DISPLAY_LIMIT);
   const status = health?.status ?? "unknown";
   return <section className={`collection-incident-summary ${status}`} aria-live="polite">
     <span className="collection-incident-indicator" aria-hidden="true" />
     <div className="collection-incident-details">
-      {!health ? <article><strong>수집 장애 상태를 확인하고 있습니다.</strong></article> : visibleIncidents.length ? visibleIncidents.map((incident) => {
-        const affectedNames = (incident.affected_company_ids ?? []).map((id) => companyNames.get(id)).filter(Boolean);
+      {!health ? <article><strong>수집 장애 상태를 확인하고 있습니다.</strong></article> : incidents.length ? incidents.map((incident) => {
+        const affectedCompanyIds = incident.affected_company_ids ?? [];
+        const affectedNames = affectedCompanyIds.map((id) => companyNames.get(id)).filter(Boolean);
         const affectedText = affectedNames.length
           ? affectedNames.join(", ")
-          : `영향 기업 ${formatNumber(incident.affected_company_ids?.length)}곳`;
+          : affectedCompanyIds.length
+            ? `영향 기업 ${formatNumber(affectedCompanyIds.length)}곳`
+            : "전체 수집 시스템";
         const sourceText = (incident.sources ?? []).map((source) => SOURCE_LABELS[source] ?? source).join(", ") || "수집기";
         return <article className="collection-incident-item" key={incident.id}>
           <div><strong>{incidentReasonText(incident)}</strong><span className={`collection-incident-status ${incident.status}`}>{INCIDENT_STATUS_LABELS[incident.status] ?? incident.status}</span></div>
@@ -58,7 +72,6 @@ function CollectionIncidentSummary({ companies, health, incidents }) {
           {incident.next_retry_at && <small>다음 재시도 {formatDate(incident.next_retry_at)} · 현재까지 {formatNumber(incident.retry_count)}회 재시도</small>}
         </article>;
       }) : failingSources.length ? failingSources.map((source) => <article className="collection-incident-item" key={source.source}><div><strong>{incidentReasonText({ error_summary: source.last_error_message, sources: [source.source] })}</strong><span className={`collection-incident-status ${source.status === "down" ? "open" : "retrying"}`}>{HEALTH_STATUS_LABELS[source.status] ?? source.status}</span></div><p>{source.consecutive_failures > 0 ? `연속 실패 ${formatNumber(source.consecutive_failures)}회` : "최근 수집 구간 일부 요청 실패"} · 마지막 시도 {formatDate(source.last_attempt_at)}</p></article>) : <article><strong>현재 확인된 수집 장애가 없습니다.</strong><p>모든 수집기가 정상적으로 응답하고 있습니다.</p></article>}
-      {health && health.open_incident_count > visibleIncidents.length && <small className="collection-incident-more">표시된 항목 외 열린 장애 {formatNumber(health.open_incident_count - visibleIncidents.length)}건이 더 있습니다.</small>}
     </div>
   </section>;
 }
@@ -146,16 +159,16 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
 
   const load = useCallback(async () => {
     try {
-      const [companyResponse, healthResponse, openIncidentsResponse, retryingIncidentsResponse] = await Promise.all([
+      const [companyResponse, healthResponse, openIncidents, retryingIncidents] = await Promise.all([
         api.get("/companies"),
         api.get("/collection-health"),
-        api.get(`/collection-incidents?status=open&page=1&page_size=${INCIDENT_DISPLAY_LIMIT}`),
-        api.get(`/collection-incidents?status=retrying&page=1&page_size=${INCIDENT_DISPLAY_LIMIT}`),
+        loadAllCollectionIncidents("open"),
+        loadAllCollectionIncidents("retrying"),
       ]);
       const nextCompanies = companyResponse.data;
       const summaryResults = await Promise.allSettled(nextCompanies.map((company) => api.get(`/companies/${company.id}/monitoring`)));
       setCompanies(nextCompanies); setHealth(healthResponse.data);
-      setIncidents([...(openIncidentsResponse.data?.items ?? []), ...(retryingIncidentsResponse.data?.items ?? [])].sort((left, right) => new Date(right.last_seen_at) - new Date(left.last_seen_at)));
+      setIncidents([...openIncidents, ...retryingIncidents].sort((left, right) => new Date(right.last_seen_at ?? right.detected_at) - new Date(left.last_seen_at ?? left.detected_at)));
       setSummaries(Object.fromEntries(summaryResults.flatMap((result, index) => result.status === "fulfilled" ? [[nextCompanies[index].id, result.value.data]] : [])));
       setError(null);
     } catch (requestError) { setError(getErrorMessage(requestError)); }
@@ -208,7 +221,10 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
   const renderCompanyRow = (company) => {
     const summary = summaries[company.id];
     const canToggle = ["backfilling", "warming", "active", "paused"].includes(company.monitoring_status);
-    return <article className="collection-company-row" key={company.id}>
+    return <article className="collection-company-row" onClick={(event) => {
+      if (event.target.closest("button, a, input, select, textarea, summary, [role='button'], [role='link']")) return;
+      setArticleCompany(company);
+    }} key={company.id}>
       <div><span className={`status-dot ${company.monitoring_status}`} /><div><button className="collection-company-name" type="button" onClick={() => setArticleCompany(company)}>{company.name}</button><small>{company.industry_name} · {MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</small></div></div>
       <dl><div><dt>정제 기사</dt><dd>{formatNumber(summary?.article_count)}</dd></div><div><dt>분석 완료</dt><dd>{formatNumber(summary?.analyzed_count)}</dd></div><div><dt>마지막 수집</dt><dd>{formatDate(summary?.last_collected_at)}</dd></div></dl>
       <div className="collection-row-actions"><button type="button" onClick={() => onOpenCompany(company.id)}>분석 통계 보기</button>{canToggle && <button className={`collection-toggle ${company.monitoring_status === "paused" ? "start" : "stop"}`} type="button" onClick={() => changeCompany(company)} disabled={Boolean(busy)}>{busy === company.id ? "처리 중..." : company.monitoring_status === "paused" ? "수집 재개" : "수집 중지"}</button>}</div>
@@ -219,7 +235,7 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
     <div className="workspace-head"><div><p>데이터 수집은 15분마다 실행되고 화면은 30초마다 갱신됩니다.</p></div></div>
     {error && <div className="notice error">{error}</div>}
     <div className="collection-summary-grid">
-      <section className="panel collection-health-card"><PanelTitle kicker="COLLECTOR HEALTH" title="수집 시스템" />{health ? <><div className={`health-state ${health.status}`}><strong>{health.status === "healthy" ? "정상" : health.status === "degraded" ? "일부 장애" : health.status === "unavailable" ? "수집 불가" : "확인 전"}</strong><span>장애 수집기 {formatNumber(unhealthySourceCount)}곳{health.open_incident_count > 0 ? ` · 열린 장애 ${formatNumber(health.open_incident_count)}건` : ""}</span></div><div className="source-health-list">{health.sources.map((source) => <div key={source.source}><span>{SOURCE_LABELS[source.source] ?? source.source}</span><strong className={source.status}>{HEALTH_STATUS_LABELS[source.status] ?? source.status}</strong><small>연속 실패 {source.consecutive_failures}회</small></div>)}</div></> : <p className="panel-empty">수집기 상태를 불러오는 중입니다.</p>}</section>
+      <section className="panel collection-health-card"><PanelTitle kicker="COLLECTOR HEALTH" title="수집 시스템" />{health ? <><div className={`health-state ${health.status}`}><strong>{health.status === "healthy" ? "정상" : health.status === "degraded" ? "일부 장애" : health.status === "unavailable" ? "수집 불가" : "확인 전"}</strong><span>오류 발생 수집기 {formatNumber(unhealthySourceCount)}개{health.open_incident_count > 0 ? ` · 미해결 장애 ${formatNumber(health.open_incident_count)}건` : ""}</span></div><div className="source-health-list">{health.sources.map((source) => <div key={source.source}><span>{SOURCE_LABELS[source.source] ?? source.source}</span><strong className={source.status}>{HEALTH_STATUS_LABELS[source.status] ?? source.status}</strong><small>연속 실패 {source.consecutive_failures}회</small></div>)}</div></> : <p className="panel-empty">수집기 상태를 불러오는 중입니다.</p>}</section>
       <section className="panel collection-control-card">
         <PanelTitle kicker="COLLECTION CONTROL" title="전체 수집 현황" />
         <div className="collection-status-row">
@@ -234,7 +250,7 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
       </section>
     </div>
     <CollectionIncidentSummary companies={companies} health={health} incidents={incidents} />
-    <section className="panel collection-company-section"><PanelTitle kicker="COMPANY STREAMS" title="기업별 수집 현황" /><p className="collection-company-guide">기업명을 누르면 해당 기업의 수집된 기사를 볼 수 있습니다.</p>{loading ? <p className="empty-state">수집 현황을 불러오는 중입니다.</p> : <div className="collection-stream-groups">{companyGroups.map((group) => <section className={`collection-stream-group ${group.role}`} key={group.role}><header><h3>{group.title}</h3></header>{group.companies.length ? <div className="collection-company-list">{group.companies.map(renderCompanyRow)}</div> : <p className="collection-group-empty">등록된 {group.title}이 없습니다.</p>}</section>)}</div>}</section>
+    <section className="panel collection-company-section"><PanelTitle kicker="COMPANY STREAMS" title="기업별 수집 현황" /><p className="collection-company-guide">기업 박스를 누르면 해당 기업의 수집된 기사를 볼 수 있습니다.</p>{loading ? <p className="empty-state">수집 현황을 불러오는 중입니다.</p> : <div className="collection-stream-groups">{companyGroups.map((group) => <section className={`collection-stream-group ${group.role}`} key={group.role}><header><h3>{group.title}</h3></header>{group.companies.length ? <div className="collection-company-list">{group.companies.map(renderCompanyRow)}</div> : <p className="collection-group-empty">등록된 {group.title}이 없습니다.</p>}</section>)}</div>}</section>
     {articleCompany && <CollectedArticlesDialog company={articleCompany} days={initialArticleDays} onClose={() => setArticleCompany(null)} />}
     {confirmationDialog}
   </section>;

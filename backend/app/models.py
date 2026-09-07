@@ -526,6 +526,26 @@ class RiskEvent(Base):
     )
 
 
+class RiskNotificationRead(Base):
+    """사용자별 위험 알림 읽음 상태를 새로고침과 로그인 사이에도 보존한다."""
+
+    __tablename__ = "risk_notification_reads"
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    risk_event_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("risk_events.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    read_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class CollectionAttempt(Base):
     """수집 작업에서 제공자별 성공 여부와 오류를 감사 가능하게 기록한다."""
 

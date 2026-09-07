@@ -20,7 +20,7 @@ from app.models import (
     RiskEventArticle,
     StoryCluster,
 )
-from app.routers.notifications import list_notifications
+from app.routers.notifications import _mark_risk_events_read, list_notifications
 from app.services.model_governance import evaluate_model_promotion
 from tests.auth_helpers import auth_for_company
 
@@ -324,6 +324,20 @@ class NotificationDatabaseTests(unittest.TestCase):
         )
         self.assertEqual(response.total, len(response.items))
         self.assertEqual(
+            response.unread_count,
+            sum(not item.is_read for item in response.items),
+        )
+        self.assertFalse(
+            next(item for item in response.items if item.id == f"risk:{open_event.id}").is_read
+        )
+        self.assertFalse(
+            next(
+                item
+                for item in response.items
+                if item.id == f"risk:{monitoring_event.id}"
+            ).is_read
+        )
+        self.assertEqual(
             response.risk_count,
             sum(item.type == "risk" for item in response.items),
         )
@@ -332,12 +346,30 @@ class NotificationDatabaseTests(unittest.TestCase):
             sum(item.type == "model_promotion_ready" for item in response.items),
         )
         self.assertEqual(
-            [item.created_at for item in response.items],
-            sorted((item.created_at for item in response.items), reverse=True),
+            [item.id for item in response.items],
+            [
+                item.id
+                for item in sorted(
+                    response.items,
+                    key=lambda item: (not item.is_read, item.created_at, item.id),
+                    reverse=True,
+                )
+            ],
         )
         self.assertEqual(open_event.status, "open")
         self.assertEqual(eligible.status, "candidate")
         self.assertEqual(eligible.thresholds, {"unchanged": True})
+
+        _mark_risk_events_read(self.db, self.auth.user_id, [open_event.id])
+        _mark_risk_events_read(self.db, self.auth.user_id, [open_event.id])
+        self.db.flush()
+        read_response = list_notifications(self.db, self.auth)
+        read_item = next(
+            item for item in read_response.items
+            if item.risk_event_id == open_event.id
+        )
+        self.assertTrue(read_item.is_read)
+        self.assertEqual(read_response.unread_count, response.unread_count - 1)
 
 
 if __name__ == "__main__":
