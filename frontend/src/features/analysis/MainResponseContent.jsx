@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { formatDate } from "../../shared/presentation";
+import { formatDate, formatRiskProbability } from "../../shared/presentation";
 
 const HOLD_STATUS = {
   근거부족_보류: {
@@ -171,6 +171,49 @@ function summaryRows(points, fallbackLabel) {
   });
 }
 
+// tier.py의 3단계 등급 코드(TIER_ORDER)를 화면 표시용 라벨·색조로 옮긴다.
+const TIER_LABELS = { T1_관찰: "관찰", T2_주시: "주시", T3_긴급: "긴급" };
+const TIER_TONES = { T1_관찰: "watch", T2_주시: "caution", T3_긴급: "urgent" };
+
+// 동종 기업 화면(PeerRecommendationContent)의 위험 요약 박스와 같은 자리에,
+// 우리 기업 사건에서도 현재 위험 내용을 한눈에 보여준다.
+function RiskSummaryHeader({ content, risk, scenario }) {
+  if (!content.risk_type_label && !content.tier) return null;
+  const report = scenario?.report ?? {};
+  const rows = summaryRows(report.summary_points ?? []);
+  const headline = rows[0]?.text
+    || report.risk_assessment?.primary_risks?.[0]
+    || "생성된 대응안의 상황 요약을 확인해 주세요.";
+  const tone = TIER_TONES[content.tier] ?? "caution";
+  const tierLabel = TIER_LABELS[content.tier] ?? humanize(content.tier);
+  const facts = [
+    ["위험 유형", content.risk_type_label],
+    ["대응 등급", tierLabel],
+    ["위험도", Number.isFinite(risk?.risk_probability) ? formatRiskProbability(risk.risk_probability) : null],
+    ["대응 대상", "우리 기업 사건"],
+  ].filter(([, value]) => value);
+
+  return (
+    <section className={`response-command-card ${tone}`}>
+      <div className="response-command-copy">
+        <span className="response-ui-kicker">위험 요약</span>
+        <div className="response-command-title">
+          <span className={`response-priority-pill ${tone}`}>{tierLabel || "확인 필요"}</span>
+          <h4>{content.risk_type_label ? `${content.risk_type_label} 위험` : "위험 사건 대응"}</h4>
+        </div>
+        <p>{headline}</p>
+      </div>
+      {facts.length > 0 && (
+        <dl className="response-command-facts">
+          {facts.map(([name, value]) => (
+            <div key={name}><dt>{name}</dt><dd>{value}</dd></div>
+          ))}
+        </dl>
+      )}
+    </section>
+  );
+}
+
 // 선택한 안이 무엇을 하자는 것인지 한 줄로 먼저 보여 준다. 대응 방향 선택 탭과 같은
 // 행에 놓아, 고른 결과가 어느 카드인지 눈으로 이어지게 한다.
 function BriefCard({ scenario }) {
@@ -259,7 +302,7 @@ function PlanSection({ report }) {
 
   let order = 0;
   return (
-    <section className="response-workboard">
+    <section className="response-workboard response-timeline-board">
       <header className="response-section-heading">
         <div>
           <h4>실행 계획</h4>
@@ -268,40 +311,48 @@ function PlanSection({ report }) {
       {bands.length === 0 && (
         <p className="response-empty-note">생성된 실행 과제가 없습니다.</p>
       )}
-      <div className="response-time-groups">
+      <ol className="response-timeline">
         {bands.map((band) => (
-          <article className="response-time-group" key={band.label}>
-            <header>
+          <li className="response-timeline-band" key={band.label}>
+            <div className="response-timeline-marker">
+              <span className="response-timeline-dot" aria-hidden="true" />
               <strong>{band.label}</strong>
               <span>{band.items.length}개</span>
-            </header>
-            <ol>
+            </div>
+            <div className="response-timeline-tasks">
               {band.items.map((item, index) => {
                 order += 1;
                 return (
-                  <li key={`${band.label}-${index}`}>
+                  <article className="response-timeline-task" key={`${band.label}-${index}`}>
                     <span className="response-task-number">{String(order).padStart(2, "0")}</span>
                     <div className="response-task-copy">
                       <strong>{item.task}</strong>
                       <small>{item.owner ? `담당 : ${item.owner}` : "담당 부서 확인 필요"}</small>
                     </div>
                     <span className="response-task-due">{deadlineLabel(item.deadline_hours)}</span>
-                  </li>
+                  </article>
                 );
               })}
-            </ol>
-          </article>
+            </div>
+          </li>
         ))}
-      </div>
+      </ol>
     </section>
   );
 }
 
+// 대응전략 생성이 이 화면의 핵심 산출물이라 접어 두지 않고 메인으로 바로 보여준다.
 function StrategySection({ report }) {
   const strategies = report?.strategies ?? [];
   if (!strategies.length) return null;
   return (
-    <FoldSection title={`대응 전략 ${strategies.length}건`}>
+    <section className="response-workboard response-strategy-main">
+      <header className="response-section-heading">
+        <div>
+          <span>대응전략 생성</span>
+          <h4>가능한 대응 방향 {strategies.length}가지</h4>
+        </div>
+      </header>
       <div className="response-strategy-grid">
         {strategies.map((strategy, index) => {
           const bullets = toBullets(strategy.detail);
@@ -325,7 +376,7 @@ function StrategySection({ report }) {
           );
         })}
       </div>
-    </FoldSection>
+    </section>
   );
 }
 
@@ -549,7 +600,7 @@ export function NoEvidenceNotice({ content }) {
   );
 }
 
-export default function MainResponseContent({ content }) {
+export default function MainResponseContent({ content, risk }) {
   const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
   const initialIndex = Math.max(
     scenarios.findIndex((scenario) => scenario.stance === content.selected_stance),
@@ -566,6 +617,7 @@ export default function MainResponseContent({ content }) {
 
   return (
     <div className="response-draft response-draft-v3 response-operations-view">
+      <RiskSummaryHeader content={content} risk={risk} scenario={current} />
       <ScenarioSelector
         scenarios={scenarios}
         active={active}
@@ -574,20 +626,24 @@ export default function MainResponseContent({ content }) {
       />
 
       {current ? (
-        <div className="response-plan-content" role="tabpanel">
-          <SituationSection scenario={current} />
-          <PlanSection report={report} />
-          <div className="response-fold-stack">
+        <div className="response-plan-columns" role="tabpanel">
+          <div className="response-plan-main">
             <StrategySection report={report} />
-            <FollowUpSection report={report} />
-            <AppendixSection content={content} report={report} />
-            <VerificationNotice verification={current.verification} />
+            <SituationSection scenario={current} />
           </div>
-          <LimitationsNotice report={report} />
+          <div className="response-plan-side">
+            <PlanSection report={report} />
+            <div className="response-fold-stack">
+              <FollowUpSection report={report} />
+              <AppendixSection content={content} report={report} />
+              <VerificationNotice verification={current.verification} />
+            </div>
+          </div>
         </div>
       ) : (
         <p className="response-empty-state">생성된 대응안이 없습니다.</p>
       )}
+      {current && <LimitationsNotice report={report} />}
 
     </div>
   );

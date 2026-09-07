@@ -266,6 +266,8 @@ _FEATURE_LABELS = {
     "n_unique_channels": "서로 다른 채널 수",
     "diversity_ratio": "작성자 다양성",
     "video_hhi": "특정 채널 쏠림 정도",
+    "lightgbm_risk_probability": "위험 탐지 모델이 낸 확률",
+    "negative_probability": "부정적 반응 비율(집계)",
 }
 
 

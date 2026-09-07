@@ -839,33 +839,45 @@ def list_risk_judgments_page(
                 StoryRiskScore.model_version == story_runtime.version,
             )
     non_risk_story_ids = all_non_risk_story_ids
+    # 이 요약(summary.risk)은 지금까지 days를 완전히 무시하고 항상 전체 기간을 셌지만,
+    # 바로 아래에서 조회 기간 선택에 따라 실제로 뿌려주는 목록(list_risk_events_page,
+    # view="all")은 이미 days를 반영하고 있었다 -- 같은 화면 안에서 요약 숫자와 목록
+    # 개수가 서로 다른 기준으로 계산되고 있었다. AI 리스크 브리핑(메인화면)의 최근 N일
+    # 집계와도 이름이 같아 더 혼동됐다(쿠팡 기준: 전체기간 37건 vs 최근7일 17건).
+    # list_risk_events_page의 "all" 분기와 정확히 같은 시각 기준(최근 활동 시각의
+    # coalesce)을 써서, 최소한 이 화면 안에서는 요약과 목록이 항상 일치하게 맞춘다.
+    risk_time_filters = event_filters
     if days is not None:
         _, cutoff = seoul_period_start(days)
         non_risk_story_ids = non_risk_story_ids.where(
             eligible_stories.c.last_evidence_at >= cutoff
         )
+        recent_activity = func.coalesce(
+            RiskEvent.last_evidence_at,
+            RiskEvent.last_seen_at,
+            RiskEvent.opened_at,
+            RiskEvent.detected_at,
+        )
+        risk_time_filters = (*event_filters, recent_activity >= cutoff)
 
     active_count = db.scalar(
         select(func.count(RiskEvent.id)).where(
-            *event_filters,
+            *risk_time_filters,
             RiskEvent.status.in_(active_statuses),
         )
     ) or 0
     history_count = db.scalar(
         select(func.count(RiskEvent.id)).where(
-            *event_filters,
+            *risk_time_filters,
             RiskEvent.status == "closed",
         )
-    ) or 0
-    non_risk_count = db.scalar(
-        select(func.count()).select_from(all_non_risk_story_ids.subquery())
     ) or 0
     filtered_non_risk_count = db.scalar(
         select(func.count()).select_from(non_risk_story_ids.subquery())
     ) or 0
     summary = RiskJudgmentSummaryRead(
         risk=active_count + history_count,
-        non_risk=non_risk_count,
+        non_risk=filtered_non_risk_count,
         active=active_count,
         history=history_count,
     )

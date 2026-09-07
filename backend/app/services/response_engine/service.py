@@ -22,8 +22,9 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
+from datetime import timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from app.config import get_settings
 from app.database import SessionLocal
@@ -31,11 +32,13 @@ from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES
 from app.models import (
     Company,
     CompanyArticleMatch,
+    CompanyFeatureWindow,
     NewsArticle,
     ResponseDraft,
     RiskEvent,
     RiskEventArticle,
 )
+from app.services.risk_analysis import resolve_production_risk_detector, risk_detector_percentile
 from app.services.risk_ground_truth import authoritative_risk_label
 
 from . import classify, evidence, generate, impact, recommend, tier, verify
@@ -96,6 +99,75 @@ def clean_text(text: str | None) -> str:
     return re.sub(r"\s{2,}", " ", html.unescape(_HTML_TAG.sub("", text or ""))).strip()
 
 
+ATTRIBUTION_BASELINE_WINDOW_DAYS = 7
+
+
+def _attribution_from_window(db, window: CompanyFeatureWindow | None) -> list[dict]:
+    """모델이 이미 낸 출력값을 [정량 근거]로 옮긴다 (evidence.py §5).
+
+    2026-09-07까지는 이 리스트가 항상 비어 있었다 -- 구조(Evidence.attribution,
+    Attribution 데이터클래스)는 있는데 채워 넣는 코드가 없어서, IsolationForest·
+    LightGBM·감성분석 모델이 실제로 낸 숫자가 하나도 LLM에 전달되지 않았다.
+
+    IsolationForest(anomaly_score/percentile)와 LightGBM(risk_probability)은 여기서
+    다시 계산하지 않는다 -- build_feature_window가 매 15분 창마다 이미 계산해 window에
+    저장해둔 값을 그대로 옮긴다. LightGBM의 percentile만 risk_detector_percentile로
+    새로 구한다(모델을 다시 실행하지 않고 이미 계산된 확률 하나를 population 기준으로
+    다시 매핑하는 것뿐이라 비용이 낮다 -- 응답 초안 생성은 사건당 한 번만 일어난다).
+    감성(negative_probability)은 창 하나만으로는 "평소"를 알 수 없어서, 같은 기업의
+    직전 7일 평균과 비교해 새로 계산한다.
+    """
+    if window is None:
+        return []
+    # 창에 기사가 하나도 없으면 그 창의 이상점수·감성은 이 사건을 설명하지 못한다.
+    # 실측: 스토리 이벤트에 연결된 15분 창 5,176개 중 3,322개(64%)가 기사 0건이다.
+    # 같은 [정량 근거] 블록에 이벤트 기사에서 직접 센 값(_quant_from_event)이 들어가므로,
+    # 범위가 다른 숫자를 나란히 놓으면 모델이 둘을 같은 축으로 읽는다.
+    if not window.article_count:
+        return []
+    attribution: list[dict] = []
+
+    if window.anomaly_score is not None:
+        attribution.append({
+            "feature": "anomaly_score",
+            "value": float(window.anomaly_score),
+            "percentile": float(window.anomaly_percentile) if window.anomaly_percentile is not None else None,
+        })
+
+    if window.risk_probability is not None:
+        # baseline은 안 쓴다 -- 프롬프트 템플릿이 이걸 "직전 N일 평균"으로 못박아 렌더링
+        # 하는데, decision_threshold는 평균이 아니라 이 모델의 고정 경보 기준값이라 그
+        # 문구를 붙이면 사실과 다른 말이 된다. percentile(모집단 대비 순위)만 쓴다.
+        detector = resolve_production_risk_detector(db)
+        percentile = (
+            risk_detector_percentile(detector.payload, float(window.risk_probability))
+            if detector.available else None
+        )
+        attribution.append({
+            "feature": "lightgbm_risk_probability",
+            "value": float(window.risk_probability),
+            "percentile": percentile,
+        })
+
+    if window.negative_probability is not None:
+        cutoff = window.window_start - timedelta(days=ATTRIBUTION_BASELINE_WINDOW_DAYS)
+        recent_avg = db.scalar(
+            select(func.avg(CompanyFeatureWindow.negative_probability)).where(
+                CompanyFeatureWindow.company_id == window.company_id,
+                CompanyFeatureWindow.window_start >= cutoff,
+                CompanyFeatureWindow.window_start < window.window_start,
+                CompanyFeatureWindow.negative_probability.is_not(None),
+            )
+        )
+        attribution.append({
+            "feature": "negative_probability",
+            "value": float(window.negative_probability),
+            "baseline": float(recent_avg) if recent_avg is not None else None,
+        })
+
+    return attribution
+
+
 def _payload_from_event(
     db,
     event: RiskEvent,
@@ -136,6 +208,8 @@ def _payload_from_event(
         for a in articles
     ]
 
+    window = db.get(CompanyFeatureWindow, event.feature_window_id) if event.feature_window_id else None
+
     return AlertPayload.from_dict({
         **_quant_from_event(db, event, company, evidence_article_ids),
         "alert_id": f"RE-{event.id}",
@@ -152,6 +226,8 @@ def _payload_from_event(
         "escalation_tier": event.severity,
         "mentions": mentions,
         "company_role": getattr(company, "company_role", "main"),
+        "attribution": _attribution_from_window(db, window),
+        "baseline_window_days": ATTRIBUTION_BASELINE_WINDOW_DAYS,
     })
 
 

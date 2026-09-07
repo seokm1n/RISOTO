@@ -27,12 +27,12 @@ import {
 import { RiskEventListContent, RiskJudgmentModelInfo } from "./AnalysisStatisticsPage";
 
 const STAGES = [
-  { id: "collection", step: "01", label: "15분 수집", kicker: "COLLECTION WINDOWS", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다." },
-  { id: "filtering", step: "02", label: "정제", kicker: "ARTICLE FILTERING", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다." },
-  { id: "sentiment", step: "03", label: "감성분석", kicker: "SENTIMENT ANALYSIS", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
-  { id: "stories", step: "04", label: "스토리 군집화", kicker: "STORY CLUSTERING", description: "여러 출처의 유사 기사가 어떤 하나의 스토리로 묶였는지 확인합니다." },
+  { id: "collection", step: "01", label: "실시간 수집(15분)", kicker: "COLLECTION WINDOWS", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다." },
+  { id: "filtering", step: "02", label: "데이터 정리", kicker: "ARTICLE FILTERING", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다." },
+  { id: "sentiment", step: "03", label: "감성 분석", kicker: "SENTIMENT ANALYSIS", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
+  { id: "stories", step: "04", label: "주제별 이슈 모음", kicker: "STORY CLUSTERING", description: "여러 출처의 유사 기사가 어떤 하나의 스토리로 묶였는지 확인합니다." },
   { id: "risk", step: "05", label: "위험판정", kicker: "RISK DETECTION", description: "스토리별 위험도와 유형, 사건 발생 근거를 확인합니다." },
-  { id: "response", step: "06", label: "대응", kicker: "", description: "위험 사건의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
+  { id: "response", step: "06", label: "대응전략", kicker: "", description: "위험 사건의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
 ];
 const STAGE_IDS = new Set(STAGES.map((stage) => stage.id));
 const FILTER_PAGE_SIZE = 5;
@@ -320,8 +320,10 @@ export default function AnalysisPipelinePage() {
   const selectedRiskId = querySelectedRiskId ?? rememberedRiskId;
   const requestedRiskClassification = searchParams.get("classification") ?? "risk";
   const riskClassification = RISK_CLASSIFICATIONS.has(requestedRiskClassification) ? requestedRiskClassification : "risk";
-  const requestedRiskPeriod = searchParams.get("days") ?? "all";
-  const riskPeriod = RISK_PERIODS.has(requestedRiskPeriod) ? requestedRiskPeriod : "all";
+  // AI 리스크 브리핑(메인화면)과 같은 "최근 7일" 기본값을 쓴다. 예전엔 "전체"가
+  // 기본값이라 같은 화면 이름("위험판정 건수")인데도 브리핑과 다른 숫자가 보였다.
+  const requestedRiskPeriod = searchParams.get("days") ?? "7";
+  const riskPeriod = RISK_PERIODS.has(requestedRiskPeriod) ? requestedRiskPeriod : "7";
 
   useEffect(() => {
     const isRiskSelection = stageId === "response"

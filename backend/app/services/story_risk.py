@@ -37,7 +37,9 @@ from app.risk_taxonomy import RISK_TYPES
 from app.services.risk_analysis import (
     RISK_TYPE_PATTERNS,
     resolve_article_risk_type_scores_batch,
+    resolve_production_risk_detector,
     resolve_risk_type_scores,
+    risk_detector_percentile,
 )
 
 
@@ -46,6 +48,12 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="story-risk")
 ENGINE_VERSION = "story-risk-hybrid-v1"
 EVENT_ENGINE_VERSION = "story-event-hybrid-v2"
 EVENT_KEY_PREFIX = "story-v3"
+# 2026-09-07: w=0.2는 window_v1 사건 80건(전부 이미 알람이 뜬, 치우친 표본)으로만
+# 검증한 값이었다. story_v2 자체 라벨 117건(story_v2_label_candidates.csv, 처음으로
+# story_v2를 직접 검증)이 나온 뒤 재확인하니 반대 결과가 나왔다: story_v2 단독
+# AUC 0.8343 -> 블렌드 AUC 0.8196로 오히려 나빠짐. 표본이 작아(양성 25건) 확정적은
+# 아니지만 방향이 뒤집혀서, 근거 있는 가중치를 다시 잡기 전까지는 꺼둔다.
+WINDOW_SIGNAL_BLEND_WEIGHT = 0.0
 GOVERNMENT_SUFFIXES = (".go.kr", ".gov", ".gov.kr")
 SEOUL = ZoneInfo("Asia/Seoul")
 
@@ -139,10 +147,18 @@ def _local_assessment_from_scores(
 ) -> dict:
     negative = float(article.negative_probability or 0.0)
     primary_type, type_probability = max(scores.items(), key=lambda item: item[1])
+    # 2026-09-07: 사람 라벨 55건(story_v2_label_candidates.csv)으로 뜯어보니
+    # type_probability는 TRUE/FALSE 구분 없이 항상 1.000(표준편차 0, 단독 AUC 0.500 --
+    # 완전 무정보)이었다. 일단 위험 후보가 되려면 이미 type_probability>=0.35가
+    # 필요해서, 후보가 된 시점엔 진짜 위험이든 아니든 이 항목이 거의 항상 포화된다.
+    # 반면 negative 단독 AUC는 0.900으로 제일 강한 신호였는데 옛 가중치(0.35)가
+    # 이를 희석시키고 있었다. 그리드서치 상위권(type 0.0~0.3, negative 0.6~0.9,
+    # relevance 0.1, AUC 0.90~0.91)에서 type을 완전히 죽이지 않는 보수적인 지점을
+    # 골랐다 (옛 공식 AUC 0.894 -> 0.906).
     probability = _clamp(
-        0.45 * float(type_probability)
-        + 0.35 * negative
-        + 0.20 * relevance_score
+        0.20 * float(type_probability)
+        + 0.70 * negative
+        + 0.10 * relevance_score
     )
     if type_probability < 0.20 or probability < settings.article_risk_uncertain_low:
         decision = "non_risk"
@@ -600,6 +616,18 @@ def _aggregate_story_event(
             + 0.02 * max(0, len(candidates) - 1),
         )
     )
+    if WINDOW_SIGNAL_BLEND_WEIGHT > 0 and latest_window is not None and latest_window.risk_probability is not None:
+        detector = resolve_production_risk_detector(db)
+        window_percentile = (
+            risk_detector_percentile(detector.payload, float(latest_window.risk_probability))
+            if detector.available
+            else None
+        )
+        if window_percentile is not None:
+            probability = _clamp(
+                (1 - WINDOW_SIGNAL_BLEND_WEIGHT) * probability
+                + WINDOW_SIGNAL_BLEND_WEIGHT * window_percentile
+            )
     severity = "critical" if probability >= 0.85 else "warning"
     created = event is None
     primary_candidate = max(candidates, key=lambda row: row[0].risk_probability)

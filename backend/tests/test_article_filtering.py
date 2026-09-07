@@ -313,6 +313,27 @@ class ArticleFilteringTests(unittest.TestCase):
         self.assertEqual((result.decision, result.reason), ("accepted", "accepted"))
         self.assertGreaterEqual(result.relevance_score, 0.70)
 
+    @patch("app.services.article_filtering.predict_company_relevance")
+    def test_unseen_company_does_not_get_the_trained_company_accept_floor(self, predict_reranker):
+        """reranker 미학습 기업은 같은 시나리오라도 확신 통과 하한선을 받지 않는다."""
+        predict_reranker.return_value = {
+            "version": "company-reranker-test",
+            "relevant": 0.05,
+            "irrelevant": 0.95,
+            "accept_threshold": 0.72,
+            "reject_threshold": 0.25,
+            "input_schema": "company-query-article-pair-v1",
+        }
+        # self.company ("Acme Robotics") is deliberately outside TOPICAL_RELEVANCE_TRAINED_COMPANIES.
+        result = classify_article(
+            self.company,
+            [],
+            article("Acme Robotics 물류센터 화재로 배송 차질", "소방당국이 원인을 조사 중이다."),
+            config=FilterConfig(ai_enabled=True, allow_model_download=False),
+        )
+        self.assertLess(result.relevance_score, 0.70)
+        self.assertNotEqual(result.decision, "accepted")
+
     def test_klue_nli_can_block_an_ambiguous_company_name(self):
         """동음이의 기업명을 KLUE NLI가 무관 기사로 차단할 수 있는지 검증한다."""
         class FakeNli:
