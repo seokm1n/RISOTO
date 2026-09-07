@@ -38,6 +38,7 @@ from app.services.response_engine import (
     generate_response_draft,
 )
 from app.services.risk_analysis import resolve_production_risk_detector
+from app.services.story_model_runtime import resolve_story_risk_runtime
 
 
 router = APIRouter(tags=["governance"])
@@ -61,6 +62,23 @@ def get_risk_detection_status(
     _auth: CurrentAuth = Depends(require_admin),
 ) -> RiskDetectionStatusRead:
     """Report final-risk availability without training or promoting a model."""
+    return _risk_detection_status(db, get_settings())
+
+
+def _risk_detection_status(db: Session, settings) -> RiskDetectionStatusRead:
+    if settings.story_risk_engine_enabled and settings.story_risk_model_enabled:
+        runtime = resolve_story_risk_runtime(settings)
+        return RiskDetectionStatusRead(
+            risk_detection_status="available" if runtime.available else "unavailable",
+            reason=runtime.reason,
+            message=runtime.message,
+            model_id=None,
+            model_version=runtime.version,
+            model_state=runtime.model_state if runtime.available else "unavailable",
+            scoring_scope="story",
+            threshold=runtime.threshold,
+            artifact_sha256=runtime.artifact_sha256,
+        )
     runtime = resolve_production_risk_detector(db)
     if not runtime.available:
         messages = {
@@ -97,6 +115,7 @@ def get_risk_detection_status(
             model_id=runtime.version.id if runtime.version else None,
             model_version=runtime.version.version if runtime.version else None,
             model_state="unavailable",
+            scoring_scope="window",
         )
     assert runtime.version is not None
     configured_state = str((runtime.version.thresholds or {}).get("model_state", "production"))
@@ -104,10 +123,14 @@ def get_risk_detection_status(
     return RiskDetectionStatusRead(
         risk_detection_status="available",
         reason=None,
-        message="운영 LightGBM으로 위험 판정을 수행하고 있습니다.",
+        message=(
+            "15분 구간 Isolation Forest + LightGBM으로 위험 판정을 수행하고 있습니다. "
+            + ("잠정 모델이며 사람 검수 기반 성능 검증은 완료되지 않았습니다." if model_state == "provisional" else "")
+        ).strip(),
         model_id=runtime.version.id,
         model_version=runtime.version.version,
         model_state=model_state,
+        scoring_scope="window",
     )
 
 
@@ -148,7 +171,7 @@ def get_model_runtime_status(
     )
     lightgbm_path = Path(settings.external_lightgbm_model_path).expanduser()
     lightgbm_available = lightgbm_path.is_file()
-    risk_runtime = resolve_production_risk_detector(db)
+    risk_status = _risk_detection_status(db, settings)
     return ModelRuntimeStatusRead(
         article_filter_version=settings.article_filter_version,
         article_filter_ai_enabled=settings.article_filter_ai_enabled,
@@ -167,12 +190,21 @@ def get_model_runtime_status(
         external_lightgbm_model_name=lightgbm_path.name if lightgbm_path.name else None,
         external_lightgbm_model_available=lightgbm_available,
         external_lightgbm_message=(
-            "exports LightGBM과 호환 Isolation Forest가 운영 판정에 연결되었습니다."
-            if risk_runtime.available
+            "15분 구간용 LightGBM 파일이 있습니다. 스토리 위험 판정에는 별도 스토리 모델을 사용합니다."
+            if risk_status.scoring_scope == "story" and lightgbm_available
+            else "15분 구간용 외부 LightGBM 파일을 찾지 못했습니다. 스토리 모델 연결 상태는 별도입니다."
+            if risk_status.scoring_scope == "story"
+            else "exports LightGBM과 호환 Isolation Forest가 15분 구간 판정에 연결되었습니다."
+            if risk_status.risk_detection_status == "available"
             else "LightGBM 파일은 찾았지만 운영 레지스트리 연결을 확인해야 합니다."
             if lightgbm_available
             else "외부 LightGBM 파일을 찾지 못했습니다."
         ),
+        scoring_scope=risk_status.scoring_scope,
+        risk_model_name=risk_status.model_version,
+        risk_model_available=risk_status.risk_detection_status == "available",
+        risk_model_state=risk_status.model_state,
+        risk_model_message=risk_status.message,
     )
 
 

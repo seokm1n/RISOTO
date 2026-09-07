@@ -90,6 +90,10 @@ class Settings(BaseSettings):
 
     # 기사·스토리 중심 운영 사건 엔진. 15분 특징은 확산 신호와 대시보드용으로 유지한다.
     story_risk_engine_enabled: bool = True
+    # 스토리 스냅샷 모델은 별도 기능 스위치와 고정 체크섬으로 선택한다.
+    story_risk_model_enabled: bool = False
+    story_risk_model_path: str = ""
+    story_risk_model_sha256: str = ""
     # 위험 이벤트 발생 시 대응방안을 자동 생성할지. LLM을 부르므로 비용이 붙는다.
     # 자동 경로에만 걸리고 담당자가 버튼으로 요청하는 수동 생성은 이 값과 무관하다.
     # 생성 경로가 story_risk와 risk_analysis 두 갈래인데 서로 배타적이라(한쪽을 끄면
