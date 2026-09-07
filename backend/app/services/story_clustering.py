@@ -388,6 +388,21 @@ def assign_story_cluster(
         return existing.story_cluster_id
 
     settings = settings or get_settings()
+    # Every live caller (monitoring_pipeline.py) left this at its None default, so
+    # real-time clustering ran on lexical/concept matching alone -- the embedding
+    # model only ever ran through the CLI rebuild or a company-rename backfill,
+    # both off the continuous path. Self-populate here the same way
+    # recluster_story_articles already does, so new articles get the same signal.
+    if semantic_scorer is None and settings.article_filter_ai_enabled:
+        from app.services.article_filtering import FilterConfig, get_semantic_scorer
+
+        semantic_scorer = get_semantic_scorer(
+            FilterConfig(
+                ai_enabled=True,
+                semantic_model_name=settings.article_filter_semantic_model,
+                allow_model_download=settings.article_filter_allow_model_download,
+            )
+        )
     published_at = _article_time(article)
     rows = _candidate_rows(db, article, settings, company_id)
     preliminary: list[tuple[float, NewsArticle, StoryClusterArticle]] = []
