@@ -872,15 +872,12 @@ def list_risk_judgments_page(
             RiskEvent.status == "closed",
         )
     ) or 0
-    non_risk_count = db.scalar(
-        select(func.count()).select_from(all_non_risk_story_ids.subquery())
-    ) or 0
     filtered_non_risk_count = db.scalar(
         select(func.count()).select_from(non_risk_story_ids.subquery())
     ) or 0
     summary = RiskJudgmentSummaryRead(
         risk=active_count + history_count,
-        non_risk=non_risk_count,
+        non_risk=filtered_non_risk_count,
         active=active_count,
         history=history_count,
     )

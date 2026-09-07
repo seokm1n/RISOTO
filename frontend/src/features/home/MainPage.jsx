@@ -398,10 +398,6 @@ export default function MainPage({ onOpenCompany }) {
   const error = companiesError || riskPageError ? getErrorMessage(companiesError ?? riskPageError) : null;
   const todayKey = new Date().toLocaleDateString("sv-SE");
   const todaySummary = briefingSummaries.find((day) => day.summary_date === todayKey);
-  const todayStoryCount = todaySummary?.eligible_story_count ?? 0;
-  const todayRiskStoryCount = todaySummary?.eligible_risk_story_count ?? 0;
-  const sevenDayStoryCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0);
-  const sevenDayRiskStoryCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_risk_story_count ?? 0), 0);
   const todaySentiment = {
     storyCount: todaySummary?.eligible_story_count ?? 0,
     positiveCount: todaySummary?.eligible_positive_story_count ?? 0,
@@ -418,11 +414,21 @@ export default function MainPage({ onOpenCompany }) {
   const ratioGroups = ratioPeriod === "today"
     ? dailyGroups.map((days) => days.filter((day) => day.summary_date === todayKey))
     : dailyGroups;
+  const ratioDays = ratioPeriod === "today" ? 1 : MAIN_TREND_DAYS;
+  // 분석 파이프라인의 "위험판정" 요약과 같은 수치를 보여줘야 하므로, 자체 집계 대신
+  // 그 화면과 동일한 엔드포인트(요약 기준: 최근 활동 시각 coalesce)를 그대로 사용한다.
+  const { data: riskJudgmentSummary } = useSharedResource(
+    selectedCompanyId ? `main-briefing-risk-summary:${selectedCompanyId}:${ratioDays}` : "skip:main-briefing-risk-summary",
+    selectedCompanyId
+      ? () => api.get(`/companies/${selectedCompanyId}/risk-judgments/page?days=${ratioDays}&page_size=1`).then((response) => response.data.summary)
+      : () => Promise.resolve(null),
+  );
   const selectedRiskRatio = briefingView === "average"
     ? { average: averageCompanyRatio(ratioGroups, "eligible_risk_story_count", "eligible_story_count") }
-    : ratioPeriod === "today"
-      ? { storyCount: todayStoryCount, riskCount: todayRiskStoryCount }
-      : { storyCount: sevenDayStoryCount, riskCount: sevenDayRiskStoryCount };
+    : {
+        storyCount: (riskJudgmentSummary?.risk ?? 0) + (riskJudgmentSummary?.non_risk ?? 0),
+        riskCount: riskJudgmentSummary?.risk ?? 0,
+      };
   const selectedSentimentRatio = briefingView === "average"
     ? { average: averageCompanySentiment(ratioGroups) }
     : ratioPeriod === "today" ? todaySentiment : sevenDaySentiment;
