@@ -368,6 +368,7 @@ class ArticleFilterSummary(BaseModel):
     ai_assisted_count: int
     rules_only_count: int
     last_filtered_at: datetime | None
+    raw_record_count: int | None = None
 
 
 class ArticleFilterResultRead(BaseModel):
@@ -388,6 +389,9 @@ class ArticleFilterResultRead(BaseModel):
     filter_version: str
     details: dict
     filtered_at: datetime
+    published_at: datetime | None = None
+    collected_at: datetime | None = None
+    article_date: datetime | None = None
 
 
 class ArticleFilterResultPage(BaseModel):
@@ -438,6 +442,7 @@ class RiskEventRead(BaseModel):
     last_seen_at: datetime | None = None
     closed_at: datetime | None = None
     last_evidence_at: datetime | None = None
+    issue_latest_at: datetime | None = None
     evidence_revision: int = 0
     response_generation_status: str = "idle"
     response_generation_error: str | None = None
@@ -467,8 +472,10 @@ class RiskEventPageRead(BaseModel):
 class RiskJudgmentRead(RiskEventRead):
     """위험 사건과 비위험 스토리를 같은 판정 화면에서 표현한다."""
 
-    classification: Literal["risk", "non_risk"]
+    classification: Literal["risk", "non_risk", "pending"]
+    anomaly_score: float | None = None
     risk_event_id: int | None = None
+    pending_reason: str | None = None
 
 
 class RiskJudgmentSummaryRead(BaseModel):
@@ -478,6 +485,8 @@ class RiskJudgmentSummaryRead(BaseModel):
     non_risk: int
     active: int
     history: int
+    pending: int = 0
+    total: int = 0
 
 
 class RiskJudgmentPageRead(BaseModel):
@@ -556,6 +565,8 @@ class DailySummaryRead(BaseModel):
     eligible_neutral_story_count: int = 0
     eligible_negative_story_count: int = 0
     eligible_risk_story_count: int = 0
+    eligible_non_risk_story_count: int = 0
+    eligible_pending_story_count: int = 0
     story_count: int
     amplification_count: int
     publisher_count: int

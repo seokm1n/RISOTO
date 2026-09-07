@@ -29,7 +29,7 @@ from app.models import (
     StoryClusterArticle,
     StoryRiskScore,
 )
-from app.presenters import risk_event_read
+from app.presenters import article_collection_times, risk_event_read
 from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES, RISK_TYPES
 from app.schemas import (
     ArticleFilterResultPage,
@@ -57,7 +57,10 @@ from app.services.monitoring_pipeline import (
     continue_accepted_filter_review,
     run_collection,
 )
-from app.services.period_aggregation import seoul_period_start
+from app.services.period_aggregation import seoul_date_range, seoul_period_start
+from app.services.period_story_cohort import (
+    canonical_accepted_article_ids, load_period_story_cohort, period_issue_cluster_ids,
+)
 from app.services.story_risk import source_domain
 from app.services.story_model_runtime import resolve_story_risk_runtime
 
@@ -84,6 +87,33 @@ def _resumed_monitoring_status(company: Company) -> str:
     return "active"
 
 
+def _selected_date_bounds(start_date: date | None, end_date: date | None):
+    if (start_date is None) != (end_date is None):
+        raise HTTPException(status_code=422, detail="시작일과 종료일을 함께 선택해 주세요.")
+    if start_date is None:
+        return None
+    try:
+        return seoul_date_range(start_date, end_date)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+def _date_filters(timestamp, bounds):
+    return (timestamp >= bounds[0], timestamp < bounds[1]) if bounds else ()
+
+
+def _risk_event_time(view: str):
+    if view == "history":
+        return func.coalesce(
+            RiskEvent.closed_at, RiskEvent.last_evidence_at,
+            RiskEvent.opened_at, RiskEvent.detected_at,
+        )
+    return func.coalesce(
+        RiskEvent.last_evidence_at, RiskEvent.last_seen_at,
+        RiskEvent.opened_at, RiskEvent.detected_at,
+    )
+
+
 def _latest_filter_results(company_id: int):
     """원문 기사별 가장 최근 필터 판정만 조회하는 쿼리를 만든다."""
     latest_ids = (
@@ -96,6 +126,26 @@ def _latest_filter_results(company_id: int):
         select(ArticleFilterResult)
         .join(latest_ids, latest_ids.c.id == ArticleFilterResult.id)
     )
+
+
+def _pipeline_filter_result_ids(company_id: int, bounds):
+    """One accepted decision per analyzed article plus latest other raw decisions."""
+    latest = _latest_filter_results(company_id).subquery()
+    accepted = (
+        select(func.max(latest.c.id).label("id"))
+        .join(NewsArticle, NewsArticle.id == latest.c.curated_article_id)
+        .join(CompanyArticleMatch, CompanyArticleMatch.article_id == NewsArticle.id)
+        .where(latest.c.decision == "accepted", CompanyArticleMatch.company_id == company_id,
+               *_date_filters(func.coalesce(NewsArticle.published_at, NewsArticle.created_at), bounds))
+        .group_by(latest.c.curated_article_id)
+    )
+    other = (
+        select(latest.c.id)
+        .join(RawNewsArticle, RawNewsArticle.id == latest.c.raw_article_id)
+        .where(latest.c.decision != "accepted",
+               *_date_filters(func.coalesce(RawNewsArticle.published_at, RawNewsArticle.collected_at), bounds))
+    )
+    return accepted.union(other)
 
 
 def _eligible_story_event_ids(min_articles: int):
@@ -187,10 +237,26 @@ def get_filter_summary(
     company_id: int,
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
+    start_date: date | None = None,
+    end_date: date | None = None,
+    analysis_only: bool = False,
 ) -> ArticleFilterSummary:
     """기업별 최신 기사 필터 판정을 사유와 처리 방식별로 집계한다."""
     _user_company(db, company_id, auth.user_id)
-    latest = _latest_filter_results(company_id).subquery()
+    bounds = _selected_date_bounds(start_date, end_date)
+    latest_query = _latest_filter_results(company_id)
+    if analysis_only:
+        latest_query = latest_query.where(ArticleFilterResult.id.in_(_pipeline_filter_result_ids(company_id, bounds)))
+    elif bounds:
+        latest_query = latest_query.join(
+            RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id,
+        ).where(*_date_filters(
+            func.coalesce(RawNewsArticle.published_at, RawNewsArticle.collected_at), bounds,
+        ))
+    latest = latest_query.subquery()
+    raw_records = _latest_filter_results(company_id).join(
+        RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id,
+    ).where(*_date_filters(func.coalesce(RawNewsArticle.published_at, RawNewsArticle.collected_at), bounds))
 
     def count_where(*conditions) -> int:
         """최신 판정 쿼리에 조건을 적용해 일치하는 행 수를 센다."""
@@ -210,6 +276,7 @@ def get_filter_summary(
         ai_assisted_count=count_where(latest.c.classifier_kind.like("%ai%")),
         rules_only_count=count_where(latest.c.classifier_kind == "rules_only"),
         last_filtered_at=db.scalar(select(func.max(latest.c.filtered_at))),
+        raw_record_count=db.scalar(select(func.count()).select_from(raw_records.subquery())) if analysis_only else None,
     )
 
 
@@ -225,21 +292,33 @@ def list_filter_results(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
+    start_date: date | None = None,
+    end_date: date | None = None,
+    analysis_only: bool = False,
 ) -> ArticleFilterResultPage:
     """기업의 최신 기사 필터 결과를 선택 조건과 페이지 단위로 조회한다."""
     _user_company(db, company_id, auth.user_id)
+    bounds = _selected_date_bounds(start_date, end_date)
     base = (
         _latest_filter_results(company_id)
         .join(RawNewsArticle, RawNewsArticle.id == ArticleFilterResult.raw_article_id)
         .add_columns(RawNewsArticle)
+        .outerjoin(NewsArticle, NewsArticle.id == ArticleFilterResult.curated_article_id)
+        .add_columns(NewsArticle)
     )
+    if analysis_only:
+        base = base.where(ArticleFilterResult.id.in_(_pipeline_filter_result_ids(company_id, bounds)))
+    else:
+        base = base.where(*_date_filters(
+            func.coalesce(RawNewsArticle.published_at, RawNewsArticle.collected_at), bounds,
+        ))
     if decision:
         base = base.where(ArticleFilterResult.decision == decision)
     if reason:
         base = base.where(ArticleFilterResult.reason == reason)
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.execute(
-        base.order_by(ArticleFilterResult.filtered_at.desc())
+        base.order_by(ArticleFilterResult.filtered_at.desc(), ArticleFilterResult.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -249,9 +328,9 @@ def list_filter_results(
                 id=result.id,
                 raw_article_id=result.raw_article_id,
                 curated_article_id=result.curated_article_id,
-                source=raw.source,
-                title=raw.title,
-                url=raw.url,
+                source=article.source if analysis_only and result.decision == "accepted" and article else raw.source,
+                title=article.title if analysis_only and result.decision == "accepted" and article else raw.title,
+                url=article.url if analysis_only and result.decision == "accepted" and article else raw.url,
                 decision=result.decision,
                 reason=result.reason,
                 relevance_score=result.relevance_score,
@@ -261,8 +340,13 @@ def list_filter_results(
                 filter_version=result.filter_version,
                 details=result.details,
                 filtered_at=result.filtered_at,
+                published_at=raw.published_at,
+                collected_at=raw.collected_at,
+                article_date=(article.published_at or article.created_at)
+                if analysis_only and result.decision == "accepted" and article
+                else (raw.published_at or raw.collected_at),
             )
-            for result, raw in rows
+            for result, raw, article in rows
         ],
         total=total,
         page=page,
@@ -426,9 +510,15 @@ def list_company_articles(
     days: int | None = Query(default=None, ge=1, le=365),
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
+    start_date: date | None = None,
+    end_date: date | None = None,
+    period_basis: Literal["articles", "issues"] = "articles",
+    analysis_only: bool = False,
+    judged_only: bool = False,
 ) -> NewsArticlePage:
     """기업에 연결된 기사를 출처·기간·검색어 필터와 페이지 정보에 맞춰 반환한다."""
     _user_company(db, company_id, auth.user_id)
+    bounds = _selected_date_bounds(start_date, end_date)
     company_articles = (
         select(
             NewsArticle,
@@ -456,6 +546,8 @@ def list_company_articles(
         .order_by(NewsArticle.source)
     ))
     base_query = company_articles
+    if analysis_only:
+        base_query = base_query.where(NewsArticle.id.in_(canonical_accepted_article_ids(company_id)))
     if source:
         base_query = base_query.where(NewsArticle.source == source)
     if q:
@@ -463,7 +555,22 @@ def list_company_articles(
         base_query = base_query.where(NewsArticle.title.ilike(like) | NewsArticle.summary.ilike(like))
     # 화면에는 한국 시간으로 날짜가 표시되므로, 필터도 한국 달력 기준 하루로 계산한다.
     article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
-    if isinstance(days, int):
+    if bounds and period_basis == "issues":
+        base_query = base_query.where(
+            StoryClusterArticle.story_cluster_id.in_(period_issue_cluster_ids(company_id, *bounds, analysis_only=analysis_only))
+            | (StoryClusterArticle.story_cluster_id.is_(None)
+               & (article_time >= bounds[0]) & (article_time < bounds[1]))
+        )
+        if judged_only:
+            cohort = load_period_story_cohort(db, company_id, start_date, end_date)
+            unjudged = [row["story_cluster_id"] for row in cohort if row["classification"] == "pending"]
+            base_query = base_query.where(
+                StoryClusterArticle.story_cluster_id.is_(None)
+                | StoryClusterArticle.story_cluster_id.notin_(unjudged)
+            )
+    elif bounds:
+        base_query = base_query.where(*_date_filters(article_time, bounds))
+    elif isinstance(days, int):
         _, period_start = seoul_period_start(days)
         base_query = base_query.where(article_time >= period_start)
     if date_from:
@@ -477,7 +584,7 @@ def list_company_articles(
     total = db.scalar(select(func.count()).select_from(base_query.subquery())) or 0
     rows = db.execute(
         base_query
-        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.created_at.desc())
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.created_at.desc(), NewsArticle.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -615,19 +722,33 @@ def list_risk_events_page(
     response: Literal["all", "needs_action", "without_needs_action", "in_progress", "generated", "none"] = "all",
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> RiskEventPageRead:
     """위험관리 화면용 사건 목록을 서버에서 필터링·페이지네이션한다."""
     _user_company(db, company_id, auth.user_id)
     active_statuses = ("open", "monitoring", "acknowledged")
     settings = get_settings()
+    bounds = _selected_date_bounds(start_date, end_date)
     base_filters = _reportable_story_event_filters(
         company_id,
         settings.story_event_min_articles,
     )
+    issue_latest_dates = {}
+    issue_article_ids = {}
+    if bounds:
+        cohort = load_period_story_cohort(db, company_id, start_date, end_date, settings=settings)
+        issue_latest_dates = {row["risk_event_id"]: row["last_evidence_at"] for row in cohort
+                              if row["classification"] == "risk"}
+        issue_article_ids = {row["risk_event_id"]: row["article_ids"] for row in cohort
+                             if row["classification"] == "risk"}
+        base_filters += (RiskEvent.id.in_([
+            row["risk_event_id"] for row in cohort if row["classification"] == "risk"
+        ]),)
     query = select(RiskEvent).where(*base_filters)
     if view == "active":
         query = query.where(RiskEvent.status.in_(active_statuses))
-        if days is not None:
+        if bounds is None and isinstance(days, int):
             _, cutoff = seoul_period_start(days)
             query = query.where(
                 func.coalesce(
@@ -647,7 +768,7 @@ def list_risk_events_page(
         )
     elif view == "history":
         query = query.where(RiskEvent.status == "closed")
-        if days is not None:
+        if bounds is None and isinstance(days, int):
             _, cutoff = seoul_period_start(days)
             query = query.where(
                 func.coalesce(
@@ -665,7 +786,7 @@ def list_risk_events_page(
             RiskEvent.id.desc(),
         )
     else:
-        if days is not None:
+        if bounds is None and isinstance(days, int):
             _, cutoff = seoul_period_start(days)
             query = query.where(
                 func.coalesce(
@@ -738,12 +859,110 @@ def list_risk_events_page(
         history=summary_count(RiskEvent.status == "closed"),
     )
     return RiskEventPageRead(
-        items=[risk_event_read(db, event) for event in events],
+        items=[risk_event_read(db, event, included_article_ids=issue_article_ids.get(event.id)).model_copy(update={
+            "issue_latest_at": issue_latest_dates.get(event.id),
+        }) for event in events],
         total=total,
         page=page,
         page_size=page_size,
         summary=summary,
     )
+
+
+def _list_period_risk_judgments(
+    db, company_id, start_date, end_date, *, classification, view, page, page_size,
+    severity, risk_type, settings, runtime, auth,
+):
+    cohort = load_period_story_cohort(
+        db, company_id, start_date, end_date, settings=settings, runtime=runtime,
+        include_unjudged=classification == "pending",
+    )
+    summary = RiskJudgmentSummaryRead(
+        risk=sum(row["classification"] == "risk" for row in cohort),
+        non_risk=sum(row["classification"] == "non_risk" for row in cohort),
+        pending=sum(row["classification"] == "pending" for row in cohort),
+        total=len(cohort),
+        active=sum(row["risk_event_status"] in ("open", "monitoring", "acknowledged") for row in cohort),
+        history=sum(row["risk_event_status"] == "closed" for row in cohort),
+    )
+    if classification == "risk":
+        risk_page = list_risk_events_page(
+            company_id, view=view, page=page, page_size=page_size, days=None,
+            severity=severity, risk_type=risk_type, response="all", db=db, auth=auth,
+            start_date=start_date, end_date=end_date,
+        )
+        return RiskJudgmentPageRead(
+            items=[RiskJudgmentRead(**item.model_dump(), classification="risk", risk_event_id=item.id)
+                   for item in risk_page.items],
+            total=risk_page.total, page=page, page_size=page_size, summary=summary,
+        )
+
+    matching = sorted(
+        (row for row in cohort if row["classification"] == classification),
+        key=lambda row: (row["last_evidence_at"], row["story_cluster_id"]), reverse=True,
+    )
+    selected = matching[(page - 1) * page_size:page * page_size]
+    cluster_ids = [row["story_cluster_id"] for row in selected]
+    articles_ids = [article_id for row in selected for article_id in row["article_ids"]]
+    clusters = {cluster.id: cluster for cluster in db.scalars(
+        select(StoryCluster).where(StoryCluster.id.in_(cluster_ids))
+    )} if cluster_ids else {}
+    evidence_by_cluster = {cluster_id: [] for cluster_id in cluster_ids}
+    if articles_ids:
+        for assessment, article, link in db.execute(
+            select(ArticleRiskAssessment, NewsArticle, StoryClusterArticle)
+            .select_from(CompanyArticleMatch)
+            .join(NewsArticle, NewsArticle.id == CompanyArticleMatch.article_id)
+            .join(StoryClusterArticle, StoryClusterArticle.article_id == NewsArticle.id)
+            .outerjoin(ArticleRiskAssessment,
+                       (ArticleRiskAssessment.company_id == CompanyArticleMatch.company_id)
+                       & (ArticleRiskAssessment.article_id == NewsArticle.id))
+            .where(CompanyArticleMatch.company_id == company_id,
+                   StoryClusterArticle.story_cluster_id.in_(cluster_ids), NewsArticle.id.in_(articles_ids))
+            .order_by(func.coalesce(NewsArticle.published_at, NewsArticle.created_at).desc(), NewsArticle.id.desc())
+        ):
+            evidence_by_cluster[link.story_cluster_id].append((assessment, article, link))
+    collected_times = article_collection_times(db, [
+        article for rows in evidence_by_cluster.values() for _assessment, article, _link in rows
+    ])
+    items = []
+    for entry in selected:
+        cluster = clusters[entry["story_cluster_id"]]
+        rows = evidence_by_cluster[cluster.id]
+        primary = next((row[1] for row in rows if row[2].is_representative), rows[0][1] if rows else None)
+        risk_rows = [row for row in rows if row[0] is not None and row[0].decision == "risk"
+                     and row[0].risk_probability >= settings.article_risk_candidate_threshold]
+        domains = {source_domain(article.original_url or article.url) for _assessment, article, _link in rows} - {"unknown"}
+        risk_domains = {source_domain(article.original_url or article.url) for _assessment, article, _link in risk_rows} - {"unknown"}
+        items.append(RiskJudgmentRead(
+            id=cluster.id, company_id=company_id, story_cluster_id=cluster.id,
+            classification=classification, risk_event_id=None, pending_reason=entry["pending_reason"],
+            article_id=primary.id if primary else None, article_title=primary.title if primary else None,
+            article_url=primary.url if primary else None, event_source="story_v2",
+            risk_probability=entry["risk_probability"], anomaly_score=entry["anomaly_score"],
+            severity=classification, status=classification,
+            evidence_articles=[dict(
+                article_id=article.id, title=article.title, url=article.url, source=article.source,
+                source_domain=source_domain(article.original_url or article.url),
+                published_at=article.published_at, created_at=article.created_at,
+                collected_at=collected_times.get(article.id),
+                evidence_role="trigger" if (assessment, article, link) in risk_rows else "context",
+                evidence_score=assessment.risk_probability if assessment else None,
+                risk_probability=assessment.risk_probability if assessment else None,
+                relevance_score=assessment.relevance_score if assessment else None,
+                source_credibility=assessment.source_credibility if assessment else None,
+                representativeness=1.0 if link.is_representative else link.similarity,
+            ) for assessment, article, link in rows],
+            risk_article_count=len(risk_rows), risk_source_count=len(risk_domains),
+            evidence_article_count=len(rows), source_count=len(domains),
+            summary=cluster.representative_title, model_version=entry["model_version"],
+            model_state=entry["model_state"], approval_state="draft",
+            opened_at=entry["first_evidence_at"], last_seen_at=entry["last_evidence_at"],
+            last_evidence_at=entry["last_evidence_at"], detected_at=entry["first_evidence_at"],
+            issue_latest_at=entry["last_evidence_at"],
+            response_generation_status="idle",
+        ))
+    return RiskJudgmentPageRead(items=items, total=len(matching), page=page, page_size=page_size, summary=summary)
 
 
 @router.get(
@@ -752,7 +971,7 @@ def list_risk_events_page(
 )
 def list_risk_judgments_page(
     company_id: int,
-    classification: Literal["risk", "non_risk"] = "risk",
+    classification: Literal["risk", "non_risk", "pending"] = "risk",
     view: Literal["active", "history", "all"] = "all",
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
@@ -770,12 +989,23 @@ def list_risk_judgments_page(
     ] | None = None,
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> RiskJudgmentPageRead:
     """스토리 판정 결과를 위험 사건과 비위험 스토리로 나눠 반환한다."""
     _user_company(db, company_id, auth.user_id)
     settings = get_settings()
     story_model_enabled = settings.story_risk_engine_enabled and settings.story_risk_model_enabled
     story_runtime = resolve_story_risk_runtime(settings) if story_model_enabled else None
+    bounds = _selected_date_bounds(start_date, end_date)
+    if bounds:
+        return _list_period_risk_judgments(
+            db, company_id, start_date, end_date, classification=classification,
+            view=view, page=page, page_size=page_size, severity=severity,
+            risk_type=risk_type, settings=settings, runtime=story_runtime, auth=auth,
+        )
+    if classification == "pending":
+        raise HTTPException(status_code=422, detail="미판정 이슈 조회에는 시작일과 종료일이 필요합니다.")
     active_statuses = ("open", "monitoring", "acknowledged")
     event_filters = _reportable_story_event_filters(
         company_id,
@@ -839,7 +1069,11 @@ def list_risk_judgments_page(
                 StoryRiskScore.model_version == story_runtime.version,
             )
     non_risk_story_ids = all_non_risk_story_ids
-    if days is not None:
+    if bounds:
+        non_risk_story_ids = non_risk_story_ids.where(
+            *_date_filters(eligible_stories.c.last_evidence_at, bounds)
+        )
+    elif isinstance(days, int):
         _, cutoff = seoul_period_start(days)
         non_risk_story_ids = non_risk_story_ids.where(
             eligible_stories.c.last_evidence_at >= cutoff
@@ -848,12 +1082,14 @@ def list_risk_judgments_page(
     active_count = db.scalar(
         select(func.count(RiskEvent.id)).where(
             *event_filters,
+            *_date_filters(_risk_event_time(view), bounds),
             RiskEvent.status.in_(active_statuses),
         )
     ) or 0
     history_count = db.scalar(
         select(func.count(RiskEvent.id)).where(
             *event_filters,
+            *_date_filters(_risk_event_time(view), bounds),
             RiskEvent.status == "closed",
         )
     ) or 0
@@ -865,7 +1101,7 @@ def list_risk_judgments_page(
     ) or 0
     summary = RiskJudgmentSummaryRead(
         risk=active_count + history_count,
-        non_risk=non_risk_count,
+        non_risk=filtered_non_risk_count if bounds else non_risk_count,
         active=active_count,
         history=history_count,
     )
@@ -877,6 +1113,8 @@ def list_risk_judgments_page(
             page=page,
             page_size=page_size,
             days=days,
+            start_date=start_date,
+            end_date=end_date,
             severity=severity,
             risk_type=risk_type,
             response="all",
@@ -950,6 +1188,7 @@ def list_risk_judgments_page(
             )
             .where(
                 *article_scope,
+                *_date_filters(article_time, bounds),
                 StoryClusterArticle.story_cluster_id.in_(cluster_ids),
             )
             .order_by(
@@ -963,6 +1202,9 @@ def list_risk_judgments_page(
                 (assessment, article, cluster_link)
             )
 
+    collected_times = article_collection_times(db, [
+        article for rows in evidence_by_cluster.values() for _assessment, article, _link in rows
+    ])
     items: list[RiskJudgmentRead] = []
     for cluster, probability, first_evidence_at, last_evidence_at in story_rows:
         story_score = story_scores.get(cluster.id)
@@ -1047,6 +1289,8 @@ def list_risk_judgments_page(
                         "source": article.source,
                         "source_domain": source_domain(article.original_url or article.url),
                         "published_at": article.published_at,
+                        "created_at": article.created_at,
+                        "collected_at": collected_times.get(article.id),
                         "evidence_role": (
                             "trigger"
                             if assessment is not None
