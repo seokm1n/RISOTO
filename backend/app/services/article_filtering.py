@@ -97,8 +97,11 @@ NON_ARTICLE_PAGE_HOST_FRAGMENTS = (
 ECOMMERCE_QUERY_PARAM_FRAGMENTS = (
     "colorcodes=", "sortcode=", "page_kind=brandshop", "list_kind=small",
 )
-# topical_relevance 모델이 실제 라벨링 데이터로 학습한 기업만 나열한다. 이 밖의(사용자가 새로
-# 등록한) 기업에는 모델이 어떻게 반응할지 검증되지 않아 적용하지 않는다.
+# 2026-09 사람 라벨링 라운드(human_relevance_labels.csv)에 실제로 포함된 기업 목록이다.
+# topical_relevance와 company_reranker 둘 다 이 라운드로 검증됐고, 그 밖의(신규 등록) 기업에는
+# 두 모델 모두 얼마나 잘 일반화하는지 검증되지 않았다 (reranker는 미학습 기업에서 정밀도/재현율이
+# 64~76%에서 33%까지 떨어짐, 2026-09-04 실측). 이름이 topical_relevance 전용처럼 보이지만
+# company_reranker 게이팅에도 같이 쓴다.
 TOPICAL_RELEVANCE_TRAINED_COMPANIES = {
     "올리브영", "무신사", "에이블리", "마켓컬리", "SSG",
     "11번가", "카카오", "네이버", "쿠팡",
@@ -581,12 +584,24 @@ def classify_article(
     if company_reranker is not None:
         raw_reranker_score = float(company_reranker["relevant"])
         model_relevance = _calibrated_reranker_score(company_reranker)
+        # reranker was validated on the 9 companies in TOPICAL_RELEVANCE_TRAINED_COMPANIES;
+        # on companies outside that set its own eval shows precision/recall on "relevant"
+        # collapsing from 64-76% to 33% (unseen_company_validation, 2026-09-04). Don't let
+        # it force a confident auto-accept there -- lower the floor and lean back on the
+        # company-name-agnostic rule score instead.
+        reranker_company_is_known = str(getattr(company, "name", "")) in TOPICAL_RELEVANCE_TRAINED_COMPANIES
         if identity_in_title:
             # A direct company name in a news headline is a high-recall anchor. This
             # protects genuine logistics/facility incidents from an overconfident model.
-            relevance_score = max(0.76, 0.45 * relevance_score + 0.55 * model_relevance)
+            if reranker_company_is_known:
+                relevance_score = max(0.76, 0.45 * relevance_score + 0.55 * model_relevance)
+            else:
+                relevance_score = max(0.60, 0.65 * relevance_score + 0.35 * model_relevance)
         elif product_in_title:
-            relevance_score = max(0.70, 0.35 * relevance_score + 0.65 * model_relevance)
+            if reranker_company_is_known:
+                relevance_score = max(0.70, 0.35 * relevance_score + 0.65 * model_relevance)
+            else:
+                relevance_score = max(0.55, 0.60 * relevance_score + 0.40 * model_relevance)
         elif mentioned_in_body_only:
             # Reranker confidence alone isn't enough evidence here (measured 32% precision on
             # this exact case). Cap below the accept threshold so these route to review instead
