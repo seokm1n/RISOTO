@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { formatDate } from "../../shared/presentation";
+
 const STANCE_LABELS = {
   선제_공개: "선제 공개",
   사실확인_우선: "사실 확인 우선",
@@ -349,6 +351,146 @@ function FollowUpSection({ report }) {
   );
 }
 
+function AppendixDisclosure({ title, count, children }) {
+  return (
+    <details className="response-appendix-item">
+      <summary>
+        <strong>{title}</strong>
+        {count != null && <span>{count}건</span>}
+      </summary>
+      <div className="response-appendix-body">{children}</div>
+    </details>
+  );
+}
+
+// 판단에 쓴 자료를 모아 둔다. 일상 화면의 주인공은 실행 계획이고 근거는 따질 때만
+// 열어 보는 것이라 전부 접은 채로 시작한다.
+function AppendixSection({ content, report }) {
+  const basis = report?.judgment_basis;
+  const regulations = content.regulations ?? [];
+  const precedents = content.precedents ?? [];
+  const insights = report?.case_insights ?? [];
+  const evidence = content.evidence ?? [];
+  const cited = new Set((report?.cited_mention_ids ?? []).map((id) => String(id)));
+
+  if (!basis && !regulations.length && !precedents.length && !insights.length && !evidence.length) {
+    return null;
+  }
+
+  // 사례별 시사점은 해당 사례 밑에 붙인다. 짝이 없는 시사점만 따로 남긴다.
+  const insightByCase = new Map(insights.map((item) => [item.case_id, item]));
+  const orphanInsights = insights.filter(
+    (item) => !precedents.some((precedent) => precedent.case_id === item.case_id)
+  );
+  const caseCount = precedents.length + orphanInsights.length;
+
+  return (
+    <section className="response-appendix-panel">
+      <header className="response-section-heading">
+        <div>
+          <span>근거 자료</span>
+          <h4>판단에 사용한 자료</h4>
+        </div>
+        <strong>필요할 때 펼치기</strong>
+      </header>
+
+      {basis && (
+        <AppendixDisclosure title="판단 근거 (수치)">
+          <p>{basis}</p>
+        </AppendixDisclosure>
+      )}
+
+      {regulations.length > 0 && (
+        <AppendixDisclosure title="관련 법령" count={regulations.length}>
+          <ul className="response-appendix-list">
+            {regulations.map((regulation, index) => (
+              <li key={`${regulation.law_name}-${regulation.article}-${index}`}>
+                <div className="response-appendix-head">
+                  <strong>
+                    {[regulation.law_name, regulation.article].filter(Boolean).join(" ")}
+                  </strong>
+                  {regulation.is_upcoming && <span className="response-appendix-flag upcoming">시행 예정</span>}
+                  {Number.isFinite(Number(regulation.deadline_hours)) && (
+                    <span className="response-appendix-flag">{deadlineLabel(regulation.deadline_hours)}</span>
+                  )}
+                </div>
+                {regulation.requirement && <p>{regulation.requirement}</p>}
+                {regulation.source_url && (
+                  <a href={regulation.source_url} target="_blank" rel="noreferrer">조문 원문</a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </AppendixDisclosure>
+      )}
+
+      {caseCount > 0 && (
+        <AppendixDisclosure title="유사 사례" count={caseCount}>
+          <ul className="response-appendix-list">
+            {precedents.map((precedent, index) => {
+              const insight = insightByCase.get(precedent.case_id);
+              return (
+                <li key={`${precedent.case_id ?? "case"}-${index}`}>
+                  <div className="response-appendix-head">
+                    <strong>{precedent.title}</strong>
+                    <span
+                      className={`response-appendix-flag${
+                        precedent.verification_status === "verified" ? " verified" : ""
+                      }`}
+                    >
+                      {precedent.verification_status === "verified" ? "검수 사례" : "검색 결과"}
+                    </span>
+                  </div>
+                  {precedent.summary && <p>{precedent.summary}</p>}
+                  {precedent.lesson && <p className="response-appendix-note">교훈 · {precedent.lesson}</p>}
+                  {insight && <p className="response-appendix-note">이 사건에 주는 시사점 · {insight.insight}</p>}
+                  {precedent.url && (
+                    <a href={precedent.url} target="_blank" rel="noreferrer">원문 보기</a>
+                  )}
+                </li>
+              );
+            })}
+            {orphanInsights.map((item, index) => (
+              <li key={`insight-${item.case_id ?? index}`}>
+                <div className="response-appendix-head">
+                  <strong>{item.case_title}</strong>
+                </div>
+                <p className="response-appendix-note">시사점 · {item.insight}</p>
+              </li>
+            ))}
+          </ul>
+        </AppendixDisclosure>
+      )}
+
+      {evidence.length > 0 && (
+        <AppendixDisclosure title="근거 기사" count={evidence.length}>
+          <ul className="response-appendix-list response-appendix-articles">
+            {evidence.map((article, index) => (
+              <li key={`${article.mention_id ?? "mention"}-${index}`}>
+                <div className="response-appendix-head">
+                  {article.url ? (
+                    <a href={article.url} target="_blank" rel="noreferrer">{article.title}</a>
+                  ) : (
+                    <strong>{article.title}</strong>
+                  )}
+                  {cited.has(String(article.mention_id)) && (
+                    <span className="response-appendix-flag cited">본문 인용</span>
+                  )}
+                </div>
+                <small>
+                  {[article.source, article.published_at ? formatDate(article.published_at) : null]
+                    .filter(Boolean)
+                    .join(" · ") || "출처 미상"}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </AppendixDisclosure>
+      )}
+    </section>
+  );
+}
+
 function VerificationNotice({ verification }) {
   const violations = verification?.violations ?? [];
   if (!verification || (verification.passed && violations.length === 0)) return null;
@@ -437,6 +579,7 @@ export default function MainResponseContent({ content }) {
           <PlanSection report={report} />
           <StrategySection report={report} />
           <FollowUpSection report={report} />
+          <AppendixSection content={content} report={report} />
           <VerificationNotice verification={current.verification} />
         </div>
       ) : (
