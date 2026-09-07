@@ -29,6 +29,8 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [listOpen, setListOpen] = useState(false);
+  // 지금 그리는 초안이 메인 경로인지 동종 경로인지. 제목을 가르는 데만 쓴다.
+  const [draftKind, setDraftKind] = useState(null);
   const loadSequence = useRef(0);
   const dropdownRef = useRef(null);
 
@@ -192,10 +194,10 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
       </section>
       <section className="panel pipeline-panel pipeline-risk-evidence">
         <div className="pipeline-panel-heading pipeline-risk-detail-heading">
-          <PanelTitle kicker="RESPONSE PLAN" title="대응 방안" />
+          <PanelTitle kicker="RESPONSE PLAN" title={draftKind === "peer_recommendation" ? "동종 기업 · 대응 방안" : "대응 방안"} />
           {selectedRisk && <button className="secondary-button" type="button" onClick={openEvidence}>근거 보기</button>}
         </div>
-        <RiskDetail risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} />
+        <RiskDetail risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} onDraftLoaded={setDraftKind} />
       </section>
     </>}
   </section>;
