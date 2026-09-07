@@ -657,7 +657,6 @@ button:disabled { cursor: default; }
 .collection-incident-details p, .collection-incident-details small { margin: 0; color: #716761; font-size: var(--text-small); line-height: 1.5; overflow-wrap: anywhere; }
 .collection-incident-status { flex: 0 0 auto; border-radius: 999px; padding: 4px 8px; background: #f1dfd7; color: #963c26; font-size: var(--text-caption); font-weight: 800; }
 .collection-incident-status.retrying { background: #efe7cc; color: #745f1e; }
-.collection-incident-more { padding-top: 9px; border-top: 1px solid var(--divider); }
 .collection-incident-summary + .collection-company-section { margin-top: 18px; }
 
 /* 수집 현황도 요약 화면과 같은 사프란 카드 체계를 사용한다. */
@@ -1211,6 +1210,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .collection-pie-segment.risk, .collection-pie-segment.negative { stroke: #b65232; }
 .collection-pie-segment.normal, .collection-pie-segment.neutral { stroke: #e4c88d; }
 .collection-pie-segment.positive { stroke: #4f8b66; }
+.collection-pie-segment.pending { stroke: #a9a39b; }
 .collection-pie-segment:hover, .collection-pie-segment.active { stroke-width: 23px; filter: drop-shadow(0 2px 3px rgba(80,50,30,.22)); }
 .collection-pie-segment:focus-visible { stroke-width: 23px; filter: drop-shadow(0 0 3px rgba(142,62,38,.46)); }
 .collection-pie > div { position: absolute; display: grid; width: 60%; aspect-ratio: 1; place-content: center; border-radius: 50%; background: #fffaf1; pointer-events: none; text-align: center; box-shadow: 0 2px 12px rgba(80,50,30,.08); }
@@ -1223,6 +1223,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .briefing-pie-tooltip-label i.risk, .briefing-pie-tooltip-label i.negative { background: #b65232; }
 .briefing-pie-tooltip-label i.normal, .briefing-pie-tooltip-label i.neutral { background: #e4c88d; }
 .briefing-pie-tooltip-label i.positive { background: #4f8b66; }
+.briefing-pie-tooltip-label i.pending { background: #a9a39b; }
 .briefing-pie-tooltip > span b { white-space: nowrap; }
 .briefing-pie-tooltip > small { color: #715e52; font-size: var(--text-caption); text-align: right; }
 .briefing-ratio-card dl { display: grid; width: 100%; gap: 9px; margin: 0; }
@@ -1235,6 +1236,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .briefing-ratio-card dt i.positive { border: 0; background: #4f8b66; }
 .briefing-ratio-card dt i.negative { border: 0; background: #b65232; }
 .briefing-ratio-card dt i.neutral { border: 0; background: #e4c88d; }
+.briefing-ratio-card dt i.pending { border: 0; background: #a9a39b; }
 .briefing-ratio-card dd { margin: 0; color: #3e332e; font-size: var(--text-small); font-weight: 800; white-space: nowrap; }
 .briefing-risk-articles { display: flex; min-height: 0; flex-direction: column; }
 .briefing-risk-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }

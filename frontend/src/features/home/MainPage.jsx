@@ -32,27 +32,42 @@ function mean(values) {
 }
 
 function averageCompanyRatio(groups, numeratorKey, denominatorKey) {
+  let totalNumerator = 0;
+  let totalDenominator = 0;
   const ratios = groups.flatMap((days) => {
     const denominator = days.reduce((sum, day) => sum + Math.max(Number(day[denominatorKey]) || 0, 0), 0);
-    if (denominator <= 0) return [];
     const numerator = days.reduce((sum, day) => sum + Math.max(Number(day[numeratorKey]) || 0, 0), 0);
+    totalNumerator += numerator;
+    totalDenominator += denominator;
+    if (denominator <= 0) return [];
     return [Math.min(numerator / denominator, 1)];
   });
-  return mean(ratios);
+  return { ratio: mean(ratios), totalNumerator, totalDenominator };
 }
 
 function averageCompanySentiment(groups) {
+  const totals = { story: 0, positive: 0, negative: 0, neutral: 0, pending: 0 };
   const ratios = groups.flatMap((days) => {
-    const positive = days.reduce((sum, day) => sum + Math.max(Number(day.positive_article_count) || 0, 0), 0);
-    const negative = days.reduce((sum, day) => sum + Math.max(Number(day.negative_article_count) || 0, 0), 0);
-    const neutral = days.reduce((sum, day) => sum + Math.max(Number(day.neutral_article_count) || 0, 0), 0);
-    const total = positive + negative + neutral;
-    return total > 0 ? [{ positive: positive / total, negative: negative / total, neutral: neutral / total }] : [];
+    const story = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_story_count) || 0, 0), 0);
+    const positive = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_positive_story_count) || 0, 0), 0);
+    const negative = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_negative_story_count) || 0, 0), 0);
+    const neutral = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_neutral_story_count) || 0, 0), 0);
+    const pending = Math.max(story - positive - negative - neutral, 0);
+    totals.story += story;
+    totals.positive += positive;
+    totals.negative += negative;
+    totals.neutral += neutral;
+    totals.pending += pending;
+    return story > 0 ? [{ positive: positive / story, negative: negative / story, neutral: neutral / story, pending: pending / story }] : [];
   });
   return {
-    positive: mean(ratios.map((item) => item.positive)),
-    negative: mean(ratios.map((item) => item.negative)),
-    neutral: mean(ratios.map((item) => item.neutral)),
+    ratios: {
+      positive: mean(ratios.map((item) => item.positive)),
+      negative: mean(ratios.map((item) => item.negative)),
+      neutral: mean(ratios.map((item) => item.neutral)),
+      pending: mean(ratios.map((item) => item.pending)),
+    },
+    totals,
   };
 }
 
@@ -229,13 +244,15 @@ function InteractiveDonut({ periodLabel, segments, ariaLabel, tooltipId, valueFo
   </div>;
 }
 
-function RiskRatioCard({ periodLabel, storyCount, riskCount, averageRatio = null }) {
+function RiskRatioCard({ periodLabel, storyCount, riskCount, average = null }) {
   const safeStoryCount = Math.max(Number(storyCount) || 0, 0);
   const safeRiskCount = Math.min(Math.max(Number(riskCount) || 0, 0), safeStoryCount);
   const nonRiskCount = Math.max(safeStoryCount - safeRiskCount, 0);
-  const isAverage = Number.isFinite(averageRatio);
-  const riskRatio = isAverage ? Math.min(Math.max(averageRatio, 0), 1) : safeStoryCount > 0 ? safeRiskCount / safeStoryCount : 0;
+  const isAverage = average !== null;
+  const riskRatio = isAverage ? Math.min(Math.max(average.ratio, 0), 1) : safeStoryCount > 0 ? safeRiskCount / safeStoryCount : 0;
   const nonRiskRatio = 1 - riskRatio;
+  const totalRiskCount = Math.max(Number(average?.totalNumerator) || 0, 0);
+  const totalNonRiskCount = Math.max((Number(average?.totalDenominator) || 0) - totalRiskCount, 0);
   return <article className="briefing-ratio-card">
     <InteractiveDonut
       periodLabel={periodLabel}
@@ -250,21 +267,24 @@ function RiskRatioCard({ periodLabel, storyCount, riskCount, averageRatio = null
       valueFormatter={isAverage ? formatPercent : countValueText}
     />
     <dl>
-      <div className="risk"><dt><i className="risk" />위험</dt><dd>{formatPercent(riskRatio)} · {isAverage ? "기업 평균" : `${formatNumber(safeRiskCount)}건`}</dd></div>
-      <div className="normal"><dt><i className="normal" />비위험</dt><dd>{formatPercent(nonRiskRatio)} · {isAverage ? "기업 평균" : `${formatNumber(nonRiskCount)}건`}</dd></div>
+      <div className="risk"><dt><i className="risk" />위험</dt><dd>{formatPercent(riskRatio)} · {formatNumber(isAverage ? totalRiskCount : safeRiskCount)}건</dd></div>
+      <div className="normal"><dt><i className="normal" />비위험</dt><dd>{formatPercent(nonRiskRatio)} · {formatNumber(isAverage ? totalNonRiskCount : nonRiskCount)}건</dd></div>
     </dl>
   </article>;
 }
 
-function SentimentRatioCard({ periodLabel, positiveCount, negativeCount, neutralCount, averageRatios = null }) {
+function SentimentRatioCard({ periodLabel, storyCount, positiveCount, negativeCount, neutralCount, average = null }) {
+  const stories = Math.max(Number(storyCount) || 0, 0);
   const positive = Math.max(Number(positiveCount) || 0, 0);
   const negative = Math.max(Number(negativeCount) || 0, 0);
   const neutral = Math.max(Number(neutralCount) || 0, 0);
-  const total = positive + negative + neutral;
-  const isAverage = averageRatios !== null;
-  const positiveRatio = isAverage ? averageRatios.positive : total > 0 ? positive / total : 0;
-  const negativeRatio = isAverage ? averageRatios.negative : total > 0 ? negative / total : 0;
-  const neutralRatio = isAverage ? averageRatios.neutral : total > 0 ? neutral / total : 0;
+  const pending = Math.max(stories - positive - negative - neutral, 0);
+  const isAverage = average !== null;
+  const positiveRatio = isAverage ? average.ratios.positive : stories > 0 ? positive / stories : 0;
+  const negativeRatio = isAverage ? average.ratios.negative : stories > 0 ? negative / stories : 0;
+  const neutralRatio = isAverage ? average.ratios.neutral : stories > 0 ? neutral / stories : 0;
+  const pendingRatio = isAverage ? average.ratios.pending : stories > 0 ? pending / stories : 0;
+  const displayCounts = isAverage ? average.totals : { story: stories, positive, negative, neutral, pending };
   return <article className="briefing-ratio-card">
     <InteractiveDonut
       periodLabel={periodLabel}
@@ -272,17 +292,19 @@ function SentimentRatioCard({ periodLabel, positiveCount, negativeCount, neutral
         { key: "positive", label: "긍정", value: isAverage ? positiveRatio : positive, className: "positive" },
         { key: "negative", label: "부정", value: isAverage ? negativeRatio : negative, className: "negative" },
         { key: "neutral", label: "중립", value: isAverage ? neutralRatio : neutral, className: "neutral" },
+        { key: "pending", label: "분석 대기", value: isAverage ? pendingRatio : pending, className: "pending" },
       ]}
       ariaLabel={isAverage
-        ? `${periodLabel} 등록 기업 평균 긍정 ${formatPercent(positiveRatio)}, 부정 ${formatPercent(negativeRatio)}, 중립 ${formatPercent(neutralRatio)}`
-        : `${periodLabel} 감성 판정 기사 ${total}건 중 긍정 ${positive}건, 부정 ${negative}건, 중립 ${neutral}건`}
+        ? `${periodLabel} 판정 대상 스토리 ${displayCounts.story}건의 등록 기업 평균: 긍정 ${formatPercent(positiveRatio)}, 부정 ${formatPercent(negativeRatio)}, 중립 ${formatPercent(neutralRatio)}, 분석 대기 ${formatPercent(pendingRatio)}`
+        : `${periodLabel} 판정 대상 스토리 ${stories}건 중 긍정 ${positive}건, 부정 ${negative}건, 중립 ${neutral}건, 분석 대기 ${pending}건`}
       tooltipId="sentiment-ratio-tooltip"
       valueFormatter={isAverage ? formatPercent : countValueText}
     />
     <dl>
-      <div className="positive"><dt><i className="positive" />긍정</dt><dd>{formatPercent(positiveRatio)} · {isAverage ? "기업 평균" : `${formatNumber(positive)}건`}</dd></div>
-      <div className="negative"><dt><i className="negative" />부정</dt><dd>{formatPercent(negativeRatio)} · {isAverage ? "기업 평균" : `${formatNumber(negative)}건`}</dd></div>
-      <div className="neutral"><dt><i className="neutral" />중립</dt><dd>{formatPercent(neutralRatio)} · {isAverage ? "기업 평균" : `${formatNumber(neutral)}건`}</dd></div>
+      <div className="positive"><dt><i className="positive" />긍정</dt><dd>{formatPercent(positiveRatio)} · {formatNumber(displayCounts.positive)}건</dd></div>
+      <div className="negative"><dt><i className="negative" />부정</dt><dd>{formatPercent(negativeRatio)} · {formatNumber(displayCounts.negative)}건</dd></div>
+      <div className="neutral"><dt><i className="neutral" />중립</dt><dd>{formatPercent(neutralRatio)} · {formatNumber(displayCounts.neutral)}건</dd></div>
+      {displayCounts.pending > 0 && <div className="pending"><dt><i className="pending" />분석 대기</dt><dd>{formatPercent(pendingRatio)} · {formatNumber(displayCounts.pending)}건</dd></div>}
     </dl>
   </article>;
 }
@@ -381,26 +403,28 @@ export default function MainPage({ onOpenCompany }) {
   const sevenDayStoryCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0);
   const sevenDayRiskStoryCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_risk_story_count ?? 0), 0);
   const todaySentiment = {
-    positiveCount: todaySummary?.positive_article_count ?? 0,
-    negativeCount: todaySummary?.negative_article_count ?? 0,
-    neutralCount: todaySummary?.neutral_article_count ?? 0,
+    storyCount: todaySummary?.eligible_story_count ?? 0,
+    positiveCount: todaySummary?.eligible_positive_story_count ?? 0,
+    negativeCount: todaySummary?.eligible_negative_story_count ?? 0,
+    neutralCount: todaySummary?.eligible_neutral_story_count ?? 0,
   };
   const sevenDaySentiment = {
-    positiveCount: briefingSummaries.reduce((sum, day) => sum + (day.positive_article_count ?? 0), 0),
-    negativeCount: briefingSummaries.reduce((sum, day) => sum + (day.negative_article_count ?? 0), 0),
-    neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.neutral_article_count ?? 0), 0),
+    storyCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0),
+    positiveCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_positive_story_count ?? 0), 0),
+    negativeCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_negative_story_count ?? 0), 0),
+    neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_neutral_story_count ?? 0), 0),
   };
   const periodLabel = ratioPeriod === "today" ? "1일" : "7일";
   const ratioGroups = ratioPeriod === "today"
     ? dailyGroups.map((days) => days.filter((day) => day.summary_date === todayKey))
     : dailyGroups;
   const selectedRiskRatio = briefingView === "average"
-    ? { averageRatio: averageCompanyRatio(ratioGroups, "eligible_risk_story_count", "eligible_story_count") }
+    ? { average: averageCompanyRatio(ratioGroups, "eligible_risk_story_count", "eligible_story_count") }
     : ratioPeriod === "today"
       ? { storyCount: todayStoryCount, riskCount: todayRiskStoryCount }
       : { storyCount: sevenDayStoryCount, riskCount: sevenDayRiskStoryCount };
   const selectedSentimentRatio = briefingView === "average"
-    ? { averageRatios: averageCompanySentiment(ratioGroups) }
+    ? { average: averageCompanySentiment(ratioGroups) }
     : ratioPeriod === "today" ? todaySentiment : sevenDaySentiment;
 
   return <section className="workspace main-workspace briefing-workspace">
