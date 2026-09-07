@@ -447,16 +447,22 @@ def import_exported_models(db: Session, settings: Settings) -> None:
         label_schema: dict,
         thresholds: dict | None = None,
         dependencies: dict | None = None,
-    ) -> ModelVersion:
-        for current in db.scalars(
+    ) -> ModelVersion | None:
+        # This exists to bootstrap a fresh environment that has nothing registered
+        # for the task yet -- not to keep re-asserting itself. Running on every
+        # startup/reload used to unconditionally retire whatever was production
+        # and re-promote this hardcoded exported version, silently reverting any
+        # later manual promotion within one reload cycle (confirmed 2026-09-07:
+        # a promotion was reverted ~40s later). Only act when nothing else is
+        # already production for this task, or when this exact version already is.
+        current_production = db.scalar(
             select(ModelVersion).where(
                 ModelVersion.task == task,
                 ModelVersion.status == "production",
-                ModelVersion.version != version,
             )
-        ):
-            current.status = "retired"
-            current.retired_at = now
+        )
+        if current_production is not None and current_production.version != version:
+            return None
         model = existing.get((task, version))
         if model is None:
             model = ModelVersion(
