@@ -33,6 +33,44 @@
       "accuracy": 0.8391,
       "auc": 0.6398
     },
+    "advertising_final_exclusion": {
+      "note": "reason=='advertisement' undercounts effectiveness -- most ad-labeled rows are actually non-article/community pages caught earlier by duplicate or irrelevant-relevance rules. This measures the number that ever reach decision=='accepted' regardless of which rule caught them.",
+      "n_ads": 110,
+      "excluded_by_any_reason": 105,
+      "leaked_to_accepted": 5,
+      "leaked_examples": [
+        {
+          "title": "[정보이슈] 네이버 시리즈 앱으로 웹툰 웹소설 무제한 즐기기",
+          "url": "https://ye-ah.net/all/41316",
+          "relevance_score": 0.980553,
+          "advertising_score": 0.0
+        },
+        {
+          "title": "무신사 추천 브랜드",
+          "url": "https://www.musinsa.com/brand/teva/products?colorCodes=7%2C8%2C9%2C10%2C11%2C12%2C13%2C14%2C15%2C17%2C22%2C1%2C2%2C3%2C4%2C5%2C6&sortCode=price_high&brands=teva&page_kind=brandshop&list_kind=small",
+          "relevance_score": 0.977287,
+          "advertising_score": 0.0
+        },
+        {
+          "title": "블랙머니 다시보기. 쿠팡플레이 요금제 비교 구독료 절약 꿀팁",
+          "url": "https://v.daum.net/v/xzZZh8CEnN",
+          "relevance_score": 0.76,
+          "advertising_score": 0.0
+        },
+        {
+          "title": "[KCC건설] 여주 무신사 물류센터 신축공사 현장 안전관리직 채용",
+          "url": "https://www.worker.co.kr/job/view.asp?no=1412002",
+          "relevance_score": 0.975941,
+          "advertising_score": 0.0
+        },
+        {
+          "title": "[쿠팡수입] 몰텍스 퓨어앤네이처 밴드형 기저귀",
+          "url": "https://www.sisopick.com/product/%EC%B6%9C%EC%82%B0-%EC%9C%A0%EC%95%84%EB%8F%99/%EA%B8%B0%EC%A0%80%EA%B7%80/%EC%9D%BC%ED%9A%8C%EC%9A%A9%EA%B8%B0%EC%A0%80%EA%B7%80/%EB%B0%B4%EB%93%9C%ED%98%95/%EC%BF%A0%ED%8C%A1%EC%88%98%EC%9E%85-%EB%AA%B0%ED%85%8D%EC%8A%A4-%ED%93%A8%EC%96%B4%EC%95%A4%EB%84%A4%EC%9D%B4%EC%B2%98-%EB%B0%B4%EB%93%9C%ED%98%95-%EA%B8%B0%EC%A0%80%EA%B7%80-5%EB%8B%A8%EA%B3%84-125%EB%A7%A4-NbxQrcGK",
+          "relevance_score": 0.76,
+          "advertising_score": 0.0
+        }
+      ]
+    },
     "skipped_rows": 0,
     "total_rows": 600,
     "body_only_examples": [
@@ -83,44 +121,44 @@
       {
         "decision": "rejected",
         "reason": "irrelevant",
-        "n": 52666,
-        "avg_age_hours": "83.5810713209027329"
+        "n": 63508,
+        "avg_age_hours": "130.62332397560939829176"
       },
       {
         "decision": "accepted",
         "reason": "accepted",
-        "n": 34389,
-        "avg_age_hours": "109.5389700861081628"
+        "n": 36059,
+        "avg_age_hours": "169.79750006150293038253"
       },
       {
         "decision": "rejected",
         "reason": "duplicate",
-        "n": 9060,
-        "avg_age_hours": "48.4665401995266434"
+        "n": 10944,
+        "avg_age_hours": "101.32847165223242568100"
       },
       {
         "decision": "accepted",
         "reason": "duplicate",
-        "n": 8705,
-        "avg_age_hours": "78.2616736874784926"
+        "n": 8933,
+        "avg_age_hours": "142.15287014285626328944"
       },
       {
         "decision": "review_required",
         "reason": "irrelevant",
-        "n": 5185,
-        "avg_age_hours": "86.1680308919940534"
+        "n": 5650,
+        "avg_age_hours": "142.93218033846514258111"
       },
       {
         "decision": "rejected",
         "reason": "advertisement",
-        "n": 1065,
-        "avg_age_hours": "29.5247691726025039"
+        "n": 1890,
+        "avg_age_hours": "68.84261911747089947119"
       },
       {
         "decision": "review_required",
         "reason": "advertisement",
-        "n": 365,
-        "avg_age_hours": "83.4671823398926941"
+        "n": 406,
+        "avg_age_hours": "138.31559210304734537400"
       }
     ]
   },
@@ -135,7 +173,7 @@
       {
         "status": "closed",
         "severity": "critical",
-        "n": 2414
+        "n": 2437
       },
       {
         "status": "legacy_candidate",
@@ -145,17 +183,12 @@
       {
         "status": "closed",
         "severity": "warning",
-        "n": 156
+        "n": 164
       },
       {
         "status": "legacy_candidate",
         "severity": "low",
         "n": 80
-      },
-      {
-        "status": "monitoring",
-        "severity": "critical",
-        "n": 26
       },
       {
         "status": "legacy_candidate",
@@ -165,7 +198,12 @@
       {
         "status": "monitoring",
         "severity": "warning",
-        "n": 11
+        "n": 3
+      },
+      {
+        "status": "monitoring",
+        "severity": "critical",
+        "n": 3
       },
       {
         "status": "dismissed",
@@ -201,7 +239,7 @@
       },
       {
         "primary_type": "supply_operations",
-        "n": 264
+        "n": 265
       },
       {
         "primary_type": "labor_hr",
@@ -217,11 +255,11 @@
     "by_verify_status": [
       {
         "verify_status": "생성완료",
-        "n": 43
+        "n": 45
       },
       {
         "verify_status": "영향없음_종료",
-        "n": 10
+        "n": 14
       },
       {
         "verify_status": "검증실패",
@@ -235,7 +273,7 @@
     "by_approval_state": [
       {
         "approval_state": "draft",
-        "n": 64
+        "n": 70
       }
     ]
   },

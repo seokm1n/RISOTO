@@ -74,6 +74,8 @@ def evaluate_relevance_and_ads(db) -> dict:
     old_true, old_score, old_pred = [], [], []
     new_true, new_score, new_pred = [], [], []
     ad_true, ad_score, ad_pred = [], [], []
+    ad_excluded_any_reason = []
+    ad_leaked_examples = []
     skipped = 0
     body_only_examples = []
 
@@ -116,6 +118,19 @@ def evaluate_relevance_and_ads(db) -> dict:
             ad_true.append(1 if row["advertisement_label"] == "yes" else 0)
             ad_score.append(decision.advertising_score)
             ad_pred.append(decision.decision in ("rejected", "review_required") and decision.reason == "advertisement")
+            # "reason==advertisement" only measures the AD_PATTERNS/NLI layer in isolation.
+            # What actually matters operationally is whether an ad ever reaches "accepted" --
+            # duplicate/irrelevant/non-article-page rules catch most of the rest first.
+            if row["advertisement_label"] == "yes":
+                excluded = decision.decision != "accepted"
+                ad_excluded_any_reason.append(excluded)
+                if not excluded and len(ad_leaked_examples) < 10:
+                    ad_leaked_examples.append({
+                        "title": row["title"][:80],
+                        "url": row["url"],
+                        "relevance_score": decision.relevance_score,
+                        "advertising_score": decision.advertising_score,
+                    })
 
         evid = decision.details.get("relevance_evidence", [])
         is_body_only = any(
@@ -137,6 +152,16 @@ def evaluate_relevance_and_ads(db) -> dict:
         "relevance_before_fix": _metrics(old_true, old_score, old_pred),
         "relevance_after_fix": _metrics(new_true, new_score, new_pred),
         "advertising_current": _metrics(ad_true, ad_score, ad_pred),
+        "advertising_final_exclusion": {
+            "note": "reason=='advertisement' undercounts effectiveness -- most ad-labeled rows "
+                    "are actually non-article/community pages caught earlier by duplicate or "
+                    "irrelevant-relevance rules. This measures the number that ever reach "
+                    "decision=='accepted' regardless of which rule caught them.",
+            "n_ads": len(ad_excluded_any_reason),
+            "excluded_by_any_reason": sum(ad_excluded_any_reason),
+            "leaked_to_accepted": len(ad_excluded_any_reason) - sum(ad_excluded_any_reason),
+            "leaked_examples": ad_leaked_examples,
+        },
         "skipped_rows": skipped,
         "total_rows": len(rows),
         "body_only_examples": body_only_examples,

@@ -57,7 +57,7 @@
   </header>
 
   <div class="callout good">
-    <b>요약:</b> 관련성 필터 수정은 실제로 효과가 있었습니다 (정밀도 36%→68%, 정확도 60%→81%). 반면 광고 탐지는 이번에 처음 실측했는데 재현율이 23%로 낮고, review_required 대기열에 5,185건이 평균 86시간째 쌓여 있으며, 응답 초안 64건 중 사람이 승인/반려한 건 0건입니다.
+    <b>요약:</b> 관련성 필터 수정은 실제로 효과가 있었습니다 (정밀도 36%→68%, 정확도 60%→81%). 광고는 규칙 자체 재현율(23%)만 보면 낮아 보이지만 다른 규칙이 대신 걸러줘서 실제 유출은 110건 중 5건뿐입니다. 반면 review_required 대기열에는 5,185건이 평균 86시간째 쌓여 있고, 응답 초안 64건 중 사람이 승인/반려한 건 0건입니다.
   </div>
 
   <h2 class="section"><span class="n">1</span>관련성 필터 — 수정 전/후 비교</h2>
@@ -74,14 +74,18 @@
   </div>
   <p class="lead">오탐(FP)이 172건→43건으로 4분의 1로 줄었고, 그 대가로 놓친 것(FN)은 61건→66건으로 5건 늘었습니다. 정밀도 이득이 재현율 손실보다 훨씬 커서 순효과는 뚜렷한 개선입니다.</p>
 
-  <h2 class="section"><span class="n">2</span>광고 탐지 — 최초 실측</h2>
+  <h2 class="section"><span class="n">2</span>광고 탐지 — 최초 실측 (수정됨)</h2>
   <p class="lead">advertisement_label(yes/no) 578건 기준. 지금까지 한 번도 사람 라벨로 검증된 적이 없었습니다.</p>
-  <div class="card">
-    <div class="chart-title">정밀도 · 재현율 · AUC</div>
-    <div id="chart-ads"></div>
+  <div class="callout warn" style="margin-bottom:12px;">
+    <b>이전 버전 정정:</b> 처음엔 <code>reason=="advertisement"</code> 기준 재현율 22.7%만 보고 "광고 10건 중 8건이 통과한다"고 썼는데, 틀렸습니다. AD_PATTERNS가 못 잡아도 대부분은 <code>non_article_page</code>(커뮤니티·핫딜 게시판 호스트 차단)나 관련성 점수 미달로 <b>다른 규칙이 대신 걸러내고</b> 있었습니다. 최종적으로 accepted까지 도달한 광고는 110건 중 <b>5건(4.5%)</b>뿐입니다.
   </div>
-  <div class="callout bad">
-    광고 110건 중 25건만 잡아냈습니다(재현율 22.7%). 잡아낸 것 중에는 76%가 실제 광고라 오탐은 적은 편(정밀도 75.8%)이지만, <b>광고 기사 10건 중 8건이 그대로 통과</b>하고 있습니다. AD_PATTERNS 정규식 가중치가 실측 없이 정해진 값이라는 점이 원인으로 보입니다.
+  <div class="card">
+    <div class="chart-title">정밀도 · 재현율 · AUC (AD_PATTERNS 규칙 자체만 놓고 봤을 때)</div>
+    <div id="chart-ads"></div>
+    <p style="font-size:12px;color:var(--sub);margin:8px 0 0;">이 수치는 "advertisement 사유로 직접 잡았는가"만 본 것이라 낮게 나옵니다 — 아래 실제 유출률과는 다른 지표입니다.</p>
+  </div>
+  <div class="callout good">
+    <b>실제 유출률: 110건 중 5건(4.5%)만 accepted까지 도달.</b> AD_PATTERNS 규칙 자체의 재현율은 22.7%로 낮지만, 커뮤니티/핫딜 게시판 호스트 차단과 관련성 필터가 대부분을 이미 걸러내고 있어서 최종 결과는 훨씬 안전합니다. 다만 새어나간 5건은 전부 <b>제목에 회사/제품명이 있어 관련성 점수가 강제로 0.70~0.76 이상으로 올라간 경우</b>(자사 쇼핑몰 상품 목록, 채용 공고, 블로그 리뷰)입니다 — 뉴스 기사가 아닌 페이지인데 제목에 이름이 있다는 이유만으로 통과합니다.
   </div>
 
   <h2 class="section"><span class="n">3</span>review_required 대기열</h2>
@@ -143,7 +147,7 @@
   <h2 class="section"><span class="n">8</span>다음으로 볼 만한 것</h2>
   <div class="card">
     <ol style="margin:0; padding-left:20px; font-size:14px;">
-      <li>광고 탐지 재현율 23% — AD_PATTERNS 가중치를 이 578건 기준으로 다시 튜닝하거나, company_reranker처럼 학습 기반 모델로 교체 검토</li>
+      <li>새어나간 광고 5건은 전부 제목에 회사/제품명이 있어 relevance 강제 하한선(0.70~0.76)에 걸린 자사몰·채용공고·블로그 리뷰 — 이 하한선에 "뉴스 기사가 아님" 신호를 추가로 걸어볼 만함</li>
       <li>review_required 큐에 "처리됨" 상태/컬럼이 없음 — 검수 워크플로 자체를 만들지, 큐를 정기적으로 자동 재채점할지 결정 필요</li>
       <li>production LightGBM(<code>lightgbm_auto_v3</code>)에 저장된 검증 지표가 없음(<code>metrics: {"source": "exports"}</code>) — 지금 서빙 중인 모델의 실제 성능을 아무도 기록해두지 않은 상태</li>
       <li>company_reranker가 학습에 없던 기업에서 정밀도/재현율이 33%까지 떨어짐(unseen_company_validation) — 신규 기업 등록 시 주의 필요</li>
