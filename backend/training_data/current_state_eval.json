@@ -97,44 +97,44 @@
       {
         "decision": "rejected",
         "reason": "irrelevant",
-        "n": 63623,
-        "avg_age_hours": "130.56038422455622704668"
+        "n": 63928,
+        "avg_age_hours": "130.40137273522753896743"
       },
       {
         "decision": "accepted",
         "reason": "accepted",
-        "n": 36094,
-        "avg_age_hours": "169.80608990844060724157"
+        "n": 36168,
+        "avg_age_hours": "169.92361792066829333666"
       },
       {
         "decision": "rejected",
         "reason": "duplicate",
-        "n": 10967,
-        "avg_age_hours": "101.28910341252563245059"
+        "n": 11038,
+        "avg_age_hours": "101.10097716143657768490"
       },
       {
         "decision": "accepted",
         "reason": "duplicate",
-        "n": 8936,
-        "avg_age_hours": "142.27843943972501988840"
+        "n": 8948,
+        "avg_age_hours": "142.55266807733475513675"
       },
       {
         "decision": "review_required",
         "reason": "irrelevant",
-        "n": 5658,
-        "avg_age_hours": "142.90328033108445269698"
+        "n": 5660,
+        "avg_age_hours": "143.31822596646971927767"
       },
       {
         "decision": "rejected",
         "reason": "advertisement",
-        "n": 1895,
-        "avg_age_hours": "68.83408010565186162698"
+        "n": 1904,
+        "avg_age_hours": "68.97244894843691643416"
       },
       {
         "decision": "review_required",
         "reason": "advertisement",
-        "n": 409,
-        "avg_age_hours": "137.47373143355066558204"
+        "n": 413,
+        "avg_age_hours": "136.60560204092682270659"
       }
     ]
   },
@@ -569,6 +569,65 @@
           }
         },
         "promoted_at": "2026-09-03T10:59:16.353448+09:00"
+      },
+      {
+        "task": "risk_detector",
+        "version": "risk-lgbm-20260907T010201Z",
+        "status": "candidate",
+        "base_model": null,
+        "metrics": {
+          "cv_folds": 5.0,
+          "oof_pr_auc": 0.5952093868476329,
+          "oof_macro_f1": 0.7909252809254386,
+          "oof_f2": 0.7856037151702786,
+          "oof_recall": 0.871244635193133,
+          "oof_daily_false_alarms_per_company": 0.7072072072072072,
+          "oof_company_1_daily_false_alarms": 0.0,
+          "oof_company_2_daily_false_alarms": 1.6727272727272726,
+          "oof_company_3_daily_false_alarms": 0.0,
+          "oof_company_4_daily_false_alarms": 0.0,
+          "oof_company_5_daily_false_alarms": 0.05555555555555555,
+          "oof_company_6_daily_false_alarms": 0.0,
+          "oof_company_7_daily_false_alarms": 0.0,
+          "oof_company_8_daily_false_alarms": 0.0,
+          "oof_company_9_daily_false_alarms": 0.8205128205128205
+        },
+        "training_counts": {
+          "positive_events": 23,
+          "negative_events": 81,
+          "labeled_windows": 1206
+        },
+        "promoted_at": null
+      },
+      {
+        "task": "risk_detector",
+        "version": "risk-lgbm-20260907T010250Z",
+        "status": "candidate",
+        "base_model": null,
+        "metrics": {
+          "cv_folds": 5.0,
+          "oof_pr_auc": 0.5952093868476329,
+          "oof_roc_auc": 0.869817695812694,
+          "oof_macro_f1": 0.7909252809254386,
+          "oof_f2": 0.7856037151702786,
+          "oof_recall": 0.871244635193133,
+          "oof_daily_false_alarms_per_company": 0.7072072072072072,
+          "oof_company_1_daily_false_alarms": 0.0,
+          "oof_company_2_daily_false_alarms": 1.6727272727272726,
+          "oof_company_3_daily_false_alarms": 0.0,
+          "oof_company_4_daily_false_alarms": 0.0,
+          "oof_company_5_daily_false_alarms": 0.05555555555555555,
+          "oof_company_6_daily_false_alarms": 0.0,
+          "oof_company_7_daily_false_alarms": 0.0,
+          "oof_company_8_daily_false_alarms": 0.0,
+          "oof_company_9_daily_false_alarms": 0.8205128205128205
+        },
+        "training_counts": {
+          "positive_events": 23,
+          "negative_events": 81,
+          "labeled_windows": 1206
+        },
+        "promoted_at": null
       }
     ]
   }
