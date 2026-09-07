@@ -208,7 +208,10 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
   const renderCompanyRow = (company) => {
     const summary = summaries[company.id];
     const canToggle = ["backfilling", "warming", "active", "paused"].includes(company.monitoring_status);
-    return <article className="collection-company-row" key={company.id}>
+    return <article className="collection-company-row" onClick={(event) => {
+      if (event.target.closest("button, a, input, select, textarea, summary, [role='button'], [role='link']")) return;
+      setArticleCompany(company);
+    }} key={company.id}>
       <div><span className={`status-dot ${company.monitoring_status}`} /><div><button className="collection-company-name" type="button" onClick={() => setArticleCompany(company)}>{company.name}</button><small>{company.industry_name} · {MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</small></div></div>
       <dl><div><dt>정제 기사</dt><dd>{formatNumber(summary?.article_count)}</dd></div><div><dt>분석 완료</dt><dd>{formatNumber(summary?.analyzed_count)}</dd></div><div><dt>마지막 수집</dt><dd>{formatDate(summary?.last_collected_at)}</dd></div></dl>
       <div className="collection-row-actions"><button type="button" onClick={() => onOpenCompany(company.id)}>분석 통계 보기</button>{canToggle && <button className={`collection-toggle ${company.monitoring_status === "paused" ? "start" : "stop"}`} type="button" onClick={() => changeCompany(company)} disabled={Boolean(busy)}>{busy === company.id ? "처리 중..." : company.monitoring_status === "paused" ? "수집 재개" : "수집 중지"}</button>}</div>
@@ -234,7 +237,7 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
       </section>
     </div>
     <CollectionIncidentSummary companies={companies} health={health} incidents={incidents} />
-    <section className="panel collection-company-section"><PanelTitle kicker="COMPANY STREAMS" title="기업별 수집 현황" /><p className="collection-company-guide">기업명을 누르면 해당 기업의 수집된 기사를 볼 수 있습니다.</p>{loading ? <p className="empty-state">수집 현황을 불러오는 중입니다.</p> : <div className="collection-stream-groups">{companyGroups.map((group) => <section className={`collection-stream-group ${group.role}`} key={group.role}><header><h3>{group.title}</h3></header>{group.companies.length ? <div className="collection-company-list">{group.companies.map(renderCompanyRow)}</div> : <p className="collection-group-empty">등록된 {group.title}이 없습니다.</p>}</section>)}</div>}</section>
+    <section className="panel collection-company-section"><PanelTitle kicker="COMPANY STREAMS" title="기업별 수집 현황" /><p className="collection-company-guide">기업 박스를 누르면 해당 기업의 수집된 기사를 볼 수 있습니다.</p>{loading ? <p className="empty-state">수집 현황을 불러오는 중입니다.</p> : <div className="collection-stream-groups">{companyGroups.map((group) => <section className={`collection-stream-group ${group.role}`} key={group.role}><header><h3>{group.title}</h3></header>{group.companies.length ? <div className="collection-company-list">{group.companies.map(renderCompanyRow)}</div> : <p className="collection-group-empty">등록된 {group.title}이 없습니다.</p>}</section>)}</div>}</section>
     {articleCompany && <CollectedArticlesDialog company={articleCompany} days={initialArticleDays} onClose={() => setArticleCompany(null)} />}
     {confirmationDialog}
   </section>;
