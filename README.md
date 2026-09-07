@@ -311,6 +311,12 @@ tar -xzf model_artifacts.tar.gz -C exports/model_artifacts
 docker compose up -d --force-recreate backend
 ```
 
+**새 모델 파일만 추가로 받을 때**: 매번 전체 압축 파일을 다시 받을 필요는 없습니다. 팀 Drive의
+`model_artifacts` 폴더에서 새로 올라온 `.joblib` 파일만 내려받아 `exports/model_artifacts/`에 넣고
+`docker compose up -d --force-recreate backend`만 다시 실행하면 됩니다. 2026-09-07 기준 최신 파일:
+`risk-lgbm-20260907T022507Z.joblib`(위험 탐지 LightGBM, `model_versions`에 production으로 등록됨 —
+자세한 내용은 `docs/2026-09-07-risk-formula-devlog.md` 참고).
+
 ### 3. 정답 데이터(라벨) 복원
 
 외부 PostgreSQL 관리자와 협의한 뒤, 빈 DB이거나 아직 해당 라벨을 넣지 않은 상태에서
