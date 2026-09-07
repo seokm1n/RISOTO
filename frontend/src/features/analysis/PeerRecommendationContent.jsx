@@ -1,4 +1,6 @@
-import { NoEvidenceNotice } from "./MainResponseContent";
+// 두 컴포넌트를 메인 렌더러에서 가져다 쓴다. 같은 것을 두 번 만들면 한쪽만 고쳐졌을 때
+// 담당자가 두 화면을 다른 상황으로 읽는다 - NoEvidenceNotice를 공유하는 이유와 같다.
+import { FoldSection, NoEvidenceNotice } from "./MainResponseContent";
 
 const DIRECTION_PRESENTATION = {
   부정적_파급: { label: "부정 영향 가능", tone: "urgent" },
@@ -178,41 +180,46 @@ function FollowUpSection({ impact, recommendation }) {
       <header className="response-section-heading">
         <div>
           <span>후속 관리</span>
-          <h4>지켜볼 신호와 다시 알릴 기준</h4>
+          <h4>하지 말아야 할 일과 후속 점검</h4>
         </div>
       </header>
-      <div className="response-peer-followup-grid">
+      {/* 네 칸 중 이것만 펼쳐 둔다. 위 실행 권고에 없는 유일한 정보이고, 반사이익
+          사안에서는 검증 규칙 4가 비어 있으면 위반으로 잡는 필수 항목이라 접으면
+          안 된다. 색이 들어간 카드도 여기 하나뿐이어야 시선이 갈린다. */}
+      {avoid.length > 0 && (
+        <article className="response-avoid-card">
+          <h5>하지 말아야 할 일</h5>
+          <ul>
+            {avoid.map((item, index) => (
+              <li key={`avoid-${index}`}>{item}</li>
+            ))}
+          </ul>
+        </article>
+      )}
+      <div className="response-fold-stack">
+        {/* 지켜볼 신호는 위 실행 권고와 내용이 겹친다 - impact가 낸 영향 경로를
+            recommend가 다시 받아 권고를 만드니 같은 축을 두 번 말하게 된다.
+            (실측: 조사 확대 여부/계정·결제정보 유출/외부 로그인·휴면 계정/고객 문의가
+            각각 권고 01·04·04·02·03과 대응) 그래서 기본은 접어 두고, 몇 건인지는
+            펼치지 않아도 보이게 요약에 적는다. */}
         {watchPoints.length > 0 && (
-          <article>
-            <h5>지켜볼 신호</h5>
+          <FoldSection title={`지켜볼 신호 ${watchPoints.length}건`}>
             <ul>
               {watchPoints.map((point, index) => (
                 <li key={`watch-${index}`}>{point}</li>
               ))}
             </ul>
-          </article>
+          </FoldSection>
         )}
         {recommendation?.realert_condition && (
-          <article className="response-realert-card">
-            <h5>다시 알릴 기준</h5>
+          <FoldSection title="다시 알릴 기준">
             <p>{recommendation.realert_condition}</p>
-          </article>
-        )}
-        {avoid.length > 0 && (
-          <article className="response-avoid-card">
-            <h5>하지 말아야 할 일</h5>
-            <ul>
-              {avoid.map((item, index) => (
-                <li key={`avoid-${index}`}>{item}</li>
-              ))}
-            </ul>
-          </article>
+          </FoldSection>
         )}
         {recommendation?.limitations && (
-          <article className="response-caution-card">
-            <h5>사용 전 확인</h5>
+          <FoldSection title="사용 전 확인">
             <p>{recommendation.limitations}</p>
-          </article>
+          </FoldSection>
         )}
       </div>
     </section>

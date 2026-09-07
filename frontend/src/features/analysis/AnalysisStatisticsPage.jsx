@@ -100,6 +100,10 @@ function DailySentimentCompositionChart({ days }) {
   </div>;
 }
 
+const HELD_STATUSES = new Set([
+  "근거부족_보류", "유형불명_보류", "유형불일치_보류", "대응불필요_종료",
+]);
+
 const RESPONSE_STATUS_LABELS = {
   pending: "생성 중",
   generating: "생성 중",
@@ -211,16 +215,6 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const v3Draft = drafts.find((draft) => draft.schema_version === 3);
   const latest = v3Draft ?? drafts[0]; const content = latest?.content;
   const canGenerate = ["idle", "pending", "generating", "deferred", "failed"].includes(generationStatus);
-  const statusCopy = {
-    pending: ["대응방안 자동 생성 중", "사건 내용을 바탕으로 생성을 준비하고 있습니다."],
-    generating: ["대응방안 자동 생성 중", "사건을 검토해 대응방안을 작성하고 있습니다."],
-    generated: ["대응방안 생성 완료", "아래에서 우선 실행 항목과 담당 부서, 기한을 확인할 수 있습니다."],
-    deferred: ["대응방안 생성 보류", "전체 이력 재구성 사건입니다. 필요한 사건만 개별 생성할 수 있습니다."],
-    failed: ["대응방안 생성 실패", risk.response_generation_error || "생성에 실패했습니다. 다시 시도할 수 있습니다."],
-    idle: ["대응방안 없음", "이 사건에는 생성된 대응방안이 없습니다."],
-  }[generationStatus] ?? ["대응방안 없음", "이 사건에는 생성된 대응방안이 없습니다."];
-  const orderedTypes = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
-
   const generate = async () => {
     setLoading(true); setError(null);
     try {
@@ -237,15 +231,28 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
     try { await api.post(`/response-drafts/${latest.id}/${decision}`, { notes }); await loadDrafts(); }
     catch (requestError) { setError(getErrorMessage(requestError)); } finally { setLoading(false); }
   };
+  // 검토가 끝난 초안은 결과만 남긴다. 되돌릴 수 없는 판정이라 버튼을 남겨 둘 이유가 없다.
+  const reviewed = latest && latest.approval_state !== "draft";
+  const reviewFooter = !content ? null
+    : HELD_STATUSES.has(content.status)
+      ? <div className="draft-review readonly"><span>{content.review_reason || "확인 후 다시 생성해 주세요."}</span></div>
+      : reviewed
+        ? <div className="draft-review readonly"><span className={`review-result ${latest.approval_state}`}>{latest.approval_state === "approved" ? "승인 완료" : "반려 완료"}</span></div>
+        : canReview
+          ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading}>반려</button><span>외부 전송·실행 금지</span></div>
+          : <div className="draft-review readonly"><span>멤버 승인 대기</span></div>;
+
   return <div className="risk-detail">
-    <div className="risk-detail-head"><div><h3><strong className="risk-event-display-title">{riskEventTitle(risk)}</strong></h3></div><span className={`severity ${risk.severity}`}>{risk.severity === "critical" ? "긴급" : "주의"}</span></div>
-    <div className="risk-type-list">{orderedTypes.map((item, index) => <span className={item.is_primary || index === 0 ? "primary" : ""} key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type} {formatPercent(item.probability)}</span>)}</div>
-    <div className={`draft-generation-toolbar ${generationStatus}`}>
-      <div><strong>{statusCopy[0]}</strong><small>{statusCopy[1]}</small></div>
-      {canReview && canGenerate && <button className="secondary-button" type="button" onClick={generate} disabled={loading}>{loading ? "요청 중..." : ["pending", "generating"].includes(generationStatus) ? "생성 다시 시작" : ["idle", "deferred"].includes(generationStatus) ? "대응방안 생성" : "다시 시도"}</button>}
+    <div className="risk-detail-head">
+      <div><h3><strong className="risk-event-display-title">{riskEventTitle(risk)}</strong></h3></div>
+      <div className="risk-detail-status">
+        <span className={`response-status ${generationStatus}`}>{RESPONSE_STATUS_LABELS[generationStatus] ?? "미생성"}</span>
+        {canReview && canGenerate && <button className="draft-generate-chip" type="button" onClick={generate} disabled={loading}>{loading ? "요청 중" : ["pending", "generating"].includes(generationStatus) ? "다시 시작" : ["idle", "deferred"].includes(generationStatus) ? "생성" : "다시 시도"}</button>}
+      </div>
     </div>
+    {generationStatus === "failed" && risk.response_generation_error && <div className="notice error">{risk.response_generation_error}</div>}
     {error && <div className="notice error">{error}</div>}
-    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{content.status === "근거부족_보류" ? <div className="draft-review readonly"><span>근거 연결 후 다시 생성해 주세요.</span></div> : canReview ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading || latest.approval_state !== "draft"}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading || latest.approval_state !== "draft"}>반려</button><span>{latest.approval_state === "draft" ? "외부 전송·실행 금지" : latest.approval_state === "approved" ? `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}승인 완료` : `${latest.reviewed_by ? `${latest.reviewed_by} · ` : ""}반려됨`}</span></div> : <div className="draft-review readonly"><span>{latest.approval_state === "draft" ? "멤버 승인 대기" : latest.approval_state === "approved" ? "승인 완료" : "반려됨"}</span></div>}</>}
+    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{reviewFooter}</>}
   </div>;
 }
 

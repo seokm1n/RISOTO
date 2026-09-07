@@ -78,6 +78,8 @@ _SYSTEM_PROMPT = """당신은 기업 리스크 대응 보고서를 작성하는 
   왜 대응이 필요한지를 **쉬운 말로 설명**하세요. 수치는 judgment_basis에만 씁니다.
   예: "확인되지 않은 정보가 퍼지면서 사실관계보다 부정적 인식이 먼저 자리 잡을 수 있습니다."
   첫 항목은 상황을 한 문장으로 짚고, 나머지는 그래서 무엇이 중요한지로 이어 가세요.
+  각 항목은 `짧은 라벨: 문장` 형태로 씁니다. 라벨은 6자 이내로 그 항목이 무엇인지 가리키게
+  하세요(예: "핵심 이슈: ...", "확산 경로: ...", "우려: ..."). 화면이 라벨과 문장을 나눠 보여 줍니다.
 - judgment_basis는 왜 이 사안을 리스크로 판단했는지 **수치를 들어** 서술합니다. 언급량·
   부정 비율·채널 수 같은 근거를 여기에 모으세요. 위 [읽는 사람] 규칙을 지키세요.
 - 대응 전략은 최대 {max_strategies}개, 주 리스크는 최대 {max_primary}개입니다.
@@ -282,11 +284,16 @@ def build_user_prompt(payload: AlertPayload, ev: Evidence) -> str:
     quant = []
     bw = payload.baseline_window_days
     if payload.mention_count is not None:
-        base = f" (직전 {bw}일 평균 {_fmt_num(payload.baseline_mean)}건)" if payload.baseline_mean else ""
-        quant.append(f"기간 내 언급량 {payload.mention_count}건{base}")
+        # 기준선은 이 사건이 아니라 회사 전체 언급량이다(service._baseline). 범위를
+        # 밝히지 않으면 "이 사건이 평소보다 조용하다"로 잘못 읽힌다.
+        base = (
+            f" (같은 기간 길이 기준 회사 전체 평균 {_fmt_num(payload.baseline_mean)}건)"
+            if payload.baseline_mean else ""
+        )
+        quant.append(f"이 사건 언급량 {payload.mention_count}건{base}")
     if payload.negative_ratio is not None:
         base = (
-            f" (직전 {bw}일 평균 {_fmt_num(payload.negative_ratio_baseline, pct=True)})"
+            f" (직전 {bw}일 회사 전체 평균 {_fmt_num(payload.negative_ratio_baseline, pct=True)})"
             if payload.negative_ratio_baseline is not None
             else ""
         )
@@ -316,7 +323,17 @@ def build_user_prompt(payload: AlertPayload, ev: Evidence) -> str:
             # 상류(service._payload_from_event)에서 이미 600자로 자른다. 여기서 300으로
             # 또 줄이면 사건 경위 뒷부분이 한 번 더 잘린다. 상류 상한에 맞춘다.
             lines.append(f"- [{m.mention_id}] ({' / '.join(meta)}) {m.text[:600]}")
-        parts.append("[원문 - 인용 시 대괄호 안 id를 cited_mention_ids에 넣을 것]\n" + "\n".join(lines))
+        # 원문은 근거 점수 상위 몇 건만 실린다(이벤트당 최대 661건 실측). 전체 건수를
+        # 밝히지 않으면 모델이 여기 있는 것이 전부라고 보고 규모를 축소해 쓴다.
+        shown = len(lines)
+        scope = (
+            f" - 전체 {payload.mention_count}건 중 근거 점수 상위 {shown}건"
+            if payload.mention_count and payload.mention_count > shown else ""
+        )
+        parts.append(
+            f"[원문{scope} - 인용 시 대괄호 안 id를 cited_mention_ids에 넣을 것]\n"
+            + "\n".join(lines)
+        )
     else:
         parts.append("[원문]\n- (선별된 원문 없음. 원문 인용 없이 정량 근거만으로 작성할 것)")
 
