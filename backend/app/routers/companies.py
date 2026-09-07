@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
+from app.config import get_settings
 from app.database import get_db
 from app.models import (
     ArticleFilterResult,
@@ -33,6 +34,7 @@ from app.services.monitoring_pipeline import (
     initialize_company_monitoring,
     refresh_company_monitoring,
 )
+from app.services.story_model_runtime import resolve_story_risk_runtime
 
 
 router = APIRouter(prefix="/companies", tags=["companies"])
@@ -67,6 +69,13 @@ def _to_response(
         .order_by(CompanyFeatureWindow.window_start.desc())
         .limit(1)
     )
+    settings = get_settings()
+    model_state = latest_window.model_state if latest_window else "unavailable"
+    model_version = latest_window.model_version if latest_window else None
+    if settings.story_risk_engine_enabled and settings.story_risk_model_enabled:
+        runtime = resolve_story_risk_runtime(settings)
+        model_state = runtime.model_state if runtime.available else "unavailable"
+        model_version = runtime.version if runtime.available else None
     return CompanyRead(
         id=company.id,
         user_id=company.user_id,
@@ -94,7 +103,8 @@ def _to_response(
         accepted_article_count=accepted_article_count,
         valid_nonempty_window_count=valid_nonempty_window_count,
         activation_required=False,
-        model_state=latest_window.model_state if latest_window else "unavailable",
+        model_state=model_state,
+        model_version=model_version,
     )
 
 

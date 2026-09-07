@@ -37,6 +37,7 @@ class StoryRiskTests(unittest.TestCase):
         self.settings = Settings(
             _env_file=None,
             database_url="sqlite://",
+            story_risk_model_enabled=False,
             article_risk_candidate_threshold=0.65,
             article_risk_high_threshold=0.80,
             article_risk_uncertain_low=0.35,
@@ -122,6 +123,7 @@ class StoryRiskDatabaseTests(unittest.TestCase):
         if self.company_id is None:
             self.skipTest("사건 집계 테스트에 기업 한 곳이 필요합니다.")
         self.settings = Settings(
+            story_risk_model_enabled=False,
             article_risk_candidate_threshold=0.65,
             article_risk_high_threshold=0.80,
             story_event_min_articles=2,

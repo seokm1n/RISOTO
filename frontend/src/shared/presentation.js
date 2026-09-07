@@ -37,7 +37,6 @@ export const READINESS_LABELS = {
   active: "분석 통계 사용 가능",
 };
 export const DATA_QUALITY_LABELS = { complete: "수집 정상", partial: "일부 수집원 장애", unavailable: "수집 불가" };
-export const LIGHTGBM_STATE_LABELS = { production: "LightGBM 운영 판정", provisional: "LightGBM 검증 판정", unavailable: "LightGBM 판정 대기" };
 export const RISK_TYPE_LABELS = {
   product_quality: "제품·품질", safety_accident: "안전·사고", security_privacy: "보안·개인정보", legal_regulatory: "법률·규제",
   labor_hr: "노동·인사", financial_governance: "재무·지배구조", supply_operations: "공급·운영", reputation_consumer: "평판·소비자",
@@ -52,6 +51,8 @@ export const MODEL_TASK_LABELS = {
   sentiment: "감성 분석",
   risk_type_classifier: "위험 유형 분류",
   risk_detector: "최종 위험 판정",
+  window_risk_detector: "15분 구간 위험 분석",
+  window_isolation_forest: "15분 구간 이상치 분석",
   isolation_forest: "이상치 탐지",
 };
 // 목록에서 각 모델이 실제로 무슨 일을 하는지 한 줄로 보여주는 설명이다.
@@ -62,9 +63,11 @@ export const MODEL_TASK_DESCRIPTIONS = {
   sentiment: "기사·댓글의 긍정·중립·부정 감성을 분석합니다.",
   risk_type_classifier: "위험 사건을 제품·법률·노동 등 8가지 유형으로 분류합니다.",
   risk_detector: "이상치 탐지 결과를 바탕으로 최종 위험 여부를 판정합니다.",
+  window_risk_detector: "기업별 15분 구간을 분석하는 별도 모델입니다. 스토리 위험 판정에는 사용하지 않습니다.",
+  window_isolation_forest: "기업별 15분 구간의 이상 징후를 분석하는 별도 모델입니다.",
   isolation_forest: "평소와 다른 이상 징후를 탐지합니다.",
 };
-export const MODEL_STATUS_LABELS = { production: "운영 중", candidate: "후보", retired: "보관", failed: "실패", unavailable: "연결 대기" };
+export const MODEL_STATUS_LABELS = { production: "운영 중", provisional: "적용 중 · 사람 검증 전", candidate: "후보", retired: "보관", failed: "실패", unavailable: "연결 대기" };
 export const EMPTY_NOTIFICATIONS = { items: [], total: 0, risk_count: 0, model_promotion_count: 0 };
 
 // 블라인드 기사 라벨링 화면의 선택지 표시 문구다.
@@ -116,3 +119,8 @@ export const riskEventTitle = (risk) => risk?.summary
   || risk?.article_title
   || (risk?.id ? `위험 이벤트 #${risk.id}` : "위험 이벤트");
 export const isRiskDetectionAvailable = (status) => status?.risk_detection_status === "available";
+export const riskModelLabel = (status) => !status ? "Isolation Forest + LightGBM"
+  : status.scoring_scope === "story" ? "스토리 Isolation Forest + LightGBM" : "15분 구간 Isolation Forest + LightGBM";
+export const riskModelStateLabel = (status) => !isRiskDetectionAvailable(status)
+  ? "판정 대기"
+  : status?.model_state === "provisional" ? "적용 중 · 사람 검증 전" : "운영 중";

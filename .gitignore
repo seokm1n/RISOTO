@@ -32,6 +32,7 @@ pnpm-debug.log*
 backend/local_models/
 backend/model_artifacts/
 backend/ground_truth_labels.sql
+backend/training_data/story_model_applications/
 exports/
 
 # IDE and operating system

@@ -109,6 +109,15 @@ const RESPONSE_STATUS_LABELS = {
   idle: "미생성",
 };
 
+// 저장된 사건의 모델 버전과 잠정 상태를 현재 설정과 독립적으로 표시한다.
+export function RiskJudgmentModelInfo({ risk, showVersion = false }) {
+  if (!risk?.model_version) return null;
+  const modelName = risk.model_version.startsWith("story-if-lgbm")
+    ? "스토리 IF + LightGBM"
+    : risk.event_source === "story_v2" ? "스토리 위험 판정" : "15분 구간 위험 판정";
+  return <small className="risk-event-context" title={risk.model_version}>{modelName}{risk.model_state === "provisional" && " · 사람 검증 전"}{showVersion && ` · ${risk.model_version}`}</small>;
+}
+
 // 위험 이벤트 목록에서 스토리 제목, 다중 유형, 근거와 대응 상태를 보여준다.
 export function RiskEventListContent({ risk, judgmentCompact = false }) {
   const title = riskEventTitle(risk);
@@ -120,6 +129,7 @@ export function RiskEventListContent({ risk, judgmentCompact = false }) {
     <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
     <div className="risk-event-type-row">{isNonRisk ? <span className="non-risk">비위험</span> : <>{primaryType ? <span className="primary">{RISK_TYPE_LABELS[primaryType.risk_type] ?? primaryType.risk_type}</span> : <span>분류 중</span>}{secondaryTypes.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}</>}</div>
     <small className="risk-event-context">위험도 {formatRiskProbability(risk.risk_probability)}{judgmentCompact ? <> · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건</> : <> · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? 0)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳</>}</small>
+    <RiskJudgmentModelInfo risk={risk} />
     {!judgmentCompact && <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>}
   </>;
 }

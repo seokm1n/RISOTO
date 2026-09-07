@@ -228,6 +228,7 @@ class CompanyRead(BaseModel):
     valid_nonempty_window_count: int = 0
     activation_required: bool = False
     model_state: Literal["production", "provisional", "unavailable"] = "unavailable"
+    model_version: str | None = None
 
 
 class CollectionRequest(BaseModel):
@@ -350,6 +351,7 @@ class MonitoringSummary(BaseModel):
     valid_nonempty_window_count: int = 0
     data_quality: Literal["complete", "partial", "unavailable"] | None = None
     model_state: Literal["production", "provisional", "unavailable"] = "unavailable"
+    model_version: str | None = None
 
 
 class ArticleFilterSummary(BaseModel):
@@ -694,7 +696,7 @@ class ModelVersionRead(BaseModel):
 
 
 class RiskDetectionStatusRead(BaseModel):
-    """Global availability of the production LightGBM final-risk judgment."""
+    """Availability and provenance of the selected final-risk judgment."""
 
     risk_detection_status: Literal["available", "unavailable"]
     reason: Literal[
@@ -706,11 +708,20 @@ class RiskDetectionStatusRead(BaseModel):
         "isolation_artifact_contract_invalid",
         "isolation_dependency_manifest_invalid",
         "isolation_dependency_mismatch",
+        "model_disabled",
+        "model_not_configured",
+        "artifact_missing",
+        "artifact_hash_mismatch",
+        "artifact_invalid",
+        "prediction_failed",
     ] | None = None
     message: str
     model_id: int | None = None
     model_version: str | None = None
     model_state: Literal["production", "provisional", "unavailable"]
+    scoring_scope: Literal["story", "window"] = "window"
+    threshold: float | None = None
+    artifact_sha256: str | None = None
 
 
 class ModelRuntimeStatusRead(BaseModel):
@@ -727,6 +738,11 @@ class ModelRuntimeStatusRead(BaseModel):
     external_lightgbm_model_name: str | None = None
     external_lightgbm_model_available: bool
     external_lightgbm_message: str
+    scoring_scope: Literal["story", "window"] = "window"
+    risk_model_name: str | None = None
+    risk_model_available: bool = False
+    risk_model_state: Literal["production", "provisional", "unavailable"] = "unavailable"
+    risk_model_message: str = ""
 
 
 class ExistingDataReanalysisRead(BaseModel):
