@@ -20,7 +20,11 @@ function useElementSize() {
 }
 
 // 화면 목적에 따라 실제 기사 또는 판정 가능한 스토리를 같은 분모로 위험·부정 비율을 비교한다.
+<<<<<<< Updated upstream
 export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 판정 기사와 부정 기사 비율 추이", displayDates = null, basis = "stories" }) {
+=======
+export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, displayDates = null, basis = "stories", averageMode = false }) {
+>>>>>>> Stashed changes
   const [canvasRef, { width: measuredWidth, height: measuredHeight }] = useElementSize();
   const [hoveredIndex, setHoveredIndex] = useState(null);
   useEffect(() => { setHoveredIndex(null); }, [basis, days, displayDates]);
@@ -37,8 +41,19 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 
         population_count: populationCount,
         risk_count: riskCount,
         negative_count: negativeCount,
+<<<<<<< Updated upstream
         risk_ratio: populationCount > 0 ? Math.min(riskCount / populationCount, 1) : 0,
         negative_ratio: populationCount > 0 ? Math.min(negativeCount / populationCount, 1) : 0,
+=======
+        display_risk_count: averageMode && !usesArticleCounts ? day.total_eligible_risk_story_count ?? riskCount : riskCount,
+        display_negative_count: averageMode && !usesArticleCounts ? day.total_eligible_negative_story_count ?? negativeCount : negativeCount,
+        risk_ratio: !usesArticleCounts && Number.isFinite(day.eligible_risk_story_ratio)
+          ? Math.min(Math.max(day.eligible_risk_story_ratio, 0), 1)
+          : populationCount > 0 ? Math.min(riskCount / populationCount, 1) : 0,
+        negative_ratio: !usesArticleCounts && Number.isFinite(day.eligible_negative_story_ratio)
+          ? Math.min(Math.max(day.eligible_negative_story_ratio, 0), 1)
+          : populationCount > 0 ? Math.min(negativeCount / populationCount, 1) : 0,
+>>>>>>> Stashed changes
       };
     })
     .filter((day) => displayDateSet
@@ -125,8 +140,13 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = "위험 
       </svg>
       {hoveredPoint && <div className={`main-trend-tooltip ${tooltipEdge} ${tooltipBelow ? "below" : "above"}`} style={{ left: `${hoveredX / width * 100}%`, top: `${tooltipY}px` }} role="tooltip">
         <strong>{formatDay(hoveredPoint.summary_date)}</strong>
+<<<<<<< Updated upstream
         <span className="risk">위험 판정 <b>{formatPercent(hoveredPoint.risk_ratio)} · {formatNumber(hoveredPoint.risk_count)}건</b></span>
         <span className="negative">부정 기사 <b>{formatPercent(hoveredPoint.negative_ratio)} · {formatNumber(hoveredPoint.negative_count)}건</b></span>
+=======
+        <span className="risk">위험 {populationLabel} <b>{formatPercent(hoveredPoint.risk_ratio)} · {formatNumber(hoveredPoint.display_risk_count)}건</b></span>
+        <span className="negative">부정 {populationLabel} <b>{formatPercent(hoveredPoint.negative_ratio)} · {formatNumber(hoveredPoint.display_negative_count)}건</b></span>
+>>>>>>> Stashed changes
       </div>}
     </div>
   </div>;
