@@ -173,10 +173,10 @@ function LegacyResponseContent({ content, riskTitle, isCompetitorImpact }) {
   </div>;
 }
 
-function ResponseDraftContent({ draft, riskTitle }) {
+function ResponseDraftContent({ draft, riskTitle, risk }) {
   const content = draft.content ?? {};
   if (draft.schema_version === 3 && draft.generation_kind !== "competitor_impact") {
-    return <MainResponseContent key={draft.id} content={content} />;
+    return <MainResponseContent key={draft.id} content={content} risk={risk} />;
   }
   if (draft.schema_version === 3 && draft.generation_kind === "competitor_impact") {
     return <PeerRecommendationContent key={draft.id} content={content} />;
@@ -247,7 +247,7 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
     </div>
     {generationStatus === "failed" && risk.response_generation_error && <div className="notice error">{risk.response_generation_error}</div>}
     {error && <div className="notice error">{error}</div>}
-    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{reviewFooter}</>}
+    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} risk={risk} />{reviewFooter}</>}
   </div>;
 }
 

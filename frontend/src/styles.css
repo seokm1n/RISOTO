@@ -1164,7 +1164,9 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 
 /* AI 리스크 브리핑: 상단 통합 그래프와 하단 전체 폭 위험 사건 패널. */
 .briefing-page-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 14px; }
-.briefing-page-head .briefing-description { flex: 1; margin-bottom: 0; }
+.briefing-page-intro-block { display: flex; flex: 1; flex-direction: column; gap: 4px; }
+.briefing-page-head .briefing-description { margin-bottom: 0; }
+.briefing-as-of { margin: 0; color: #8b7c6a; font-size: var(--text-caption); font-weight: 700; }
 .briefing-company-picker { display: grid; flex: 0 0 auto; gap: 6px; color: #746a64; font-size: var(--text-caption); font-weight: 800; }
 .briefing-company-picker select { min-width: 210px; border: 1px solid rgba(180,96,42,.22); border-radius: 9px; outline: 0; background: #fffaf1; padding: 10px 12px; color: #3d3029; font-weight: 700; }
 .briefing-company-picker select:focus-visible { border-color: #b45a28; box-shadow: 0 0 0 3px rgba(180,90,40,.15); }
@@ -1199,7 +1201,9 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .briefing-period-tabs button:hover { color: #7a3f14; }
 .briefing-period-tabs button.active { background: #fffaf1; color: #9d492f; box-shadow: 0 1px 5px rgba(80,50,30,.14); }
 .briefing-period-tabs button:focus-visible { outline: 3px solid rgba(182,82,50,.2); outline-offset: 2px; }
+.briefing-period-range { margin: 0 0 11px; color: #8b7c6a; font-size: var(--text-caption); font-weight: 700; }
 .briefing-ratio-content { min-height: 0; }
+.briefing-ratio-note { margin: 10px 0 0; color: #a4988c; font-size: var(--text-caption); }
 .briefing-ratio-card { display: grid; min-width: 0; grid-template-columns: minmax(124px,.82fr) minmax(140px,1.18fr); align-items: center; gap: 20px; padding: 14px 12px; border: 1px solid rgba(180,96,42,.12); border-radius: 12px; background: var(--panel-surface); }
 .briefing-pie-wrap { position: relative; display: grid; min-width: 0; place-items: center; }
 .collection-pie { position: relative; display: grid; width: min(158px,100%); aspect-ratio: 1; place-items: center; justify-self: center; border-radius: 50%; }
@@ -1247,7 +1251,10 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .briefing-risk-list > .briefing-risk-card:last-child { border-bottom: 0; }
 .briefing-risk-list > .briefing-risk-card:hover { background: rgba(180,96,42,.055); }
 .briefing-risk-list > .briefing-risk-card:focus-visible { outline: 3px solid rgba(168,79,50,.2); outline-offset: -3px; }
+.briefing-risk-issue { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
 .briefing-risk-story-title { overflow: hidden; color: #2e1f14; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }
+.briefing-risk-type-row { gap: 4px; }
+.briefing-risk-type-row span { padding: 2px 6px; font-size: 11px; }
 .briefing-response-summary { overflow: hidden; color: #6f625a; font-size: var(--text-small); line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-statistics-workspace .risk-detail-head h3 {
   color: #2e1f14;
@@ -2223,6 +2230,10 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-option-tab > strong { font-size: .86rem; font-weight: 900; line-height: 1.45; }
 
 .response-plan-content { display: grid; gap: 18px; }
+/* 대응전략 생성이 메인, 실행 계획 타임라인은 옆에 붙는 2분할 레이아웃. */
+.response-plan-columns { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(260px,1fr); align-items: start; gap: 18px; margin-top: 18px; }
+.response-plan-main, .response-plan-side { display: grid; min-width: 0; gap: 18px; }
+.response-strategy-main .response-section-heading { border-bottom-color: rgba(178,113,76,.28); }
 .response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel) {
   display: grid;
   gap: 14px;
@@ -2362,6 +2373,27 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 }
 .response-task-flags em.muted { background: #e4ded2; color: #756c66; }
 .response-channel-empty { padding: 12px !important; color: #81766f !important; }
+
+/* 실행 계획 타임라인: 시간대(즉시/24시간/72시간/후속)를 세로선으로 잇는다. */
+.response-timeline { position: relative; display: grid; margin: 0; padding: 0; list-style: none; }
+.response-timeline-band { position: relative; padding-left: 22px; }
+.response-timeline-band:not(:last-child) { padding-bottom: 16px; }
+.response-timeline-band:not(:last-child)::before {
+  content: ""; position: absolute; top: 20px; left: 5px; bottom: -4px; width: 2px;
+  background: rgba(178, 113, 76, .28);
+}
+.response-timeline-marker { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.response-timeline-dot {
+  position: absolute; top: 4px; left: 0; width: 11px; height: 11px; border-radius: 50%;
+  background: #bc7454; box-shadow: 0 0 0 3px #f3e7d9;
+}
+.response-timeline-marker strong { color: #5b4a40; font-size: .82rem; font-weight: 900; }
+.response-timeline-marker span { color: #85776d; font-size: .68rem; font-weight: 800; }
+.response-timeline-tasks { display: grid; gap: 8px; }
+.response-timeline-task {
+  display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 11px;
+  border: 1px solid rgba(112, 91, 76, .17); border-radius: 11px; background: #f4ede1; padding: 11px 12px;
+}
 
 /* 전략과 후속 관리 */
 .response-strategy-grid {
@@ -2585,6 +2617,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   .response-operations-view .response-command-card { grid-template-columns: 1fr; }
   .response-option-tabs { grid-template-columns: 1fr; }
   .response-overview-grid, .response-peer-brief { grid-template-columns: 1fr !important; }
+  .response-plan-columns { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
