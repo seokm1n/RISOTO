@@ -2200,10 +2200,8 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-option-tab {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 3px 9px;
-  min-height: 68px;
+  min-height: 0;
   border: 1px solid rgba(113, 94, 80, .22);
   border-radius: 11px;
   background: #f3ecdf;
@@ -2220,13 +2218,10 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   box-shadow: 0 7px 16px rgba(112, 67, 44, .09);
   color: #47352b;
 }
-.response-option-tab > span { grid-row: 1 / span 2; color: #ae6b4e; font-size: .75rem; font-weight: 900; font-variant-numeric: tabular-nums; }
-.response-option-tab > strong { font-size: .82rem; font-weight: 900; line-height: 1.4; }
-.response-option-tab > small { color: #81746b; font-size: .68rem; font-weight: 700; }
-.response-option-tab > em { grid-column: 3; grid-row: 1 / span 2; border-radius: 999px; background: rgba(248, 245, 236, .7); padding: 3px 7px; color: #9b5a3d; font-size: .64rem; font-style: normal; font-weight: 900; }
+.response-option-tab > strong { font-size: .86rem; font-weight: 900; line-height: 1.45; }
 
 .response-plan-content { display: grid; gap: 18px; }
-.response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel, .response-appendix-panel) {
+.response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel) {
   display: grid;
   gap: 14px;
   padding: 18px;
@@ -2236,6 +2231,11 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 }
 
 /* 상황 요약 */
+.response-operations-view .response-overview-panel.bare { gap: 0; padding: 0; border: 0; background: transparent; }
+.response-summary-rows { display: grid; gap: 10px; margin: 0; }
+.response-summary-rows > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+.response-summary-rows dt { color: #9c5a3d; font-size: .76rem; font-weight: 900; line-height: 1.5; }
+.response-summary-rows dd { margin: 0; min-width: 0; color: #443a35; font-size: .86rem; line-height: 1.65; }
 .response-responsibility { background: #e4d8c7 !important; color: #6c5d53 !important; }
 .response-operations-view .response-plan-note {
   margin: 0;
@@ -2381,6 +2381,8 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-strategy-meta > span { border-radius: 999px; background: #e5d2c3; padding: 3px 7px; color: #94573e; font-size: .67rem; font-weight: 900; }
 .response-strategy-meta > small { color: #81746b; font-size: .68rem; font-weight: 700; }
 .response-strategy-grid h5 { color: #443a35; font-size: .87rem; }
+.response-operations-view .response-strategy-points { padding-left: 17px; gap: 7px; }
+.response-operations-view .response-strategy-points > li { color: #514843; font-size: .82rem; line-height: 1.6; }
 .response-followup-grid,
 .response-peer-followup-grid {
   display: grid !important;
@@ -2407,16 +2409,36 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-avoid-card { border-color: rgba(169, 87, 58, .24) !important; background: #efddd4 !important; }
 .response-avoid-card h5, .response-avoid-card li { color: #89503c; }
 
-/* 근거 자료 부록 - 전부 접힌 채로 시작한다 */
-.response-appendix-panel { gap: 9px !important; }
-.response-appendix-panel .response-section-heading > strong { background: #e4d8c7 !important; color: #6c5d53 !important; }
-.response-appendix-item {
+/* 위험 제목 옆 상태. 생성 여부와 수동 생성 버튼만 두고 유형·수치는 걷어냈다. */
+.risk-detail-status { display: flex; flex: 0 0 auto; align-self: flex-start; align-items: center; gap: 7px; margin-top: 7px; }
+.draft-generate-chip {
+  border: 1px solid #cbc8bd;
+  border-radius: 999px;
+  background: transparent;
+  padding: 4px 11px;
+  color: #746d68;
+  font-size: var(--text-caption);
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.draft-generate-chip:hover:not(:disabled) { border-color: #a84f32; color: #a84f32; }
+.draft-generate-chip:disabled { opacity: .55; cursor: default; }
+
+/* 검토가 끝나면 결과 한 줄만 남는다. */
+.draft-review.readonly { grid-template-columns: 1fr; }
+.draft-review .review-result.approved { color: var(--success-strong); }
+.draft-review .review-result.rejected { color: #9e3b22; }
+
+/* 실행 계획 아래 접이 블록 - 전부 접힌 채로 시작한다 */
+.response-fold-stack { display: grid; gap: 9px; }
+.response-fold {
   overflow: hidden;
   border: 1px solid rgba(112, 91, 76, .15);
   border-radius: 11px;
   background: #f4ede1;
 }
-.response-appendix-item > summary {
+.response-fold > summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2429,27 +2451,17 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   cursor: pointer;
   list-style: none;
 }
-.response-appendix-item > summary::-webkit-details-marker { display: none; }
-.response-appendix-item > summary::after {
+.response-fold > summary::-webkit-details-marker { display: none; }
+.response-fold > summary::after {
   content: "펼치기";
   color: #9c5a3d;
   font-size: .7rem;
   font-weight: 900;
 }
-.response-appendix-item[open] > summary::after { content: "접기"; }
-.response-appendix-item[open] > summary { border-bottom: 1px solid rgba(112, 91, 76, .13); }
-.response-appendix-item > summary > strong { min-width: 0; overflow-wrap: anywhere; }
-.response-appendix-item > summary > span {
-  margin-left: auto;
-  border-radius: 999px;
-  background: #e5d2c3;
-  padding: 2px 8px;
-  color: #94573e;
-  font-size: .68rem;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-}
-.response-appendix-body { padding: 13px 15px; }
+.response-fold[open] > summary::after { content: "접기"; }
+.response-fold[open] > summary { border-bottom: 1px solid rgba(112, 91, 76, .13); }
+.response-fold > summary > strong { min-width: 0; overflow-wrap: anywhere; }
+.response-fold-body { padding: 13px 15px; }
 .response-operations-view .response-appendix-list { display: grid; gap: 12px; margin: 0; padding-left: 0; list-style: none; }
 .response-operations-view .response-appendix-list > li { display: grid; gap: 5px; min-width: 0; color: #514843; }
 .response-appendix-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; min-width: 0; }
@@ -2576,7 +2588,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 @media (max-width: 720px) {
   .response-draft.response-operations-view { gap: 13px; }
   .response-operations-view .response-command-card,
-  .response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel, .response-appendix-panel),
+  .response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel),
   .response-operations-view .response-option-panel { padding: 14px; }
   .response-followup-grid,
   .response-peer-followup-grid,
@@ -2588,6 +2600,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
     gap: 9px;
   }
   .response-task-due { grid-column: 2; justify-self: start; }
+  .response-summary-rows > div { grid-template-columns: 1fr; }
   .response-section-heading { align-items: flex-start !important; }
 }
 

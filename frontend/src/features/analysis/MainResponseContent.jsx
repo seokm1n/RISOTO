@@ -8,24 +8,6 @@ const STANCE_LABELS = {
   피해구제_중심: "피해 구제 중심",
 };
 
-const TIER_PRESENTATION = {
-  T1_관찰: {
-    label: "관찰 대응",
-    tone: "watch",
-    description: "상황 변화를 관찰하면서 필요한 준비 항목을 점검합니다.",
-  },
-  T2_주시: {
-    label: "주의 대응",
-    tone: "caution",
-    description: "담당 부서가 사실관계를 확인하고 대응 준비를 시작합니다.",
-  },
-  T3_긴급: {
-    label: "긴급 대응",
-    tone: "urgent",
-    description: "즉시 담당 부서를 소집하고 우선 실행 항목부터 착수합니다.",
-  },
-};
-
 const STRATEGY_LABELS = {
   사실관계_정정: "사실관계 정정",
   사과_시정: "사과·시정",
@@ -35,12 +17,6 @@ const STRATEGY_LABELS = {
   법적대응: "법적 대응",
   모니터링_유지: "모니터링 유지",
   부인_반박: "부인·반박",
-};
-
-const RESPONSIBILITY_LABELS = {
-  피해자: "피해 구제 중심",
-  사고: "사고 수습 중심",
-  예방가능: "예방 가능성 있음",
 };
 
 const SEVERITY_LABELS = {
@@ -58,16 +34,6 @@ const TIME_BANDS = [
 
 function humanize(value) {
   return typeof value === "string" ? value.replaceAll("_", " ") : value ?? "";
-}
-
-function tierOf(value) {
-  if (TIER_PRESENTATION[value]) return TIER_PRESENTATION[value];
-  const fallback = humanize(value).replace(/^T\d+\s*/, "").trim();
-  return {
-    label: fallback ? `${fallback} 대응` : "대응 단계 확인",
-    tone: "standard",
-    description: "사건 상황에 맞춰 우선 실행 항목을 확인합니다.",
-  };
 }
 
 function deadlineLabel(value) {
@@ -99,76 +65,71 @@ function bandsOf(checklist) {
   return buckets.filter((band) => band.items.length > 0);
 }
 
-function ResponseHeader({ content, report }) {
-  const tier = tierOf(content.tier);
-  const policy = content.tier_policy ?? {};
-  const facts = [
-    ["우선 소통 대상", content.stakeholder],
-    ["권장 검토", policy["검토"]],
-    ["실행 과제", report?.checklist?.length ? `${report.checklist.length}개` : null],
-  ].filter(([, value]) => value);
-
+// 실행 계획 아래로는 전부 접어 둔다. 매번 읽는 것은 상황과 할 일이고, 나머지는
+// 따질 때만 펼친다.
+function FoldSection({ title, children }) {
   return (
-    <section className={`response-command-card ${tier.tone}`}>
-      <div className="response-command-copy">
-        <span className="response-ui-kicker">AI 대응 가이드</span>
-        <div className="response-command-title">
-          <span className={`response-priority-pill ${tier.tone}`}>{tier.label}</span>
-          <h4>{content.risk_type_label ?? "위험 유형 확인 필요"}</h4>
-        </div>
-        <p>{tier.description}</p>
+    <details className="response-fold">
+      <summary><strong>{title}</strong></summary>
+      <div className="response-fold-body">{children}</div>
+    </details>
+  );
+}
+
+// 모델이 쓴 줄글을 문장 단위로 끊는다. 종결부호로 끝나는 낱말에서만 자르므로
+// "3.5%" 같은 숫자 가운데 마침표에는 걸리지 않는다.
+function toBullets(text) {
+  if (typeof text !== "string") return [];
+  const sentences = [];
+  let buffer = "";
+  for (const chunk of text.split(/\s+/)) {
+    if (!chunk) continue;
+    buffer = buffer ? `${buffer} ${chunk}` : chunk;
+    if (/[.!?]$/.test(chunk)) {
+      sentences.push(buffer);
+      buffer = "";
+    }
+  }
+  if (buffer) sentences.push(buffer);
+  return sentences;
+}
+
+function ScenarioSelector({ scenarios, active, onChange }) {
+  if (scenarios.length <= 1) return null;
+  return (
+    <section className="response-option-panel" aria-label="대응안 선택">
+      <span className="response-ui-kicker">대응 방향 선택</span>
+      <div className="response-option-tabs" role="tablist">
+        {scenarios.map((scenario, index) => (
+          <button
+            type="button"
+            role="tab"
+            key={`${scenario.stance ?? "scenario"}-${index}`}
+            className={`response-option-tab${index === active ? " active" : ""}`}
+            aria-selected={index === active}
+            onClick={() => onChange(index)}
+          >
+            <strong>
+              {scenario.report?.scenario_headline ||
+                STANCE_LABELS[scenario.stance] ||
+                humanize(scenario.stance) ||
+                `${index + 1}번째 대응안`}
+            </strong>
+          </button>
+        ))}
       </div>
-      {facts.length > 0 && (
-        <dl className="response-command-facts">
-          {facts.map(([name, value]) => (
-            <div key={name}>
-              <dt>{name}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
     </section>
   );
 }
 
-function ScenarioSelector({ scenarios, active, selected, onChange }) {
-  if (scenarios.length <= 1) return null;
-  return (
-    <section className="response-option-panel" aria-label="대응안 선택">
-      <header className="response-section-heading compact">
-        <div>
-          <span>대응 방향 선택</span>
-          <h4>상황에 맞는 대응안을 확인하세요</h4>
-        </div>
-        <strong>{scenarios.length}개 안</strong>
-      </header>
-      <div className="response-option-tabs" role="tablist">
-        {scenarios.map((scenario, index) => {
-          const headline =
-            scenario.report?.scenario_headline ||
-            STANCE_LABELS[scenario.stance] ||
-            humanize(scenario.stance) ||
-            `${index + 1}번째 대응안`;
-          return (
-            <button
-              type="button"
-              role="tab"
-              key={`${scenario.stance ?? "scenario"}-${index}`}
-              className={`response-option-tab${index === active ? " active" : ""}`}
-              aria-selected={index === active}
-              onClick={() => onChange(index)}
-            >
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <strong>{headline}</strong>
-              <small>{STANCE_LABELS[scenario.stance] ?? humanize(scenario.stance)}</small>
-              {scenario.stance === selected && <em>기본안</em>}
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
+// summary_points를 "라벨 - 문장"으로 읽게 한다. 모델이 라벨을 붙여 오면 그대로 쓰고,
+// 없으면 자리로 채운다(프롬프트가 첫 항목은 상황, 나머지는 그래서 왜 중요한지로 쓰게 한다).
+function summaryRows(points) {
+  return points.map((point, index) => {
+    const labelled = /^\s*([^:：]{2,14})\s*[:：]\s*([\s\S]+)$/.exec(point);
+    if (labelled) return { label: labelled[1].trim(), text: labelled[2].trim() };
+    return { label: index === 0 ? "핵심 이슈" : "왜 중요한가", text: point };
+  });
 }
 
 function SituationSection({ scenario }) {
@@ -177,45 +138,25 @@ function SituationSection({ scenario }) {
   const assessment = report.risk_assessment ?? {};
   const primaryRisks = assessment.primary_risks ?? [];
   const secondaryRisks = assessment.secondary_risks ?? [];
-  const tradeoff = scenario?.tradeoff || report.scenario_tradeoff;
 
-  if (
-    !points.length &&
-    !primaryRisks.length &&
-    !secondaryRisks.length &&
-    !tradeoff
-  ) {
-    return null;
-  }
+  if (!points.length && !primaryRisks.length && !secondaryRisks.length) return null;
+
+  const rows = summaryRows(points);
 
   return (
-    <section className="response-overview-panel">
-      <header className="response-section-heading">
-        <div>
-          <span>상황 요약</span>
-          <h4>{report.scenario_headline || "선택한 대응안"}</h4>
-        </div>
-        {assessment.responsibility && (
-          <strong className="response-responsibility">
-            {RESPONSIBILITY_LABELS[assessment.responsibility] ?? humanize(assessment.responsibility)}
-          </strong>
-        )}
-      </header>
-
-      {tradeoff && <p className="response-plan-note">{tradeoff}</p>}
-
+    <section className="response-overview-panel bare">
       <div className="response-overview-grid">
-        {points.length > 0 && (
+        {rows.length > 0 && (
           <article className="response-summary-card">
             <h5>핵심 상황</h5>
-            <p className="response-summary-lead">{points[0]}</p>
-            {points.length > 1 && (
-              <ul>
-                {points.slice(1).map((point, index) => (
-                  <li key={`summary-${index}`}>{point}</li>
-                ))}
-              </ul>
-            )}
+            <dl className="response-summary-rows">
+              {rows.map((row, index) => (
+                <div key={`summary-${index}`}>
+                  <dt>{index > 0 && rows[index - 1].label === row.label ? "" : row.label}</dt>
+                  <dd>{row.text}</dd>
+                </div>
+              ))}
+            </dl>
           </article>
         )}
 
@@ -242,14 +183,12 @@ function SituationSection({ scenario }) {
           </article>
         )}
       </div>
-
     </section>
   );
 }
 
 function PlanSection({ report }) {
   const bands = bandsOf(report?.checklist);
-  const taskCount = bands.reduce((total, band) => total + band.items.length, 0);
   if (!bands.length) return null;
 
   let order = 0;
@@ -260,7 +199,6 @@ function PlanSection({ report }) {
           <span>실행 계획</span>
           <h4>지금부터 해야 할 일</h4>
         </div>
-        <strong>{taskCount}개 과제</strong>
       </header>
       <div className="response-time-groups">
         {bands.map((band) => (
@@ -295,26 +233,31 @@ function StrategySection({ report }) {
   const strategies = report?.strategies ?? [];
   if (!strategies.length) return null;
   return (
-    <section className="response-strategy-panel">
-      <header className="response-section-heading">
-        <div>
-          <span>대응 전략</span>
-          <h4>실행 원칙과 커뮤니케이션 방향</h4>
-        </div>
-      </header>
+    <FoldSection title={`대응 전략 ${strategies.length}건`}>
       <div className="response-strategy-grid">
-        {strategies.map((strategy, index) => (
-          <article key={`${strategy.title ?? "strategy"}-${index}`}>
-            <div className="response-strategy-meta">
-              <span>{STRATEGY_LABELS[strategy.strategy_type] ?? humanize(strategy.strategy_type)}</span>
-              {strategy.target_stakeholder && <small>대상 · {strategy.target_stakeholder}</small>}
-            </div>
-            <h5>{strategy.title}</h5>
-            <p>{strategy.detail}</p>
-          </article>
-        ))}
+        {strategies.map((strategy, index) => {
+          const bullets = toBullets(strategy.detail);
+          return (
+            <article key={`${strategy.title ?? "strategy"}-${index}`}>
+              <div className="response-strategy-meta">
+                <span>{STRATEGY_LABELS[strategy.strategy_type] ?? humanize(strategy.strategy_type)}</span>
+                {strategy.target_stakeholder && <small>대상 · {strategy.target_stakeholder}</small>}
+              </div>
+              <h5>{strategy.title}</h5>
+              {bullets.length > 1 ? (
+                <ul className="response-strategy-points">
+                  {bullets.map((sentence, order) => (
+                    <li key={`strategy-${index}-${order}`}>{sentence}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>{strategy.detail}</p>
+              )}
+            </article>
+          );
+        })}
       </div>
-    </section>
+    </FoldSection>
   );
 }
 
@@ -322,13 +265,7 @@ function FollowUpSection({ report }) {
   const metrics = report?.monitoring_metrics ?? [];
   if (!metrics.length && !report?.limitations) return null;
   return (
-    <section className="response-followup-panel">
-      <header className="response-section-heading">
-        <div>
-          <span>후속 확인</span>
-          <h4>대응 후 점검할 항목</h4>
-        </div>
-      </header>
+    <FoldSection title="대응 후 점검">
       <div className="response-followup-grid">
         {metrics.length > 0 && (
           <article>
@@ -347,19 +284,7 @@ function FollowUpSection({ report }) {
           </article>
         )}
       </div>
-    </section>
-  );
-}
-
-function AppendixDisclosure({ title, count, children }) {
-  return (
-    <details className="response-appendix-item">
-      <summary>
-        <strong>{title}</strong>
-        {count != null && <span>{count}건</span>}
-      </summary>
-      <div className="response-appendix-body">{children}</div>
-    </details>
+    </FoldSection>
   );
 }
 
@@ -385,23 +310,15 @@ function AppendixSection({ content, report }) {
   const caseCount = precedents.length + orphanInsights.length;
 
   return (
-    <section className="response-appendix-panel">
-      <header className="response-section-heading">
-        <div>
-          <span>근거 자료</span>
-          <h4>판단에 사용한 자료</h4>
-        </div>
-        <strong>필요할 때 펼치기</strong>
-      </header>
-
+    <>
       {basis && (
-        <AppendixDisclosure title="판단 근거 (수치)">
+        <FoldSection title="판단 근거 (수치)">
           <p>{basis}</p>
-        </AppendixDisclosure>
+        </FoldSection>
       )}
 
       {regulations.length > 0 && (
-        <AppendixDisclosure title="관련 법령" count={regulations.length}>
+        <FoldSection title={`관련 법령 ${regulations.length}건`}>
           <ul className="response-appendix-list">
             {regulations.map((regulation, index) => (
               <li key={`${regulation.law_name}-${regulation.article}-${index}`}>
@@ -421,11 +338,11 @@ function AppendixSection({ content, report }) {
               </li>
             ))}
           </ul>
-        </AppendixDisclosure>
+        </FoldSection>
       )}
 
       {caseCount > 0 && (
-        <AppendixDisclosure title="유사 사례" count={caseCount}>
+        <FoldSection title={`유사 사례 ${caseCount}건`}>
           <ul className="response-appendix-list">
             {precedents.map((precedent, index) => {
               const insight = insightByCase.get(precedent.case_id);
@@ -459,11 +376,11 @@ function AppendixSection({ content, report }) {
               </li>
             ))}
           </ul>
-        </AppendixDisclosure>
+        </FoldSection>
       )}
 
       {evidence.length > 0 && (
-        <AppendixDisclosure title="근거 기사" count={evidence.length}>
+        <FoldSection title={`근거 기사 ${evidence.length}건`}>
           <ul className="response-appendix-list response-appendix-articles">
             {evidence.map((article, index) => (
               <li key={`${article.mention_id ?? "mention"}-${index}`}>
@@ -485,9 +402,9 @@ function AppendixSection({ content, report }) {
               </li>
             ))}
           </ul>
-        </AppendixDisclosure>
+        </FoldSection>
       )}
-    </section>
+    </>
   );
 }
 
@@ -495,9 +412,8 @@ function VerificationNotice({ verification }) {
   const violations = verification?.violations ?? [];
   if (!verification || (verification.passed && violations.length === 0)) return null;
   return (
-    <aside className="response-quality-alert" role="status">
-      <strong>자동 검증에서 확인이 필요한 항목</strong>
-      <ul>
+    <FoldSection title={`자동 검증에서 확인이 필요한 항목 ${violations.length}건`}>
+      <ul className="response-appendix-list">
         {violations.map((violation, index) => (
           <li key={`verification-${index}`}>
             {typeof violation === "string"
@@ -506,7 +422,7 @@ function VerificationNotice({ verification }) {
           </li>
         ))}
       </ul>
-    </aside>
+    </FoldSection>
   );
 }
 
@@ -565,22 +481,18 @@ export default function MainResponseContent({ content }) {
 
   return (
     <div className="response-draft response-draft-v3 response-operations-view">
-      <ResponseHeader content={content} report={report} />
-      <ScenarioSelector
-        scenarios={scenarios}
-        active={active}
-        selected={content.selected_stance}
-        onChange={setActive}
-      />
+      <ScenarioSelector scenarios={scenarios} active={active} onChange={setActive} />
 
       {current ? (
         <div className="response-plan-content" role="tabpanel">
           <SituationSection scenario={current} />
           <PlanSection report={report} />
-          <StrategySection report={report} />
-          <FollowUpSection report={report} />
-          <AppendixSection content={content} report={report} />
-          <VerificationNotice verification={current.verification} />
+          <div className="response-fold-stack">
+            <StrategySection report={report} />
+            <FollowUpSection report={report} />
+            <AppendixSection content={content} report={report} />
+            <VerificationNotice verification={current.verification} />
+          </div>
         </div>
       ) : (
         <p className="response-empty-state">생성된 대응안이 없습니다.</p>
