@@ -2,6 +2,29 @@ import { useState } from "react";
 
 import { formatDate } from "../../shared/presentation";
 
+const HOLD_STATUS = {
+  근거부족_보류: {
+    kicker: "대응안 생성 보류",
+    headline: "연결된 근거 기사가 없습니다",
+    guide: "위험 근거 기사를 연결한 뒤 대응안을 다시 생성해 주세요.",
+  },
+  유형불명_보류: {
+    kicker: "대응안 생성 보류",
+    headline: "탐지 유형이 비어 있습니다",
+    guide: "상위 유형이 채워진 뒤 대응안을 다시 생성해 주세요.",
+  },
+  유형불일치_보류: {
+    kicker: "대응안 생성 보류",
+    headline: "탐지 유형이 사안과 맞지 않습니다",
+    guide: "탐지 유형을 확인해 바로잡은 뒤 다시 생성해 주세요.",
+  },
+  대응불필요_종료: {
+    kicker: "대응 불필요",
+    headline: "이 기업이 대응할 사안이 아닙니다",
+    guide: "판단이 틀렸다면 다시 생성해 주세요.",
+  },
+};
+
 const STANCE_LABELS = {
   선제_공개: "선제 공개",
   사실확인_우선: "사실 확인 우선",
@@ -427,6 +450,7 @@ function VerificationNotice({ verification }) {
 }
 
 export function NoEvidenceNotice({ content }) {
+  const copy = HOLD_STATUS[content.status] ?? HOLD_STATUS["근거부족_보류"];
   const detection = content.detection ?? {};
   const probability =
     typeof detection.risk_probability === "number"
@@ -441,8 +465,8 @@ export function NoEvidenceNotice({ content }) {
     <div className="response-draft response-draft-hold">
       <div className="response-hold-heading">
         <div>
-          <span className="response-ui-kicker">대응안 생성 보류</span>
-          <strong>연결된 근거 기사가 없습니다</strong>
+          <span className="response-ui-kicker">{copy.kicker}</span>
+          <strong>{copy.headline}</strong>
         </div>
         <span>확인 필요</span>
       </div>
@@ -457,9 +481,7 @@ export function NoEvidenceNotice({ content }) {
           ))}
         </dl>
       )}
-      <small className="response-hold-guide">
-        위험 근거 기사를 연결한 뒤 대응안을 다시 생성해 주세요.
-      </small>
+      <small className="response-hold-guide">{copy.guide}</small>
     </div>
   );
 }
@@ -472,7 +494,7 @@ export default function MainResponseContent({ content }) {
   );
   const [active, setActive] = useState(initialIndex);
 
-  if (content.status === "근거부족_보류") {
+  if (HOLD_STATUS[content.status]) {
     return <NoEvidenceNotice content={content} />;
   }
 

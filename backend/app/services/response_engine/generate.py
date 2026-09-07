@@ -284,11 +284,16 @@ def build_user_prompt(payload: AlertPayload, ev: Evidence) -> str:
     quant = []
     bw = payload.baseline_window_days
     if payload.mention_count is not None:
-        base = f" (직전 {bw}일 평균 {_fmt_num(payload.baseline_mean)}건)" if payload.baseline_mean else ""
-        quant.append(f"기간 내 언급량 {payload.mention_count}건{base}")
+        # 기준선은 이 사건이 아니라 회사 전체 언급량이다(service._baseline). 범위를
+        # 밝히지 않으면 "이 사건이 평소보다 조용하다"로 잘못 읽힌다.
+        base = (
+            f" (같은 기간 길이 기준 회사 전체 평균 {_fmt_num(payload.baseline_mean)}건)"
+            if payload.baseline_mean else ""
+        )
+        quant.append(f"이 사건 언급량 {payload.mention_count}건{base}")
     if payload.negative_ratio is not None:
         base = (
-            f" (직전 {bw}일 평균 {_fmt_num(payload.negative_ratio_baseline, pct=True)})"
+            f" (직전 {bw}일 회사 전체 평균 {_fmt_num(payload.negative_ratio_baseline, pct=True)})"
             if payload.negative_ratio_baseline is not None
             else ""
         )
@@ -318,7 +323,17 @@ def build_user_prompt(payload: AlertPayload, ev: Evidence) -> str:
             # 상류(service._payload_from_event)에서 이미 600자로 자른다. 여기서 300으로
             # 또 줄이면 사건 경위 뒷부분이 한 번 더 잘린다. 상류 상한에 맞춘다.
             lines.append(f"- [{m.mention_id}] ({' / '.join(meta)}) {m.text[:600]}")
-        parts.append("[원문 - 인용 시 대괄호 안 id를 cited_mention_ids에 넣을 것]\n" + "\n".join(lines))
+        # 원문은 근거 점수 상위 몇 건만 실린다(이벤트당 최대 661건 실측). 전체 건수를
+        # 밝히지 않으면 모델이 여기 있는 것이 전부라고 보고 규모를 축소해 쓴다.
+        shown = len(lines)
+        scope = (
+            f" - 전체 {payload.mention_count}건 중 근거 점수 상위 {shown}건"
+            if payload.mention_count and payload.mention_count > shown else ""
+        )
+        parts.append(
+            f"[원문{scope} - 인용 시 대괄호 안 id를 cited_mention_ids에 넣을 것]\n"
+            + "\n".join(lines)
+        )
     else:
         parts.append("[원문]\n- (선별된 원문 없음. 원문 인용 없이 정량 근거만으로 작성할 것)")
 

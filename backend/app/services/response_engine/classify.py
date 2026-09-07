@@ -53,7 +53,17 @@ _REFINE_PROMPT = """당신은 기업 리스크 모니터링 시스템의 세부 
 - 사실로 확인된 사건인지, 아직 확인되지 않은 소문이 퍼지는 것 자체가 사안인지도 갈림길입니다.
   후자라면 평판·루머 쪽입니다.
 - confidence는 0.0~1.0입니다. 원문이 짧거나 후보 간 판단이 갈리면 낮게 주세요.
-- reason은 한국어 한 문장으로, 무엇을 근거로 골랐는지 적으세요."""
+- reason은 한국어 한 문장으로, 무엇을 근거로 골랐는지 적으세요.
+
+[안전장치 - 후보 선택과 별개로 반드시 판단하세요]
+- is_actionable: 이 원문들이 {company}가 대응해야 할 사안입니까? 같은 이름의 다른 대상
+  (스포츠 구단·동명이인·동명 지명), 타사 사건에 {company}가 곁들여 언급된 것, 단순 시세·
+  제품 소개처럼 대응할 일이 없는 내용이면 false로 두세요.
+- parent_fits: 위에서 내려온 상위 유형이 이 사안과 맞습니까? 후보들이 전부 어색하면
+  false로 두고, suggested_parent에 맞다고 보는 상위 유형을 적으세요(모르면 빈 문자열).
+- evidence_sufficient: 이 원문만으로 대응 방향을 정할 수 있습니까? 제목만 있거나 사건의
+  실체를 알 수 없으면 false로 두세요.
+- 이 셋은 후보 선택을 바꾸지 않습니다. false여도 risk_type은 후보 중에서 고르세요."""
 
 _SYSTEM_PROMPT = """당신은 기업 리스크 모니터링 시스템의 유형 분류기입니다.
 아래 게시글들이 {company}에 대해 제기하는 리스크가 어느 유형에 해당하는지 하나만 고르세요.
@@ -154,20 +164,39 @@ def refine(
         )
         result["detection_parents"] = parents
         result["notes"] = notes + result.get("notes", [])
+        # LLM을 거치지 않은 경로는 안전장치를 통과로 두되, 검사하지 않았다고 표시한다.
+        # 이 표시가 있어야 나중에 경로별 오분류율을 갈라 볼 수 있다.
+        result["safety_checked"] = "is_actionable" in result
+        result.setdefault("is_actionable", True)
+        result.setdefault("parent_fits", True)
+        result.setdefault("suggested_parent", None)
+        result.setdefault("evidence_sufficient", True)
         return result
 
-    if len(candidates) == 1:
-        return _wrap({
-            "risk_type": candidates[0],
-            "confidence": 1.0,
-            "route": "single",
-            "reason": f"탐지 유형 {parents[0]}의 세부 유형이 하나뿐",
-            "needs_review": False,
-            "hit_counts": {},
-            "notes": ["세부 판정 불확실성 없음 - 확신도는 상단에서 승계"],
-        })
-
     texts = _negative_texts(payload)
+
+    if len(candidates) == 1:
+        # 자식이 하나면 고를 것이 없지만, **상위 유형이 맞는지는 여전히 물어야 한다.**
+        # 8개 탐지 유형 중 4개(product_quality·security_privacy·labor_hr·
+        # financial_governance)가 1:1이라, 이 분기를 그냥 통과시키면 절반의 사안이
+        # 아무 검증 없이 상위 라벨을 그대로 물려받는다.
+        if not allow_llm:
+            return _wrap({
+                "risk_type": candidates[0],
+                "confidence": 1.0,
+                "route": "single",
+                "reason": f"탐지 유형 {parents[0]}의 세부 유형이 하나뿐",
+                "needs_review": False,
+                "hit_counts": {},
+                "notes": ["LLM 확인을 끈 상태 - 상위 유형을 검증하지 않음"],
+            })
+        result = _refine_llm(
+            payload, tuple(candidates), texts or [m.text for m in payload.mentions], {}
+        )
+        result["route"] = "single_checked"
+        result["hit_counts"] = {}
+        return _wrap(result)
+
     counts = {c: n for c, n in keywords.hit_counts(texts).items() if c in candidates}
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     top_code, top_n = ranked[0]
@@ -219,8 +248,19 @@ def _refine_llm(
                 "risk_type": {"type": "string", "enum": list(candidates)},
                 "confidence": {"type": "number"},
                 "reason": {"type": "string"},
+                "is_actionable": {"type": "boolean"},
+                "parent_fits": {"type": "boolean"},
+                # 빈 문자열은 "모르겠다"는 뜻이다. strict 스키마라 필드를 뺄 수 없다.
+                "suggested_parent": {
+                    "type": "string",
+                    "enum": [""] + list(risk_types.DETECTION_TYPES),
+                },
+                "evidence_sufficient": {"type": "boolean"},
             },
-            "required": ["risk_type", "confidence", "reason"],
+            "required": [
+                "risk_type", "confidence", "reason",
+                "is_actionable", "parent_fits", "suggested_parent", "evidence_sufficient",
+            ],
             "additionalProperties": False,
         },
     }
@@ -234,13 +274,24 @@ def _refine_llm(
         schema_name="risk_subtype_refinement",
     )
     confidence = float(parsed["confidence"])
+    suggested = parsed.get("suggested_parent") or None
     return {
         "usage": call_usage,
         "risk_type": parsed["risk_type"],
         "confidence": confidence,
         "route": "llm",
         "reason": parsed["reason"],
-        "needs_review": confidence < 0.6,
+        "is_actionable": bool(parsed["is_actionable"]),
+        "parent_fits": bool(parsed["parent_fits"]),
+        "suggested_parent": suggested,
+        "evidence_sufficient": bool(parsed["evidence_sufficient"]),
+        # 안전장치가 하나라도 걸리면 확신도와 무관하게 사람이 봐야 한다.
+        "needs_review": (
+            confidence < 0.6
+            or not parsed["is_actionable"]
+            or not parsed["parent_fits"]
+            or not parsed["evidence_sufficient"]
+        ),
     }
 
 
