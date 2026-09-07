@@ -1,0 +1,441 @@
+<title>신호와 잡음</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root {
+    --paper: #eef1f4;
+    --paper-deep: #e4e8ed;
+    --card: #ffffff;
+    --ink: #171b21;
+    --ink-soft: #4b535e;
+    --ink-faint: #7c8592;
+    --line: #d7dce2;
+    --signal: #0f7a72;
+    --signal-soft: #e3f2f0;
+    --caution: #a66a1e;
+    --caution-soft: #f7ecdd;
+    --noise: #8b93a0;
+    --noise-soft: #eceef1;
+    --critical: #b33f3f;
+    --critical-soft: #fbe9e9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #12151a;
+      --paper-deep: #0b0d10;
+      --card: #1a1e25;
+      --ink: #e8eaed;
+      --ink-soft: #b7bec8;
+      --ink-faint: #838c98;
+      --line: #2b3038;
+      --signal: #3fbfb2;
+      --signal-soft: #123430;
+      --caution: #d99a4e;
+      --caution-soft: #34291a;
+      --noise: #737b88;
+      --noise-soft: #20242b;
+      --critical: #e07a7a;
+      --critical-soft: #33201f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #12151a;
+    --paper-deep: #0b0d10;
+    --card: #1a1e25;
+    --ink: #e8eaed;
+    --ink-soft: #b7bec8;
+    --ink-faint: #838c98;
+    --line: #2b3038;
+    --signal: #3fbfb2;
+    --signal-soft: #123430;
+    --caution: #d99a4e;
+    --caution-soft: #34291a;
+    --noise: #737b88;
+    --noise-soft: #20242b;
+    --critical: #e07a7a;
+    --critical-soft: #33201f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "IBM Plex Sans KR", -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.7; -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 56px 24px 100px; }
+
+  header.top { margin-bottom: 40px; }
+  header.top .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--signal); font-weight: 600; margin-bottom: 14px;
+  }
+  header.top h1 {
+    font-size: 40px; font-weight: 700; margin: 0 0 14px; text-wrap: balance; letter-spacing: -0.01em;
+  }
+  header.top p.lede { font-size: 17px; color: var(--ink-soft); max-width: 620px; margin: 0; }
+
+  .tldr {
+    background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--signal);
+    border-radius: 10px; padding: 22px 26px; margin: 32px 0 48px;
+  }
+  .tldr .label { font-size: 12px; font-weight: 600; color: var(--signal); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .tldr p { margin: 0; font-size: 15.5px; }
+  .tldr .stats { display: flex; gap: 28px; margin-top: 18px; flex-wrap: wrap; }
+  .tldr .stat .n { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 600; color: var(--ink); }
+  .tldr .stat .l { font-size: 12.5px; color: var(--ink-faint); margin-top: 2px; }
+
+  h2.section {
+    font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-faint); margin: 64px 0 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
+  }
+  h3.step-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; text-wrap: balance; }
+
+  p { font-size: 15.5px; }
+  .prose p { max-width: 66ch; }
+
+  /* concept primer cards */
+  .concepts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 22px 0 8px; }
+  .concept-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .concept-card .icon { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--signal); font-weight: 600; margin-bottom: 10px; }
+  .concept-card h4 { margin: 0 0 8px; font-size: 15px; }
+  .concept-card p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  @media (max-width: 680px) { .concepts { grid-template-columns: 1fr; } }
+
+  /* step cards */
+  .step {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 30px 32px; margin: 20px 0 36px; position: relative;
+  }
+  .step .step-num {
+    position: absolute; top: -14px; left: 28px; background: var(--signal); color: #fff;
+    font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px;
+    width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  }
+  .step-block { margin-top: 20px; }
+  .step-block .kicker {
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+  }
+  .step-block.found .kicker { color: var(--noise); }
+  .step-block.why .kicker { color: var(--caution); }
+  .step-block.fix .kicker { color: var(--signal); }
+  .step-block p { margin: 0; }
+  code.inline {
+    background: var(--noise-soft); border-radius: 4px; padding: 1px 6px; font-size: 13px;
+    font-family: "IBM Plex Mono", monospace; color: var(--ink);
+  }
+
+  .barchart { margin-top: 18px; }
+  .barchart .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .barchart .row .rowlabel { width: 92px; flex-shrink: 0; font-size: 12.5px; color: var(--ink-soft); text-align: right; }
+  .barchart .track { flex: 1; background: var(--noise-soft); border-radius: 5px; height: 22px; position: relative; overflow: hidden; }
+  .barchart .fill { height: 100%; border-radius: 5px 0 0 5px; display: flex; align-items: center; }
+  .barchart .fill.before { background: var(--noise); }
+  .barchart .fill.after { background: var(--signal); }
+  .barchart .fill span {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; color: #fff;
+    margin-left: 8px; white-space: nowrap;
+  }
+  .barchart .legend { display: flex; gap: 16px; margin-top: 10px; margin-left: 102px; font-size: 12px; color: var(--ink-faint); }
+  .barchart .legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+
+  .callout { border-radius: 10px; padding: 14px 18px; font-size: 14px; margin: 16px 0; }
+  .callout.caution { background: var(--caution-soft); color: var(--caution); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent); }
+  .callout.critical { background: var(--critical-soft); color: var(--critical); border: 1px solid color-mix(in srgb, var(--critical) 30%, transparent); }
+  .callout.signal { background: var(--signal-soft); color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 30%, transparent); }
+  .callout b { font-weight: 600; }
+
+  table.summary { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+  table.summary th, table.summary td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  table.summary th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; }
+  table.summary td.num { font-family: "IBM Plex Mono", monospace; }
+  table.summary .arrow { color: var(--ink-faint); margin: 0 4px; }
+  table.summary .improved { color: var(--signal); font-weight: 600; }
+
+  /* technical appendix */
+  .appendix-divider {
+    margin: 88px 0 0; text-align: center; position: relative;
+  }
+  .appendix-divider::before {
+    content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--line);
+  }
+  .appendix-divider span {
+    position: relative; background: var(--paper); padding: 0 18px; font-size: 13px; color: var(--ink-faint);
+  }
+  .appendix {
+    background: var(--paper-deep); margin: 0 -24px; padding: 56px 24px 20px; border-radius: 18px 18px 0 0;
+  }
+  .appendix .inner { max-width: 732px; margin: 0 auto; }
+  .appendix h2.section { border-color: var(--line); }
+
+  .flow { display: flex; flex-direction: column; gap: 0; margin: 22px 0; }
+  .flow .stage {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  }
+  .flow .stage .name { font-weight: 600; font-size: 14.5px; }
+  .flow .stage .detail { font-size: 13px; color: var(--ink-faint); text-align: right; }
+  .flow .connector { display: flex; justify-content: center; padding: 4px 0; color: var(--ink-faint); font-size: 13px; }
+  .flow .stage.used { border-left: 3px solid var(--signal); }
+  .flow .stage.empty { border-left: 3px solid var(--noise); opacity: 0.75; }
+  .badge { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.03em; flex-shrink: 0; }
+  .badge.used { background: var(--signal-soft); color: var(--signal); }
+  .badge.empty { background: var(--noise-soft); color: var(--noise); }
+
+  .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
+  .feature-grid .fgroup { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .feature-grid .fgroup .fname { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); margin-bottom: 8px; }
+  .feature-grid .fgroup ul { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--ink-soft); }
+  .feature-grid .fgroup li { margin-bottom: 3px; }
+  @media (max-width: 680px) { .feature-grid { grid-template-columns: 1fr 1fr; } }
+
+  .math-steps { counter-reset: step; margin: 22px 0; }
+  .math-step { display: flex; gap: 16px; margin-bottom: 4px; }
+  .math-step .num {
+    counter-increment: step; flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--noise-soft); color: var(--ink-soft); font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+  }
+  .math-step .num::before { content: counter(step); }
+  .math-step .content { padding-bottom: 20px; border-left: 1px dashed var(--line); margin-left: -39px; padding-left: 39px; flex: 1; }
+  .math-step:last-child .content { border-left: none; }
+  .math-step .content .formula {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; margin: 8px 0 4px; overflow-x: auto; white-space: nowrap;
+  }
+  .math-step .content p { margin: 4px 0; font-size: 14px; color: var(--ink-soft); }
+
+  footer.end {
+    margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--ink-faint);
+  }
+  footer.end code { font-family: "IBM Plex Mono", monospace; background: var(--noise-soft); padding: 1px 5px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">RISOTO 개발기록 · 2026-09-07</div>
+    <h1>신호와 잡음</h1>
+    <p class="lede">위험을 판단하는 공식 안에는 여러 숫자가 섞여 들어갑니다. 오늘 한 일은 그 숫자들 중 어떤 게 진짜로 위험을 알려주고, 어떤 게 그냥 소음이었는지 사람이 직접 매긴 정답으로 하나씩 가려낸 것입니다.</p>
+  </header>
+
+  <div class="tldr">
+    <div class="label">한 줄 요약</div>
+    <p>위험 판단 공식에서 가장 비중이 컸던 항목(45%)이 사실 아무 정보도 주지 않고 있었고, 대신 감성분석 비중을 크게 늘렸더니 <b>같은 사건을 놓치지 않으면서 오탐이 절반 가까이 줄었습니다.</b></p>
+    <div class="stats">
+      <div class="stat"><div class="n">0.500 → <span style="color:var(--signal)">0.906</span></div><div class="l">판정 정확도 지표(AUC)</div></div>
+      <div class="stat"><div class="n">16% → <span style="color:var(--signal)">33%</span></div><div class="l">위험 경보 중 진짜 위험 비율</div></div>
+      <div class="stat"><div class="n">117건</div><div class="l">이번에 새로 확보한 사람 라벨</div></div>
+    </div>
+  </div>
+
+  <h2 class="section">시작하기 전에</h2>
+  <p class="prose">아래 내용을 이해하려면 세 가지 개념만 알면 됩니다. 이미 아신다면 건너뛰어도 됩니다.</p>
+  <div class="concepts">
+    <div class="concept-card">
+      <div class="icon">01</div>
+      <h4>정밀도 · 재현율</h4>
+      <p>그물로 물고기를 잡는다고 생각하면, <b>정밀도</b>는 "건진 것 중 진짜 물고기 비율", <b>재현율</b>은 "있던 물고기 중 놓치지 않은 비율"입니다. 그물을 촘촘하게 짜면(경보를 많이 울리면) 재현율은 좋아지지만 잡동사니도 같이 걸려 정밀도가 떨어집니다.</p>
+    </div>
+    <div class="concept-card">
+      <div class="icon">02</div>
+      <h4>AUC</h4>
+      <p>위험 점수가 "진짜 위험한 것에 더 높은 점수를 매기는가"를 0~1 사이 숫자로 나타낸 것입니다. <b>0.5는 동전 던지기와 같다</b>는 뜻이고, 1.0에 가까울수록 점수 자체가 믿을 만하다는 뜻입니다.</p>
+    </div>
+    <div class="concept-card">
+      <div class="icon">03</div>
+      <h4>사람 라벨</h4>
+      <p>모델이 낸 점수 말고, <b>사람이 기사를 직접 읽고 "이게 진짜 위험 맞다/아니다"를 판정한 정답지</b>입니다. 이게 있어야 모델이 잘하고 있는지 실제로 확인할 수 있습니다. 오늘 이 정답지를 117건 새로 확보했습니다.</p>
+    </div>
+  </div>
+
+  <h2 class="section">오늘 한 일, 순서대로</h2>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <h3 class="step-title">두 개의 판정 엔진이 따로 돌고 있었다</h3>
+    <div class="step-block found">
+      <div class="kicker">발견</div>
+      <p>기사를 15분 단위로 모아 보는 예전 방식(<code class="inline">window_v1</code>, LightGBM 모델 사용)과, 사건 단위로 묶어 보는 지금 방식(<code class="inline">story_v2</code>)이 동시에 돌고 있었는데, 실제 사용자가 보는 위험 경보는 전부 <code class="inline">story_v2</code>였고 여기엔 LightGBM 점수가 전혀 안 들어가고 있었습니다.</p>
+    </div>
+    <div class="step-block why">
+      <div class="kicker">왜 문제인가</div>
+      <p>공들여 만든 LightGBM 모델의 판단이 실제 위험 경보에는 반영되지 않고 있었던 셈입니다. 그래서 "두 점수를 섞으면 더 정확해지지 않을까" 하는 게 자연스러운 다음 질문이었습니다.</p>
+    </div>
+    <div class="step-block fix">
+      <div class="kicker">확인 결과</div>
+      <p>섞어서 사람 라벨로 검증해보니, 처음엔 좋아 보였지만(비교 기준이 잘못된 실험이었음을 뒤늦게 발견) 실제 <code class="inline">story_v2</code> 전용 정답지로 다시 재보니 <b>오히려 정확도가 떨어졌습니다.</b> 그래서 섞는 비중을 0으로 되돌려뒀습니다 — 데이터가 더 쌓이면 다시 볼 항목입니다.</p>
+    </div>
+    <div class="barchart">
+      <div class="row"><div class="rowlabel">섞지 않음</div><div class="track"><div class="fill after" style="width:83.4%"><span>AUC 0.834</span></div></div></div>
+      <div class="row"><div class="rowlabel">섞었을 때</div><div class="track"><div class="fill before" style="width:82.0%"><span>AUC 0.820</span></div></div></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <h3 class="step-title">고친 모델이 40초 만에 원래대로 돌아가고 있었다</h3>
+    <div class="step-block found">
+      <div class="kicker">발견</div>
+      <p>새로 학습한 모델을 "이제부터 이걸 써라"고 등록했는데, 서버가 재시작될 때마다 자동으로 예전 모델로 다시 바뀌어 있었습니다. 실제로 등록 후 40초 만에 원상복구된 게 기록에 남아있었습니다.</p>
+    </div>
+    <div class="step-block why">
+      <div class="kicker">왜 문제인가</div>
+      <p>새 환경을 처음 만들 때 모델이 하나도 없으면 기본값을 채워 넣으라고 만든 코드였는데, "이미 누가 더 나은 모델로 바꿔놨는지"는 확인하지 않고 항상 자기 것으로 덮어쓰고 있었습니다. 사람이 개입해서 모델을 바꾸는 게 사실상 불가능한 구조였습니다.</p>
+    </div>
+    <div class="step-block fix">
+      <div class="kicker">고친 방법</div>
+      <p>"이 자리에 아무것도 없을 때만 채워 넣고, 이미 누가 정해놨으면 손대지 않는다"로 규칙을 바꿨습니다. 다시 등록해보고 서버를 재시작해도 그대로 유지되는 것까지 확인했습니다.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <h3 class="step-title">단어 하나가 전혀 다른 뜻으로 두 번 쓰이고 있었다</h3>
+    <div class="step-block found">
+      <div class="kicker">발견</div>
+      <p>사람 라벨 117건 중 위험 유형(8가지 중 하나)을 잘못 고른 25건을 하나씩 대조해보니, 그중 4건이 같은 이유로 틀려 있었습니다.</p>
+    </div>
+    <div class="step-block why">
+      <div class="kicker">왜 문제인가</div>
+      <p>"재무 위험"을 판단하는 키워드에 <code class="inline">감사</code>가 있었는데, <b>국회의 "국정감사"</b>도 이 단어를 포함하고 있어서 국정감사 관련 기사가 전부 재무 위험으로 잘못 분류됐습니다. 마찬가지로 "제품 결함"을 판단하는 키워드 <code class="inline">품질</code>은 "배달 품질 저하"처럼 서비스 불만 기사까지 다 끌어왔습니다.</p>
+    </div>
+    <div class="step-block fix">
+      <div class="kicker">고친 방법</div>
+      <p><code class="inline">감사</code> → <code class="inline">회계감사</code>로 좁히고, 애매한 <code class="inline">품질</code>은 빼고 "불량·결함·하자·오작동" 등 실제 제품 결함 표현만 남겼습니다.</p>
+    </div>
+    <div class="callout signal">고친 뒤 재확인: 국감 불출석 논란 기사가 정확히 사람 라벨과 같은 유형(평판·소비자)으로 분류됨</div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">4</div>
+    <h3 class="step-title">제일 비중이 컸던 항목이 아무 말도 안 하고 있었다</h3>
+    <div class="step-block found">
+      <div class="kicker">발견</div>
+      <p>위험 점수는 세 가지를 섞어서 만듭니다 — <b>위험유형 확신도(45%) · 감성분석 부정확률(35%) · 관련성 점수(20%)</b>. 이 세 개를 라벨 55건에 대해 하나씩 뜯어봤습니다.</p>
+    </div>
+    <div class="step-block why">
+      <div class="kicker">왜 문제인가</div>
+      <p>가장 비중이 큰 "위험유형 확신도"가 <b>진짜 위험이든 아니든 항상 1.000</b>이었습니다(표준편차 0). 반면 비중이 작았던 "감성분석"은 진짜 위험(평균 0.93)과 아닌 것(평균 0.38)을 뚜렷하게 갈랐습니다. 제일 쓸모있는 신호를 제일 적게, 아무 쓸모없는 신호를 제일 많이 반영하고 있었던 셈입니다.</p>
+    </div>
+    <div class="step-block fix">
+      <div class="kicker">고친 방법</div>
+      <p>비중을 <b>위험유형 20% · 감성분석 70% · 관련성 10%</b>로 재조정했습니다. 여러 조합을 시험해서 가장 안정적으로 좋은 지점을 골랐습니다.</p>
+    </div>
+    <div class="barchart">
+      <div class="row"><div class="rowlabel">고치기 전</div><div class="track"><div class="fill before" style="width:16.4%"><span>정밀도 16.4%</span></div></div></div>
+      <div class="row"><div class="rowlabel">고친 후</div><div class="track"><div class="fill after" style="width:33.3%"><span>정밀도 33.3%</span></div></div></div>
+      <div class="legend"><span><span class="dot" style="background:var(--noise)"></span>같은 위험을 다 잡으면서(재현율 100% 그대로)</span></div>
+    </div>
+  </div>
+
+  <h2 class="section">종합 결과</h2>
+  <table class="summary">
+    <tr><th>항목</th><th>고치기 전</th><th></th><th>고친 후</th></tr>
+    <tr><td>위험 판단 정확도 (AUC)</td><td class="num">0.894</td><td class="arrow">→</td><td class="num improved">0.906</td></tr>
+    <tr><td>경보 중 진짜 위험 비율 (정밀도, 기준 0.65)</td><td class="num">16.4%</td><td class="arrow">→</td><td class="num improved">33.3%</td></tr>
+    <tr><td>경보 중 진짜 위험 비율 (정밀도, 기준 0.85)</td><td class="num">34.8%</td><td class="arrow">→</td><td class="num improved">50.0%</td></tr>
+    <tr><td>진짜 위험을 놓치는 비율 (재현율)</td><td class="num">100% / 88.9%</td><td class="arrow">→</td><td class="num">그대로 유지</td></tr>
+    <tr><td>위험유형(8종) 오분류</td><td class="num">9건</td><td class="arrow">→</td><td class="num improved">4건 해소</td></tr>
+  </table>
+  <p class="prose" style="color:var(--ink-faint); font-size:13.5px;">표본이 55~117건으로 크지 않아 절대적인 숫자는 계속 다시 확인해야 하지만, 방향(무엇이 잡음이고 무엇이 신호인지)은 표준편차 0 같은 명확한 근거로 뒷받침됩니다.</p>
+
+  <div class="appendix-divider"><span>여기부터는 조금 더 기술적인 내용입니다</span></div>
+</div>
+
+<div class="appendix">
+  <div class="inner">
+    <h2 class="section" style="margin-top:0;">지금 코드에서 LLM 대응전략에 들어가는 것</h2>
+    <p class="prose">대응전략을 쓰는 LLM은 <code class="inline">AlertPayload</code>라는 하나의 입력만 받습니다. 그 안에 실제로 무엇이 채워져 있고, 무엇이 설계만 되고 비어 있는지입니다.</p>
+
+    <div class="flow">
+      <div class="stage used"><div class="name">사건 기본 정보<div class="detail" style="font-weight:400;">회사명 · 업종 · 위험확률 · 심각도</div></div><span class="badge used">사용중</span></div>
+      <div class="connector">↓</div>
+      <div class="stage used"><div class="name">근거 원문 (mentions)<div class="detail" style="font-weight:400;">최대 10건, 부정 강도 + 확산 규모 절반씩</div></div><span class="badge used">사용중</span></div>
+      <div class="connector">↓</div>
+      <div class="stage used"><div class="name">적용 법령 (regulations)<div class="detail" style="font-weight:400;">유형별 매핑표에서 결정적으로 조회</div></div><span class="badge used">사용중</span></div>
+      <div class="connector">↓</div>
+      <div class="stage empty"><div class="name">과거 유사 사례 (cases)<div class="detail" style="font-weight:400;">기능은 있지만 사례 DB가 비어있음</div></div><span class="badge empty">비어있음</span></div>
+      <div class="connector">↓</div>
+      <div class="stage empty"><div class="name">정량 판정 근거 (attribution)<div class="detail" style="font-weight:400;">"어떤 지표가 기준치 대비 몇 %p 높았다" 같은 수치</div></div><span class="badge empty">비어있음</span></div>
+    </div>
+    <p class="prose">즉, LLM은 <b>사건 확률 하나(숫자)</b>와 <b>기사 원문 텍스트</b>, <b>법령 조항</b>을 보고 대응전략을 씁니다. "어떤 지표가 평소보다 얼마나 벗어났는지" 같은 정량적 근거는 구조는 만들어져 있지만 실제로는 채워 넣는 코드가 없어서 <b>지금은 LLM에게 전달되지 않습니다.</b></p>
+
+    <div class="callout caution"><b>가장 중요한 모델(LightGBM)의 결과값도 지금은 LLM에게 전달되지 않습니다.</b> 위 1번 항목에서 본 것처럼 두 판정 엔진이 분리돼 있고, LLM이 보는 "위험확률"은 <code class="inline">story_v2</code> 공식(오늘 재조정한 그 공식)에서만 나옵니다. LightGBM 점수는 현재 분석 통계 화면의 "위험도" 표시에만 쓰입니다.</div>
+
+    <h2 class="section">LightGBM은 정확히 무엇을 계산하는가</h2>
+    <p class="prose">15분 단위로 모은 데이터 한 구간(window)마다 아래 33개 숫자를 만들어서 하나의 확률을 냅니다.</p>
+
+    <div class="feature-grid">
+      <div class="fgroup">
+        <div class="fname">수집량 (7)</div>
+        <ul><li>기사 수 (로그)</li><li>스토리 수 (로그)</li><li>확산 수 (로그)</li><li>언론사 수 (로그)</li><li>확산 비율</li><li>출처 다양성</li><li>언론사 집중도</li></ul>
+      </div>
+      <div class="fgroup">
+        <div class="fname">감성 (4)</div>
+        <ul><li>긍정 확률</li><li>중립 확률</li><li>부정 확률</li><li>부정 확률 상위 90%</li></ul>
+      </div>
+      <div class="fgroup">
+        <div class="fname">위험 키워드 (2)</div>
+        <ul><li>키워드 적중 비율</li><li>스토리 단위 적중 비율</li></ul>
+      </div>
+      <div class="fgroup">
+        <div class="fname">시간 변화 (3)</div>
+        <ul><li>기사 수 증감분</li><li>스토리 수 증감분</li><li>부정확률 증감분</li></ul>
+      </div>
+      <div class="fgroup">
+        <div class="fname">기업별 이상치 (3)</div>
+        <ul><li>기사 수 로버스트 Z</li><li>스토리 수 로버스트 Z</li><li>부정확률 로버스트 Z</li></ul>
+      </div>
+      <div class="fgroup">
+        <div class="fname">수집 품질 (3)</div>
+        <ul><li>수집 완전성</li><li>부분 수집 여부</li><li>무기사 여부</li></ul>
+      </div>
+      <div class="fgroup">
+        <div class="fname">8종 위험유형 점수 (8)</div>
+        <ul><li>제품·품질 / 안전·사고 / 보안·개인정보 / 법률·규제 / 노동·인사 / 재무·지배구조 / 공급·운영 / 평판·소비자</li></ul>
+      </div>
+      <div class="fgroup">
+        <div class="fname">이상탐지 (2)</div>
+        <ul><li>IsolationForest 이상점수</li><li>같은 점수의 백분위</li></ul>
+      </div>
+    </div>
+
+    <div class="math-steps">
+      <div class="math-step">
+        <div class="num"></div>
+        <div class="content">
+          <p><b>기업별 정규화.</b> 기업마다 평소 규모가 다르므로(대기업 vs 중소기업), 33개 숫자를 그 기업 자신의 평소 중앙값 기준으로 다시 계산합니다.</p>
+          <div class="formula">정규화값 = (원래값 − 그 기업의 중앙값) / 그 기업의 사분위 범위</div>
+        </div>
+      </div>
+      <div class="math-step">
+        <div class="num"></div>
+        <div class="content">
+          <p><b>이상치 점수 계산.</b> 정규화된 값을 먼저 IsolationForest에 넣어 "평소와 얼마나 다른가"를 점수 하나로 뽑고, 이 회사·최근 기록 대비 백분위로도 바꿔둡니다. 이 두 값이 33개 숫자에 추가됩니다.</p>
+        </div>
+      </div>
+      <div class="math-step">
+        <div class="num"></div>
+        <div class="content">
+          <p><b>LightGBM 예측.</b> 완성된 33개 숫자를 LightGBM에 넣으면 0~1 사이 확률 하나가 나옵니다.</p>
+          <div class="formula">probability = model.predict_proba(vector)[1]</div>
+        </div>
+      </div>
+      <div class="math-step">
+        <div class="num"></div>
+        <div class="content">
+          <p><b>경보 여부 판정.</b> 이 확률을 학습 때 정해둔 기준값(현재 0.29, 기업별로 다르게 정해진 경우도 있음)과 비교해서 넘으면 경보로 표시합니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="prose">오늘 이 모델은 사람이 매긴 82건짜리 시간순 분할 대신 <b>5겹 교차검증</b>으로 다시 학습했습니다 (재현율 87.1%, ROC-AUC 0.870). 이전 버전은 검증 구간에 양성 사례가 하나도 없어서 검증 자체가 무의미했던 문제가 있었는데, 이번에 그 부분도 같이 고쳐졌습니다.</p>
+  </div>
+</div>
+
+<div class="wrap" style="padding-top:0;">
+  <footer class="end">
+    관련 커밋: <code>15fa514</code> <code>4d2bce1</code> <code>8a9710e</code> <code>f65e1f0</code> · 라벨 데이터: <code>backend/training_data/story_v2_label_candidates.csv</code> · 이어서 볼 것: 정량 판정 근거(attribution)를 실제로 채워서 LLM에 넘기기, 과거 사례(cases) 데이터베이스 구축
+  </footer>
+</div>
