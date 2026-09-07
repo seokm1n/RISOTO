@@ -100,6 +100,10 @@ function DailySentimentCompositionChart({ days }) {
   </div>;
 }
 
+const HELD_STATUSES = new Set([
+  "근거부족_보류", "유형불명_보류", "유형불일치_보류", "대응불필요_종료",
+]);
+
 const RESPONSE_STATUS_LABELS = {
   pending: "생성 중",
   generating: "생성 중",
@@ -229,8 +233,8 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   // 검토가 끝난 초안은 결과만 남긴다. 되돌릴 수 없는 판정이라 버튼을 남겨 둘 이유가 없다.
   const reviewed = latest && latest.approval_state !== "draft";
   const reviewFooter = !content ? null
-    : content.status === "근거부족_보류"
-      ? <div className="draft-review readonly"><span>근거 연결 후 다시 생성해 주세요.</span></div>
+    : HELD_STATUSES.has(content.status)
+      ? <div className="draft-review readonly"><span>{content.review_reason || "확인 후 다시 생성해 주세요."}</span></div>
       : reviewed
         ? <div className="draft-review readonly"><span className={`review-result ${latest.approval_state}`}>{latest.approval_state === "approved" ? "승인 완료" : "반려 완료"}</span></div>
         : canReview

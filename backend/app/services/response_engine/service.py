@@ -27,7 +27,14 @@ from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.database import SessionLocal
-from app.models import Company, ResponseDraft, RiskEvent, RiskEventArticle, NewsArticle
+from app.models import (
+    Company,
+    CompanyArticleMatch,
+    NewsArticle,
+    ResponseDraft,
+    RiskEvent,
+    RiskEventArticle,
+)
 from app.services.risk_ground_truth import authoritative_risk_label
 
 from . import classify, evidence, generate, impact, recommend, tier, verify
@@ -52,7 +59,7 @@ _active_job_ids: set[int] = set()
 _active_jobs_lock = threading.Lock()
 
 
-def _detection_scores(event: RiskEvent) -> dict[str, float] | str:
+def _detection_scores(event: RiskEvent) -> dict[str, float] | str | None:
     """RiskEvent에서 탐지 유형 점수를 뽑는다.
 
     멀티라벨 점수가 남아 있으면 그대로 쓴다 - classify.refine이 1·2위 격차를 보고
@@ -64,7 +71,10 @@ def _detection_scores(event: RiskEvent) -> dict[str, float] | str:
     scores = getattr(event, "risk_type_scores", None)
     if isinstance(scores, dict) and scores:
         return {k: float(v) for k, v in scores.items() if isinstance(v, (int, float))}
-    return event.primary_type or "reputation_consumer"
+    # 상위 유형이 없으면 폴백하지 않는다. 예전에는 reputation_consumer로 떨어뜨렸는데,
+    # 그러면 근거 없이 소비자 평판 유형의 초안이 만들어진다(실측: primary_type이 NULL인
+    # 이벤트 2,481건). 유형을 모르는 것과 소비자 평판인 것은 다른 사실이다.
+    return event.primary_type or None
 
 
 MAX_EVIDENCE_ARTICLES = 10
@@ -126,6 +136,7 @@ def _payload_from_event(
     ]
 
     return AlertPayload.from_dict({
+        **_quant_from_event(db, event, company, evidence_article_ids),
         "alert_id": f"RE-{event.id}",
         "company_id": str(company.id),
         "company_name": company.name,
@@ -138,6 +149,112 @@ def _payload_from_event(
         "mentions": mentions,
         "company_role": getattr(company, "company_role", "main"),
     })
+
+
+# 감성 라벨은 한국어로 저장된다(실측 긍정 12,784 / 중립 9,723 / 부정 6,668 / NULL 9).
+_NEGATIVE_LABEL = "부정"
+# '평소'의 기준 기간. schema.AlertPayload.baseline_window_days 기본값과 맞춘다.
+BASELINE_WINDOW_DAYS = 7
+# 출처 분포는 상위 몇 개만 보여 준다. 꼬리까지 나열하면 프롬프트만 길어진다.
+_SOURCE_MIX_TOP = 5
+
+
+def _host(url: str | None) -> str:
+    """URL에서 도메인만 뽑는다. 매체 다양성을 세는 유일한 단서다."""
+    if not url:
+        return "출처 미상"
+    try:
+        from urllib.parse import urlparse
+
+        return urlparse(url).netloc or "출처 미상"
+    except Exception:
+        return "출처 미상"
+
+
+def _quant_from_event(db, event: RiskEvent, company: Company, article_ids) -> dict:
+    """이벤트에 붙은 기사에서 정량 근거를 직접 센다.
+
+    **집계창(CompanyFeatureWindow)에서 가져오면 안 된다.** 이벤트의 99%가
+    feature_window_id를 갖고 있어 거기서 끌어오고 싶어지지만, 15분 창의 수치는 스토리
+    범위와 맞지 않는다(실측: article_count=0인 창에 기사가 붙은 이벤트가 연결돼 있다).
+    틀린 숫자를 프롬프트에 넣으면 모델이 그걸 판단 근거로 인용하므로 빈 블록보다 나쁘다.
+
+    **mention_count는 payload.mentions 길이가 아니다.** 원문은 근거 점수 상위
+    MAX_EVIDENCE_ARTICLES건으로 잘려 나가는데 이벤트에는 최대 661건이 붙는다.
+    길이를 세면 큰 사건일수록 실제 언급량을 축소해 보고하게 된다.
+
+    기준선은 같은 기업의 직전 BASELINE_WINDOW_DAYS일 기사에서 구하고, 관측 기간과
+    같은 길이로 환산해 비교 가능한 값으로 만든다.
+    """
+    scope = select(NewsArticle.id, NewsArticle.url, NewsArticle.original_url,
+                   NewsArticle.sentiment_label, NewsArticle.published_at).join(
+        RiskEventArticle, RiskEventArticle.article_id == NewsArticle.id
+    ).where(RiskEventArticle.risk_event_id == event.id)
+    if article_ids is not None:
+        scope = scope.where(NewsArticle.id.in_(article_ids))
+    rows = db.execute(scope).all()
+    if not rows:
+        return {}
+
+    total = len(rows)
+    negatives = sum(1 for r in rows if r.sentiment_label == _NEGATIVE_LABEL)
+    labelled = sum(1 for r in rows if r.sentiment_label)
+    stamps = sorted(r.published_at for r in rows if r.published_at)
+
+    # 채널은 URL 도메인으로 센다. NewsArticle.source는 수집기 이름(naver_api_hub 등)
+    # 5종뿐이라 매체 다양성을 나타내지 못한다 - 그 값으로 세면 대부분 1개로 나온다.
+    counts: dict[str, int] = {}
+    for r in rows:
+        name = _host(r.original_url or r.url)
+        counts[name] = counts.get(name, 0) + 1
+    top = sorted(counts.items(), key=lambda kv: -kv[1])[:_SOURCE_MIX_TOP]
+
+    quant: dict = {
+        "mention_count": total,
+        "n_unique_channels": len(counts),
+        "source_mix": {name: round(n / total, 4) for name, n in top},
+        "baseline_window_days": BASELINE_WINDOW_DAYS,
+    }
+    # 라벨이 없는 기사가 섞이면 비율이 낮게 나온다. 라벨된 것만 분모로 쓴다.
+    if labelled:
+        quant["negative_ratio"] = round(negatives / labelled, 4)
+    if stamps:
+        quant["window_start"] = stamps[0].isoformat()
+        quant["window_end"] = stamps[-1].isoformat()
+        quant.update(_baseline(db, company, stamps[0], stamps[-1]))
+    return quant
+
+
+def _baseline(db, company: Company, start, end) -> dict:
+    """직전 기간의 평소 언급량·부정 비율. 관측 기간과 같은 길이로 환산한다."""
+    from datetime import timedelta
+
+    span_days = max((end - start).total_seconds() / 86400, 1.0)
+    since = start - timedelta(days=BASELINE_WINDOW_DAYS)
+    rows = db.execute(
+        select(NewsArticle.sentiment_label)
+        .join(CompanyArticleMatch, CompanyArticleMatch.article_id == NewsArticle.id)
+        .where(
+            CompanyArticleMatch.company_id == company.id,
+            NewsArticle.published_at >= since,
+            NewsArticle.published_at < start,
+        )
+    ).all()
+    if not rows:
+        return {}
+
+    labelled = [r.sentiment_label for r in rows if r.sentiment_label]
+    out = {
+        # **회사 전체 언급량**이다. 이 사건만의 평소치가 아니다(스토리는 매번 새로 생기므로
+        # 같은 사건의 과거치라는 것이 존재하지 않는다). 관측 기간 길이로 환산해 이벤트
+        # 언급량과 같은 축에 놓되, 프롬프트에서 범위를 밝혀 오해를 막는다.
+        "baseline_mean": round(len(rows) / BASELINE_WINDOW_DAYS * span_days, 2),
+    }
+    if labelled:
+        out["negative_ratio_baseline"] = round(
+            sum(1 for label in labelled if label == _NEGATIVE_LABEL) / len(labelled), 4
+        )
+    return out
 
 
 def _no_evidence_content(event: RiskEvent, generation_kind: str, target_company: Company) -> dict:
@@ -165,6 +282,38 @@ def _no_evidence_content(event: RiskEvent, generation_kind: str, target_company:
         "scenarios": [],
         "recommendation": None,
         "evidence": [],
+        "usage": {"input_tokens": 0, "output_tokens": 0, "calls": 0},
+    }
+
+
+def _unknown_type_content(event: RiskEvent, generation_kind: str, target_company: Company) -> dict:
+    """상위 유형이 비어 있을 때 저장할 내용. LLM을 부르지 않는다.
+
+    대응 세부 유형(13)은 탐지 유형(8)의 자식 중에서만 고르는 구조라, 부모를 모르면
+    고를 후보 자체가 없다. 예전 폴백(reputation_consumer)은 후보를 만들어 주는 대신
+    근거 없는 유형을 확정해 등급·법령·원칙까지 그 유형으로 끌고 갔다.
+    """
+    return {
+        "engine": "response_engine",
+        "status": "유형불명_보류",
+        "generation_kind": generation_kind,
+        "main_company_name": target_company.name,
+        "needs_review": True,
+        "review_reason": (
+            "이 위기 이벤트에 탐지 유형(primary_type)이 없어 대응방안을 생성하지 않았습니다. "
+            "대응 세부 유형은 탐지 유형의 하위에서만 고를 수 있으므로, 상위 분류가 채워진 뒤에 "
+            "다시 생성해야 합니다."
+        ),
+        "detection": {
+            "risk_probability": event.risk_probability,
+            "severity": event.severity,
+            "model_version": event.model_version,
+        },
+        "scenarios": [],
+        "recommendation": None,
+        "evidence": [],
+        "regulations": [],
+        "precedents": [],
         "usage": {"input_tokens": 0, "output_tokens": 0, "calls": 0},
     }
 
@@ -278,7 +427,13 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
             content = _no_evidence_content(event, generation_kind, target_company)
             allowed_urls, model_name = set(), response_model()
         elif generation_kind == COMPETITOR_IMPACT:
+            # 동종 경로는 상위 유형에 매이지 않는다(impact.analyze가 13개 전체에서 고른다).
+            # 그래서 primary_type이 비어 있어도 그대로 진행한다.
             content, allowed_urls, model_name = _build_peer_content(db, payload)
+        elif _detection_scores(event) is None:
+            # 메인 경로는 상위 유형의 자식 중에서만 고른다. 부모가 없으면 후보가 없다.
+            content = _unknown_type_content(event, generation_kind, target_company)
+            allowed_urls, model_name = set(), response_model()
         else:
             content, allowed_urls, model_name = _build_content(
                 db, payload, event, generation_kind, target_company
@@ -306,6 +461,51 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
         return draft
 
 
+def _safety_hold(cls: dict, event: RiskEvent, generation_kind: str,
+                 target_company: Company, usage: dict) -> dict | None:
+    """분류 단계 안전장치에 걸리면 저장할 내용을 만든다. 통과하면 None."""
+    if not cls.get("is_actionable", True):
+        status = "대응불필요_종료"
+        reason = (
+            "분류 단계에서 이 기업이 대응할 사안이 아니라고 판단했습니다. "
+            "같은 이름의 다른 대상이거나, 다른 회사 사건에 곁들여 언급된 경우가 여기에 해당합니다. "
+            f"판단 근거: {cls.get('reason', '')}"
+        )
+    elif not cls.get("parent_fits", True):
+        suggested = cls.get("suggested_parent")
+        status = "유형불일치_보류"
+        reason = (
+            "탐지 단계에서 내려온 상위 유형이 이 사안과 맞지 않는다고 판단했습니다. "
+            + (f"분류기가 제시한 상위 유형은 {suggested}입니다. " if suggested else "")
+            + "대응 세부 유형은 상위 유형의 하위에서만 고를 수 있어 그대로 진행하면 "
+            "맞지 않는 유형의 초안이 나옵니다. "
+            f"판단 근거: {cls.get('reason', '')}"
+        )
+    else:
+        return None
+
+    return {
+        "engine": "response_engine",
+        "status": status,
+        "generation_kind": generation_kind,
+        "main_company_name": target_company.name,
+        "needs_review": True,
+        "review_reason": reason,
+        "classification": cls,
+        "detection": {
+            "risk_probability": event.risk_probability,
+            "severity": event.severity,
+            "model_version": event.model_version,
+        },
+        "scenarios": [],
+        "recommendation": None,
+        "evidence": [],
+        "regulations": [],
+        "precedents": [],
+        "usage": usage,
+    }
+
+
 def _build_content(db, payload, event, generation_kind, target_company):
     """분류 -> 등급 -> 근거 -> 시나리오 -> 검증. content dict와 허용 URL 집합을 돌려준다."""
     usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
@@ -319,6 +519,14 @@ def _build_content(db, payload, event, generation_kind, target_company):
     # 유형 세분화도 LLM을 부를 수 있다. 여기서 집계하지 않으면 메인 경로 사용량이
     # 호출 1회만큼 과소 보고되고, impact.analyze를 세는 동종 경로와 비교가 안 된다.
     _add(cls.pop("usage", None))
+
+    # 1-1) 안전장치. 분류기가 스스로 "이 사안이 아니다 / 상위 유형이 아니다"라고 하면
+    # 시나리오를 만들지 않는다. **여기서 유형을 고쳐 잡지 않는다** - 대응 단계가 상위
+    # 분류기의 오류를 덮으면 상위를 고쳤을 때 좋아졌는지 잴 수 없다. 판단만 남긴다.
+    hold = _safety_hold(cls, event, generation_kind, target_company, usage)
+    if hold is not None:
+        return hold, set(), response_model()
+
     code = cls["risk_type"]
     rt = get_type(code)
 
