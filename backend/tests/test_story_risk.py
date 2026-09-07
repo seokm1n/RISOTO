@@ -347,6 +347,99 @@ class StoryRiskDatabaseTests(unittest.TestCase):
         )
         self.assertEqual(event.closure_reason, "no_related_articles_3_days")
 
+    @patch("app.services.story_risk.resolve_production_risk_detector")
+    def test_window_signal_blends_into_story_probability(self, resolve_detector):
+        """window_v1의 LightGBM 신호를 percentile로 정규화해 스토리 확률에 섞는다."""
+        from app.models import CompanyFeatureWindow
+        from app.services.story_risk import WINDOW_SIGNAL_BLEND_WEIGHT, _clamp
+
+        timestamp = datetime(2098, 1, 2, tzinfo=timezone.utc)
+        cluster = StoryCluster(
+            fingerprint="story-risk-test-window-blend",
+            representative_title="공급망 이상 신호",
+            first_published_at=timestamp,
+            last_published_at=timestamp,
+        )
+        self.db.add(cluster)
+        self.db.flush()
+        window = CompanyFeatureWindow(
+            company_id=self.company_id,
+            window_start=timestamp - timedelta(minutes=15),
+            window_end=timestamp,
+            data_quality="complete",
+            risk_probability=0.42,
+        )
+        self.db.add(window)
+
+        article = NewsArticle(
+            source="test",
+            title="공급망 이상 신호 최초 보도",
+            url="https://story-risk-test.example/window-blend-primary",
+            published_at=timestamp,
+            negative_probability=0.7,
+        )
+        self.db.add(article)
+        self.db.flush()
+        self.db.add(
+            StoryClusterArticle(
+                article_id=article.id, story_cluster_id=cluster.id,
+                similarity=1.0, is_representative=True,
+            )
+        )
+        self.db.add(
+            ArticleRiskAssessment(
+                company_id=self.company_id, article_id=article.id, story_cluster_id=cluster.id,
+                decision="risk", risk_probability=0.70, type_scores={"supply_operations": 0.7},
+                primary_type="supply_operations", relevance_score=0.9,
+                source_domain="story-risk-test.example", source_credibility=0.65,
+                classifier_kind="test", model_version="test", reason="test fixture",
+            )
+        )
+        follow_up = NewsArticle(
+            source="test", title="공급망 이상 후속 보도",
+            url="https://story-risk-test.example/window-blend-followup",
+            published_at=timestamp + timedelta(minutes=5), negative_probability=0.5,
+        )
+        self.db.add(follow_up)
+        self.db.flush()
+        self.db.add(
+            StoryClusterArticle(
+                article_id=follow_up.id, story_cluster_id=cluster.id,
+                similarity=0.9, is_representative=False,
+            )
+        )
+        self.db.add(
+            ArticleRiskAssessment(
+                company_id=self.company_id, article_id=follow_up.id, story_cluster_id=cluster.id,
+                decision="non_risk", risk_probability=0.30, type_scores={"supply_operations": 0.3},
+                primary_type=None, relevance_score=0.9,
+                source_domain="story-risk-test.example", source_credibility=0.65,
+                classifier_kind="test", model_version="test", reason="test fixture",
+            )
+        )
+        self.db.flush()
+
+        resolve_detector.return_value = SimpleNamespace(
+            available=True,
+            payload={"reference_probabilities": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]},
+        )
+
+        event_id, _ = _aggregate_story_event(
+            self.db, self.company_id, cluster.id, "supply_operations", self.settings,
+        )
+
+        event = self.db.get(RiskEvent, event_id)
+        # window_percentile = mean(reference <= 0.42) = 0.4 (four of ten reference
+        # values, 0.1-0.4, are <= 0.42).
+        window_percentile = 0.4
+        base_probability = 0.70  # the max per-article risk_probability among candidates
+        expected = _clamp(
+            (1 - WINDOW_SIGNAL_BLEND_WEIGHT) * base_probability
+            + WINDOW_SIGNAL_BLEND_WEIGHT * window_percentile
+        )
+        self.assertAlmostEqual(event.risk_probability, expected, places=6)
+        self.assertNotEqual(event.risk_probability, base_probability)
+
 
 if __name__ == "__main__":
     unittest.main()
