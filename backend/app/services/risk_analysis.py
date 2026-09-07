@@ -1251,7 +1251,9 @@ def reanalyze_historical_windows(
     settings = get_settings()
     with SessionLocal() as db:
         detector = resolve_production_risk_detector(db)
-        if not detector.available:
+        if not detector.available and not (
+            settings.story_risk_engine_enabled and settings.story_risk_model_enabled
+        ):
             raise ValueError("운영 LightGBM과 호환 Isolation Forest를 먼저 연결해야 합니다.")
         company_query = select(Company.id)
         if user_id is not None:
@@ -1326,8 +1328,8 @@ def reanalyze_historical_windows(
             state["successful_sources"] if state else sources,
             state["failed_sources"] if state else [],
             use_type_nli=False,
-            allow_scoring=True,
-            force_scoring=True,
+            allow_scoring=detector.available,
+            force_scoring=detector.available,
             update_events=(
                 not settings.story_risk_engine_enabled
                 and bool(state is None or state["needs_event_update"])

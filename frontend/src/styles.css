@@ -730,7 +730,7 @@ button:disabled { cursor: default; }
 .model-version-row small { color: #827a75; font-size: var(--text-caption); }
 .model-status { flex: 0 0 auto; padding: 5px 7px; background: #e5e1d7; color: #737268; font-size: var(--text-caption); font-weight: 800; }
 .model-status.production { background: var(--success-soft); color: var(--success-strong); }
-.model-status.candidate { background: #f3ead9; color: #745f1e; }
+.model-status.candidate, .model-status.provisional { background: #f3ead9; color: #745f1e; }
 .model-version-row button { border: 0; background: var(--success); padding: 8px 10px; color: white; font-size: var(--text-caption); font-weight: 800; }
 .model-version-row button:hover:not(:disabled), .model-version-row button:focus-visible { background: var(--success-strong); outline: 3px solid var(--success-ring); outline-offset: 2px; }
 .model-version-row button:disabled { opacity: .5; cursor: default; }

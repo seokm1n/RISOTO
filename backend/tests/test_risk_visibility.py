@@ -2,11 +2,13 @@
 
 from datetime import datetime, timedelta, timezone
 import unittest
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.database import SessionLocal
+from app.config import get_settings
 from app.models import (
     Company,
     CompanyArticleMatch,
@@ -24,6 +26,15 @@ from tests.auth_helpers import auth_for_company
 
 class RiskVisibilityDatabaseTests(unittest.TestCase):
     def setUp(self):
+        # These fixtures model the legacy window path. Story-mode visibility is
+        # tested separately with story clusters and the required evidence cohort.
+        settings = get_settings().model_copy(update={
+            "story_risk_engine_enabled": False,
+            "story_risk_model_enabled": False,
+        })
+        settings_patch = patch("app.routers.dashboard.get_settings", return_value=settings)
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
         self.db = SessionLocal()
         self.transaction = self.db.begin()
         try:

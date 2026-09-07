@@ -5,7 +5,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentAuth, require_auth
@@ -27,6 +27,7 @@ from app.models import (
     RiskEventType,
     StoryCluster,
     StoryClusterArticle,
+    StoryRiskScore,
 )
 from app.presenters import risk_event_read
 from app.risk_taxonomy import NON_REPORTABLE_RISK_STATUSES, RISK_TYPES
@@ -58,6 +59,7 @@ from app.services.monitoring_pipeline import (
 )
 from app.services.period_aggregation import seoul_period_start
 from app.services.story_risk import source_domain
+from app.services.story_model_runtime import resolve_story_risk_runtime
 
 
 router = APIRouter(tags=["collection"])
@@ -522,11 +524,16 @@ def get_monitoring_summary(
             CompanyArticleMatch.company_id == company_id
         )
     ) or 0
-    risk_event_count = db.scalar(
-        select(func.count()).select_from(RiskEvent).where(
+    risk_filters = (
+        _reportable_story_event_filters(company_id, settings.story_event_min_articles)
+        if settings.story_risk_engine_enabled
+        else (
             RiskEvent.company_id == company_id,
             RiskEvent.status.notin_(NON_REPORTABLE_RISK_STATUSES),
         )
+    )
+    risk_event_count = db.scalar(
+        select(func.count()).select_from(RiskEvent).where(*risk_filters)
     ) or 0
     analyzed_count = db.scalar(
         select(func.count())
@@ -558,6 +565,12 @@ def get_monitoring_summary(
         )
     ) or 0
     readiness_status = "active"
+    model_state = latest_window.model_state if latest_window else "unavailable"
+    model_version = latest_window.model_version if latest_window else None
+    if settings.story_risk_engine_enabled and settings.story_risk_model_enabled:
+        runtime = resolve_story_risk_runtime(settings)
+        model_state = runtime.model_state if runtime.available else "unavailable"
+        model_version = runtime.version if runtime.available else None
     return MonitoringSummary(
         company_id=company_id,
         monitoring_status=company.monitoring_status,
@@ -576,7 +589,8 @@ def get_monitoring_summary(
         accepted_article_count=article_count,
         valid_nonempty_window_count=valid_nonempty_window_count,
         data_quality=latest_window.data_quality if latest_window else None,
-        model_state=latest_window.model_state if latest_window else "unavailable",
+        model_state=model_state,
+        model_version=model_version,
     )
 
 
@@ -760,6 +774,8 @@ def list_risk_judgments_page(
     """스토리 판정 결과를 위험 사건과 비위험 스토리로 나눠 반환한다."""
     _user_company(db, company_id, auth.user_id)
     settings = get_settings()
+    story_model_enabled = settings.story_risk_engine_enabled and settings.story_risk_model_enabled
+    story_runtime = resolve_story_risk_runtime(settings) if story_model_enabled else None
     active_statuses = ("open", "monitoring", "acknowledged")
     event_filters = _reportable_story_event_filters(
         company_id,
@@ -768,11 +784,25 @@ def list_risk_judgments_page(
 
     article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
     story_article_count = func.count(func.distinct(CompanyArticleMatch.article_id))
+    article_scope = [CompanyArticleMatch.company_id == company_id]
+    if story_model_enabled:
+        article_scope.extend([
+            NewsArticle.created_at <= datetime.now(timezone.utc),
+            select(ArticleFilterResult.id).where(
+                ArticleFilterResult.company_id == company_id,
+                ArticleFilterResult.curated_article_id == NewsArticle.id,
+                ArticleFilterResult.decision == "accepted",
+            ).exists(),
+        ])
     eligible_stories = (
         select(
             StoryClusterArticle.story_cluster_id.label("story_cluster_id"),
             story_article_count.label("evidence_article_count"),
-            func.max(ArticleRiskAssessment.risk_probability).label("risk_probability"),
+            (
+                literal(None)
+                if story_model_enabled
+                else func.max(ArticleRiskAssessment.risk_probability)
+            ).label("risk_probability"),
             func.min(article_time).label("first_evidence_at"),
             func.max(article_time).label("last_evidence_at"),
         )
@@ -787,7 +817,7 @@ def list_risk_judgments_page(
             (ArticleRiskAssessment.company_id == CompanyArticleMatch.company_id)
             & (ArticleRiskAssessment.article_id == CompanyArticleMatch.article_id),
         )
-        .where(CompanyArticleMatch.company_id == company_id)
+        .where(*article_scope)
         .group_by(StoryClusterArticle.story_cluster_id)
         .having(story_article_count >= settings.story_event_min_articles)
         .subquery()
@@ -796,6 +826,18 @@ def list_risk_judgments_page(
     all_non_risk_story_ids = select(eligible_stories.c.story_cluster_id).where(
         eligible_stories.c.story_cluster_id.notin_(risk_cluster_ids)
     )
+    if story_model_enabled:
+        # A missing prediction is not a non-risk judgment. The model score is
+        # persisted for every assessed story, including stories without events.
+        all_non_risk_story_ids = all_non_risk_story_ids.join(
+            StoryRiskScore,
+            (StoryRiskScore.company_id == company_id)
+            & (StoryRiskScore.story_cluster_id == eligible_stories.c.story_cluster_id),
+        )
+        if story_runtime.available:
+            all_non_risk_story_ids = all_non_risk_story_ids.where(
+                StoryRiskScore.model_version == story_runtime.version,
+            )
     non_risk_story_ids = all_non_risk_story_ids
     if days is not None:
         _, cutoff = seoul_period_start(days)
@@ -879,6 +921,15 @@ def list_risk_judgments_page(
         .limit(page_size)
     ).all()
     cluster_ids = [cluster.id for cluster, *_rest in story_rows]
+    story_scores = {
+        score.story_cluster_id: score
+        for score in db.scalars(
+            select(StoryRiskScore).where(
+                StoryRiskScore.company_id == company_id,
+                StoryRiskScore.story_cluster_id.in_(cluster_ids),
+            )
+        )
+    } if story_model_enabled and cluster_ids else {}
     evidence_by_cluster: dict[
         int,
         list[tuple[ArticleRiskAssessment | None, NewsArticle, StoryClusterArticle]],
@@ -898,7 +949,7 @@ def list_risk_judgments_page(
                 & (ArticleRiskAssessment.article_id == CompanyArticleMatch.article_id),
             )
             .where(
-                CompanyArticleMatch.company_id == company_id,
+                *article_scope,
                 StoryClusterArticle.story_cluster_id.in_(cluster_ids),
             )
             .order_by(
@@ -914,6 +965,7 @@ def list_risk_judgments_page(
 
     items: list[RiskJudgmentRead] = []
     for cluster, probability, first_evidence_at, last_evidence_at in story_rows:
+        story_score = story_scores.get(cluster.id)
         rows = evidence_by_cluster.get(cluster.id, [])
         primary_row = next(
             (row for row in rows if row[2].is_representative),
@@ -964,8 +1016,12 @@ def list_risk_judgments_page(
                 article_url=primary_article.url if primary_article else None,
                 story_cluster_id=cluster.id,
                 event_source="story_v2",
-                anomaly_score=0.0,
-                risk_probability=float(probability or 0.0),
+                anomaly_score=float(story_score.anomaly_score) if story_score is not None else 0.0,
+                risk_probability=(
+                    float(story_score.risk_probability)
+                    if story_score is not None
+                    else float(probability or 0.0)
+                ),
                 severity="non_risk",
                 status="non_risk",
                 primary_type=primary_type,
@@ -1020,11 +1076,13 @@ def list_risk_judgments_page(
                 source_count=len(evidence_domains),
                 summary=cluster.representative_title,
                 model_version=(
-                    primary_row[0].model_version
+                    story_score.model_version
+                    if story_score is not None
+                    else primary_row[0].model_version
                     if primary_row and primary_row[0] is not None
                     else None
                 ),
-                model_state="provisional",
+                model_state=story_score.model_state if story_score is not None else "provisional",
                 approval_state="draft",
                 opened_at=first_evidence_at,
                 last_seen_at=last_evidence_at,

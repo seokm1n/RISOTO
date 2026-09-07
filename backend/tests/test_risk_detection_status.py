@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 import joblib
@@ -11,6 +12,7 @@ import numpy as np
 from sqlalchemy import select
 
 from app.database import SessionLocal
+from app.config import get_settings
 from app.models import ModelVersion
 from app.routers.governance import get_risk_detection_status
 from app.services.risk_analysis import (
@@ -36,6 +38,12 @@ class StubIsolationForest:
 
 class RiskDetectionStatusDatabaseTests(unittest.TestCase):
     def setUp(self):
+        # These fixtures verify the legacy window registry regardless of which
+        # final-risk model is configured in the running application.
+        settings = get_settings().model_copy(update={"story_risk_model_enabled": False})
+        settings_patch = patch("app.routers.governance.get_settings", return_value=settings)
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
         self.artifact_path: Path | None = None
         self.isolation_artifact_path: Path | None = None
         self.db = SessionLocal()
