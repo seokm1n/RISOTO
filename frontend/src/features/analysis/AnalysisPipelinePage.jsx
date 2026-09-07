@@ -320,8 +320,10 @@ export default function AnalysisPipelinePage() {
   const selectedRiskId = querySelectedRiskId ?? rememberedRiskId;
   const requestedRiskClassification = searchParams.get("classification") ?? "risk";
   const riskClassification = RISK_CLASSIFICATIONS.has(requestedRiskClassification) ? requestedRiskClassification : "risk";
-  const requestedRiskPeriod = searchParams.get("days") ?? "all";
-  const riskPeriod = RISK_PERIODS.has(requestedRiskPeriod) ? requestedRiskPeriod : "all";
+  // AI 리스크 브리핑(메인화면)과 같은 "최근 7일" 기본값을 쓴다. 예전엔 "전체"가
+  // 기본값이라 같은 화면 이름("위험판정 건수")인데도 브리핑과 다른 숫자가 보였다.
+  const requestedRiskPeriod = searchParams.get("days") ?? "7";
+  const riskPeriod = RISK_PERIODS.has(requestedRiskPeriod) ? requestedRiskPeriod : "7";
 
   useEffect(() => {
     const isRiskSelection = stageId === "response"
