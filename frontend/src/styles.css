@@ -2750,3 +2750,35 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 }
 
 .briefing-ratio-note, .pipeline-cohort-note { margin: 10px 0; color: #746a64; font-size: var(--text-caption); line-height: 1.6; }
+
+/* ── 동종 기업 카드 글자 위계 ------------------------------------------------
+   브라우저 계산값으로 재 보니(파일만 읽으면 어느 규칙이 이기는지 알 수 없다) 카드 안
+   글자가 10.9~18.6px에 흩어져 있고 본문만 15px로 튀어 있었다. 제목이 자기 본문보다
+   2.2px 작아 위계가 뒤집힌다.
+
+   원인은 특이도다. `.analysis-statistics-workspace .response-draft section p`(0,2,2)가
+   v3 렌더러 자신의 `.response-operations-view section p`(0,1,2)를 이긴다. 15px는 누가
+   고른 값이 아니라 옛 렌더러용 규칙이 흘러든 것이므로, v3가 쓰려던 .84rem으로 되돌린다.
+   과제 제목(.84rem)은 담당자가 실제로 실행하는 문장이라 줄이지 않는다.
+
+   결과 위계: 카드 제목 18.6 > 접기·소제목 14.1 > 과제 제목·본문 13.4 > 표 값 13.1 >
+   경로 제목 12.5 > 사유 12.0 > 각주·담당·기한·건수 11.5.
+
+   보조 텍스트의 회색도 네 갈래(#7b7068 #7c7067 #85776d #746860)로 흩어져 있었고 넷이
+   AA 4.5:1 미달이었다(최저 3.72). 하나로 모은다. #685d55는 이 화면의 배경 네 종류에서
+   모두 통과한다 -- e6dac9 4.64 / eee7d9 5.19 / f4ede1 5.49 / f6f4ef 5.81.
+
+   메인 경로도 같은 규칙을 쓰지만 여기서는 동종 카드에만 건다. 화면을 먼저 확인한 뒤
+   서윤님께 전달할 예정이고, 여러 명이 자주 건드리는 파일이라 원 규칙은 두고 끝에 얹는다. */
+.response-peer-view.response-draft-v3 section p { font-size: .84rem; }
+.response-peer-view h5,
+.response-peer-view .response-fold > summary { font-size: .88rem; }
+.response-peer-view .response-channel-group > header span,
+.response-peer-view .response-task-due { font-size: .72rem; }
+
+.response-peer-view .response-peer-context,
+.response-peer-view .response-command-facts dt,
+.response-peer-view .response-channel-group > header span,
+.response-peer-view .response-task-copy > small { color: #685d55; }
+.response-peer-view .response-task-copy > p { color: #685d55 !important; }
+.response-peer-view .response-task-due { color: #775c30; }
