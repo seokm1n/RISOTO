@@ -3006,3 +3006,22 @@ select, textarea, .text-field, .login-form > input, .login-password-field,
 .login-submit:hover:not(:disabled) { background: var(--terracotta-deep); }
 .login-error { border-radius: 0 var(--radius-control) var(--radius-control) 0; }
 .auth-switch-button, .login-close:hover { color: var(--terracotta); }
+
+/* ── 시안 시각 정돈: 구조는 그대로 두고 둘러보기 요소만 맞춘다 ──────────── */
+/* 상단 내비를 시안처럼 하나의 필 컨테이너로 묶는다 */
+.topbar { background: rgba(255, 253, 249, .96); }
+.main-nav { gap: 3px; padding: 5px; border-radius: 1rem; background: rgba(238, 226, 210, .8); }
+.main-nav button { padding: 9px 15px; }
+.main-nav button:hover:not(.active) { background: rgba(255, 253, 249, .7); color: var(--terracotta-deep); }
+
+/* 스탯 카드: 라벨은 작고 조용하게, 수치는 크고 굵게 (시안 stat-card) */
+.pipeline-stat-grid { gap: 14px; }
+.pipeline-stat { min-height: 124px; padding: 18px 20px; box-shadow: var(--shadow-soft); }
+.pipeline-stat > span { color: var(--ink-soft); font-size: var(--text-small); font-weight: 600; letter-spacing: 0; }
+.pipeline-stat strong { font-size: 2.15rem; font-weight: 700; letter-spacing: -.03em; }
+.pipeline-stat small { color: var(--ink-soft); }
+.pipeline-stat.selectable.active { border-color: var(--terracotta); background: #f6ddd4; }
+
+/* 여백 리듬 정리 - 시안은 카드 사이 간격을 넉넉히 준다 */
+.briefing-grid { gap: 20px; }
+.pipeline-stage-content > * + * { margin-top: 20px; }
