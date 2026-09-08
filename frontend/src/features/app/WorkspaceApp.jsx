@@ -15,9 +15,8 @@ import AdminDashboardPage from "../admin/AdminDashboardPage";
 import MyPage from "../account/MyPage";
 import AnalysisManagementPage from "../analysis/AnalysisManagementPage";
 import AnalysisPipelinePage from "../analysis/AnalysisPipelinePage";
-import CollectionPage from "../collection/CollectionPage";
-import CompanyAdministrationPage from "../companies/CompanyPages";
 import MainPage from "../home/MainPage";
+import ManagementPage from "../management/ManagementPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
 import ArticleReviewPage from "../reviews/ArticleReviewPage";
@@ -30,8 +29,7 @@ import { clearAnalysisPipelineRiskEventId } from "../../shared/analysisPipelineS
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "AI 리스크 브리핑", path: "/main" },
   { id: "statistics", label: "분석 파이프라인", path: "/analysis/collection" },
-  { id: "collection", label: "수집 관리", path: "/collection" },
-  { id: "companies", label: "기업 관리", path: "/companies" },
+  { id: "manage", label: "관리", path: "/manage?section=collection" },
 ];
 
 const ADMIN_NAV_ITEMS = [
@@ -44,6 +42,7 @@ const ADMIN_NAV_ITEMS = [
 
 const PAGE_TITLES = {
   main: "AI 리스크 브리핑",
+  manage: "관리",
   collection: "수집 현황",
   statistics: "분석 파이프라인",
   "risk-management": "위험 관리",
@@ -68,12 +67,13 @@ const pageFromPath = (pathname) => {
   if (pathname === "/admin/risk-review") return "admin-risk-review";
   if (pathname === "/operations" || pathname === "/models") return "admin-operations";
   if (pathname === "/reviews") return "admin-review";
-  if (pathname === "/collection") return "collection";
+  if (pathname === "/manage") return "manage";
+  if (pathname === "/collection") return "manage";
   if (pathname === "/risk-management") return "risk-management";
   if (pathname.startsWith("/analysis/")) return "statistics";
-  if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "companies";
+  if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "manage";
   if (pathname === "/companies/overview" || /^\/companies\/[^/]+$/.test(pathname)) return "statistics";
-  return "collection";
+  return "main";
 };
 
 function AnalysisStatisticsRoute() {
@@ -84,11 +84,20 @@ function AnalysisStatisticsRoute() {
   return <Navigate to={`/analysis/collection${params.size ? `?${params}` : ""}`} replace />;
 }
 
-function CollectionRoute({ onOpenCompany, onMonitoringChanged }) {
+function ManagementRoute({ onOpenCompany, onMonitoringChanged, companyProps }) {
   const [searchParams] = useSearchParams();
   const articleCompanyId = numericParam(searchParams.get("articleCompanyId"));
   const articleDays = Number(numericParam(searchParams.get("days"))) || null;
-  return <CollectionPage key={`${articleCompanyId ?? "collection"}-${articleDays ?? "all"}`} onOpenCompany={onOpenCompany} initialArticleCompanyId={articleCompanyId} initialArticleDays={articleDays} onMonitoringChanged={onMonitoringChanged} />;
+  return <ManagementPage
+    collectionProps={{
+      key: `${articleCompanyId ?? "collection"}-${articleDays ?? "all"}`,
+      onOpenCompany,
+      initialArticleCompanyId: articleCompanyId,
+      initialArticleDays: articleDays,
+      onMonitoringChanged,
+    }}
+    companyProps={companyProps}
+  />;
 }
 
 function RiskManagementRoute() {
@@ -137,7 +146,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
 
   const shouldBlockNavigation = useCallback(({ currentLocation, nextLocation }) => (
     managementDirty
-    && page === "companies"
+    && page === "manage"
     && currentLocation.pathname !== nextLocation.pathname
   ), [managementDirty, page]);
   const blocker = useBlocker(shouldBlockNavigation);
@@ -196,16 +205,19 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     });
   }, [goTo]);
 
-  const openAnalysisStatistics = useCallback((companyId, riskEventId = null, options) => {
+  // stage를 주면 파이프라인의 특정 단계로 바로 들어간다. 브리핑에서 "대응 방안"을
+  // 보고 있던 사람은 위험판정이 아니라 대응 방안 화면으로 이어지는 게 자연스럽다.
+  const openAnalysisStatistics = useCallback((companyId, riskEventId = null, { stage, ...options } = {}) => {
     const params = new URLSearchParams();
     if (companyId) params.set("companyId", String(companyId));
     if (riskEventId) params.set("eventId", String(riskEventId));
     const query = params.size ? `?${params}` : "";
-    goTo(`/analysis/${riskEventId ? "risk" : "collection"}${query}`, options);
+    const target = stage ?? (riskEventId ? "risk" : "collection");
+    goTo(`/analysis/${target}${query}`, options);
   }, [goTo]);
 
   const requestLogout = async () => {
-    if (managementDirty && page === "companies") {
+    if (managementDirty && page === "manage") {
       const confirmed = await confirm({
         kicker: "UNSAVED CHANGES",
         title: "저장하지 않은 변경사항을 버리고 로그아웃할까요?",
@@ -286,7 +298,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <button className="brand" onClick={() => goTo(homePath)}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
       <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
       <div className="topbar-actions">
-        {!isAdmin && mainCompany && <button className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} type="button" onClick={openCollectionAtTop} aria-live="polite" aria-label={`${mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"} · 수집관리로 이동`} aria-current={page === "collection" ? "page" : undefined} title="수집관리로 이동"><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"}</span></button>}
+        {!isAdmin && mainCompany && <button className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} type="button" onClick={openCollectionAtTop} aria-live="polite" aria-label={`${mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"} · 수집관리로 이동`} aria-current={page === "manage" ? "page" : undefined} title="수집관리로 이동"><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"}</span></button>}
         <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`읽지 않은 위험 알림 ${notificationUnreadTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationUnreadTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationUnreadTotal > 99 ? "99+" : notificationUnreadTotal}</span>}</button>
         <button className={`account-button ${page === "account" ? "active" : ""}`} type="button" onClick={() => goTo("/account")} title={`${session.user.email} · 마이페이지`} aria-current={page === "account" ? "page" : undefined}><span>{session.user.email}</span><strong>마이페이지</strong></button>
         <button className="logout-button" type="button" onClick={requestLogout}>로그아웃</button>
@@ -309,10 +321,11 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="/" element={<Navigate to="/main" replace />} />
       <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} />} />
       <Route path="/account" element={<MyPage session={session} onAccountDeleted={handleAccountDeleted} />} />
-      <Route path="/collection" element={<CollectionRoute onOpenCompany={openAnalysisStatistics} onMonitoringChanged={refreshUserCompanies} />} />
-      <Route path="/companies" element={<CompanyAdministrationPage {...companyAdministrationProps} />} />
-      <Route path="/companies/new" element={<Navigate to="/companies" replace />} />
-      <Route path="/companies/:companyId/settings" element={<Navigate to="/companies" replace />} />
+      <Route path="/manage" element={<ManagementRoute onOpenCompany={openAnalysisStatistics} onMonitoringChanged={refreshUserCompanies} companyProps={companyAdministrationProps} />} />
+      <Route path="/collection" element={<Navigate to="/manage?section=collection" replace />} />
+      <Route path="/companies" element={<Navigate to="/manage?section=companies" replace />} />
+      <Route path="/companies/new" element={<Navigate to="/manage?section=companies" replace />} />
+      <Route path="/companies/:companyId/settings" element={<Navigate to="/manage?section=companies" replace />} />
       <Route path="/companies/main" element={<AnalysisStatisticsRoute />} />
       <Route path="/analysis/:stage" element={<AnalysisPipelinePage />} />
       <Route path="/risk-management" element={<RiskManagementRoute />} />

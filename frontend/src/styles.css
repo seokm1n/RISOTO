@@ -3025,3 +3025,103 @@ select, textarea, .text-field, .login-form > input, .login-password-field,
 /* 여백 리듬 정리 - 시안은 카드 사이 간격을 넉넉히 준다 */
 .briefing-grid { gap: 20px; }
 .pipeline-stage-content > * + * { margin-top: 20px; }
+
+/* ── 관리 탭: 수집 현황 + 기업 관리를 한 화면 안에서 전환 ────────────────── */
+.management-page-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 18px;
+  width: 100%; max-width: calc(1320px + 10vw); margin: 0 auto; padding: 36px 5vw 0;
+}
+.management-page-head h1 { margin: 8px 0 0; font: 600 clamp(1.8rem, 2.4vw, 2.4rem)/1.1 var(--font-display); letter-spacing: -.03em; }
+.management-page-description { margin: 8px 0 0; color: var(--ink-soft); font-size: var(--text-small); }
+.management-section-tabs { display: flex; gap: 3px; padding: 5px; border-radius: 1rem; background: rgba(238, 226, 210, .8); }
+.management-section-tabs button {
+  border: 0; border-radius: .75rem; background: transparent; padding: 10px 18px;
+  color: var(--ink-soft); font-size: var(--text-small); font-weight: 700; cursor: pointer;
+}
+.management-section-tabs button:hover:not(.active) { background: rgba(255, 253, 249, .7); color: var(--terracotta-deep); }
+.management-section-tabs button.active { background: var(--terracotta); color: #fffaf2; }
+/* 관리 화면은 위에 자체 헤더가 있으므로 하위 화면의 상단 여백을 줄인다. */
+.management-page .workspace { padding-top: 18px; }
+.management-page .collection-workspace .workspace-head { margin-top: 0; }
+
+
+/* ── 사용자 관점 브리핑 홈 ────────────────────────────────────────────────
+   "지금 무슨 위험이 있고 뭘 해야 하나"를 위→아래로 읽히게 배치한다.
+   히어로(무엇을 보고 있나) → 숫자 4칸 → 수준·감성 → 추이 → 사건 찾기. */
+.briefing-hero {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 20px; margin-bottom: 20px; padding: 30px 32px;
+}
+.briefing-hero-copy { min-width: 0; }
+.briefing-hero h1 { margin: 10px 0 0; font: 600 clamp(1.7rem, 2.6vw, 2.5rem)/1.15 var(--font-display); letter-spacing: -.03em; word-break: keep-all; }
+.briefing-hero-description { margin: 12px 0 0; max-width: 46rem; color: var(--ink-soft); font-size: var(--text-small); line-height: 1.7; }
+.briefing-hero-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
+
+.briefing-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.briefing-kpi { display: grid; align-content: start; gap: 6px; padding: 20px 22px; }
+.briefing-kpi-label { margin: 0; color: var(--ink-soft); font-size: var(--text-small); font-weight: 600; }
+.briefing-kpi strong { margin-top: 6px; font-size: 2.15rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
+.briefing-kpi small { color: var(--ink-soft); font-size: var(--text-caption); line-height: 1.5; }
+.briefing-kpi.danger { border-left: 5px solid var(--terracotta); }
+.briefing-kpi.danger strong { color: var(--terracotta-deep); }
+.briefing-kpi.warning { border-left: 5px solid var(--gold); }
+.briefing-kpi.warning strong { color: #89611b; }
+.briefing-kpi.success { border-left: 5px solid var(--sage); }
+.briefing-kpi.success strong { color: #3f6254; }
+
+.briefing-insight-grid { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 20px; }
+.briefing-severity-bars { display: grid; gap: 20px; margin-top: 6px; }
+.briefing-severity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.briefing-severity-head span { color: var(--ink-strong); font-size: var(--text-small); font-weight: 700; }
+.briefing-severity-head strong { color: var(--ink-soft); font-size: var(--text-caption); font-weight: 700; }
+.briefing-severity-track { overflow: hidden; height: 12px; margin-top: 9px; border-radius: 999px; background: var(--rice); }
+.briefing-severity-track i { display: block; height: 100%; border-radius: 999px; transition: width .6s ease; }
+.briefing-severity-track i.critical { background: var(--terracotta); }
+.briefing-severity-track i.warning { background: var(--gold); }
+.briefing-severity-track i.watch { background: var(--sage); }
+
+.briefing-trend-panel .briefing-trend-pane { display: flex; min-height: 0; flex-direction: column; margin-top: 6px; }
+
+/* 사건 찾기: 필터 한 줄 + 카드 목록 */
+.briefing-event-filters {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+  margin: 4px 0 16px; padding-bottom: 16px; border-bottom: 1px solid var(--divider);
+}
+.briefing-event-filters label { display: grid; gap: 6px; color: var(--ink-soft); font-size: var(--text-caption); font-weight: 700; }
+.briefing-event-filters select, .briefing-event-filters input {
+  min-width: 150px; border: 1px solid rgba(109, 82, 61, .22); border-radius: var(--radius-control);
+  background: var(--paper); padding: 10px 12px; color: var(--ink-strong); font-weight: 600;
+}
+.briefing-event-search { flex: 1 1 240px; }
+.briefing-event-search input { width: 100%; }
+.briefing-event-filters .story-view-tabs { margin-left: auto; }
+
+.briefing-event-list { display: grid; gap: 10px; }
+.briefing-event-card {
+  display: grid; width: 100%; gap: 8px; border: 1px solid rgba(109, 82, 61, .14);
+  border-radius: var(--radius-card); background: var(--paper); padding: 16px 18px;
+  color: inherit; text-align: left; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.briefing-event-card:hover { transform: translateX(3px); border-color: rgba(184, 88, 54, .38); box-shadow: var(--shadow-soft); }
+.briefing-event-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.briefing-event-level { border-radius: 999px; padding: 3px 10px; font-size: var(--text-caption); font-weight: 900; }
+.briefing-event-level.critical { background: #f6ddd4; color: var(--terracotta-deep); }
+.briefing-event-level.warning { background: #f9edcf; color: #89611b; }
+.briefing-event-level.watch { background: #deebe4; color: #3f6254; }
+.briefing-event-type { border-radius: 999px; background: var(--rice); padding: 3px 9px; color: #776f59; font-size: var(--text-caption); font-weight: 700; }
+.briefing-event-score { margin-left: auto; color: var(--ink-soft); font-size: var(--text-caption); font-weight: 700; }
+.briefing-event-title { color: var(--ink-strong); font-size: var(--text-body); font-weight: 700; line-height: 1.45; word-break: keep-all; }
+.briefing-event-response {
+  display: -webkit-box; overflow: hidden; color: var(--ink-soft); font-size: var(--text-small); line-height: 1.55;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.briefing-event-response.muted { font-size: var(--text-caption); }
+
+@media (max-width: 1080px) {
+  .briefing-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .briefing-insight-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .briefing-kpi-grid { grid-template-columns: 1fr; }
+  .briefing-event-filters .story-view-tabs { margin-left: 0; }
+}

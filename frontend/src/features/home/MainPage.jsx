@@ -5,8 +5,10 @@ import { api, getErrorMessage } from "../../api";
 import { Pagination, PanelTitle } from "../../shared/components";
 import RiskOverviewTrendChart from "../../shared/RiskOverviewTrendChart";
 import {
+  RISK_TYPE_LABELS,
   formatNumber,
   formatPercent,
+  formatRiskProbability,
   riskEventTitle,
 } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
@@ -14,7 +16,18 @@ import { resolveSelectedCompany, setSelectedCompanyId as rememberSelectedCompany
 import AnalysisPeriodControl from "../../shared/AnalysisPeriodControl";
 import { useAnalysisPeriod } from "../../shared/useAnalysisPeriod";
 
-const RISK_PAGE_SIZE = 3;
+const RISK_PAGE_SIZE = 5;
+// 기간 전체 사건을 한 번에 받아 두고 화면에서 걸러 낸다. 수준·키워드 필터가
+// 매번 서버를 다시 부르면 담당자가 검색어를 고칠 때마다 목록이 껌뻑인다.
+const RISK_FETCH_SIZE = 100;
+
+const SEVERITY_BANDS = [
+  { id: "critical", label: "긴급", tone: "critical" },
+  { id: "warning", label: "주의", tone: "warning" },
+  { id: "watch", label: "관찰", tone: "watch" },
+];
+const severityBandOf = (risk) => risk?.severity === "critical" ? "critical"
+  : risk?.severity === "warning" ? "warning" : "watch";
 
 const RESPONSE_STATUS_SUMMARIES = {
   pending: "대응 방안을 생성할 준비를 하고 있습니다.",
@@ -326,6 +339,8 @@ export default function MainPage({ onOpenCompany }) {
   const { period, changePeriod } = useAnalysisPeriod();
   const [riskPage, setRiskPage] = useState(1);
   const [riskListView, setRiskListView] = useState("risk");
+  const [severityFilter, setSeverityFilter] = useState("");
+  const [keyword, setKeyword] = useState("");
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
     "/companies", () => api.get("/companies").then((response) => response.data),
   );
@@ -350,7 +365,7 @@ export default function MainPage({ onOpenCompany }) {
 
   useEffect(() => {
     setRiskPage(1);
-  }, [selectedCompanyId, period.start, period.end]);
+  }, [selectedCompanyId, period.start, period.end, severityFilter, keyword]);
 
   const selectCompany = (companyId) => {
     rememberSelectedCompanyId(companyId);
@@ -377,41 +392,71 @@ export default function MainPage({ onOpenCompany }) {
     .map((day) => day.summary_date);
 
   const riskQueryKey = selectedCompanyId
-    ? `main-briefing-risks:judged:${selectedCompanyId}:${period.start}:${period.end}:${riskPage}`
+    ? `main-briefing-risks:judged:${selectedCompanyId}:${period.start}:${period.end}`
     : "skip:main-briefing-risks";
-  const { data: loadedRiskPageData, error: riskPageError, loading: riskPageLoading } = useSharedResource(
+  const { data: loadedRiskPageData, error: riskPageError } = useSharedResource(
     riskQueryKey,
     selectedCompanyId
       ? async () => {
           const params = new URLSearchParams({
-            view: "all", page: String(riskPage), page_size: String(RISK_PAGE_SIZE), response: "all",
+            view: "all", page: "1", page_size: String(RISK_FETCH_SIZE), response: "all",
             start_date: period.start, end_date: period.end,
           });
           const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
-          const pageData = response.data ?? { items: [], total: 0, page: riskPage, page_size: RISK_PAGE_SIZE };
-          const items = await Promise.all((pageData.items ?? []).map(async (risk) => {
+          const pageData = response.data ?? { items: [], total: 0 };
+          return { ...pageData, items: pageData.items ?? [], queryKey: riskQueryKey };
+        }
+      : () => Promise.resolve({ items: [], total: 0, queryKey: riskQueryKey }),
+  );
+  const riskPageData = loadedRiskPageData?.queryKey === riskQueryKey ? loadedRiskPageData : null;
+  const allRiskEvents = riskPageData?.items ?? [];
+
+  // 담당자가 실제로 하는 일은 "이 기간에 어떤 위험이 있었고 뭘 해야 하나" 찾기다.
+  // 수준·키워드로 좁힌 결과만 목록에 남긴다.
+  const filteredRiskEvents = allRiskEvents.filter((risk) => {
+    if (severityFilter && severityBandOf(risk) !== severityFilter) return false;
+    if (!keyword.trim()) return true;
+    const needle = keyword.trim().toLowerCase();
+    const haystack = [
+      riskEventTitle(risk),
+      ...(risk.risk_types ?? []).map((item) => RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type),
+    ].join(" ").toLowerCase();
+    return haystack.includes(needle);
+  });
+  const riskTotal = filteredRiskEvents.length;
+  const pageStart = (riskPage - 1) * RISK_PAGE_SIZE;
+  const visibleRiskEvents = filteredRiskEvents.slice(pageStart, pageStart + RISK_PAGE_SIZE);
+
+  // 대응 방안 요약은 화면에 실제로 보이는 사건만 받아 온다.
+  const visibleIds = visibleRiskEvents.map((risk) => risk.id).join(",");
+  const { data: draftSummaries = {} } = useSharedResource(
+    visibleIds ? `main-briefing-drafts:${visibleIds}` : "skip:main-briefing-drafts",
+    visibleIds
+      ? async () => {
+          const entries = await Promise.all(visibleRiskEvents.map(async (risk) => {
             try {
               const draftResponse = await api.get(`/risk-events/${risk.id}/response-drafts`);
               const drafts = draftResponse.data ?? [];
               const latestDraft = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0] ?? null;
-              return { ...risk, response_summary: responseDraftSummary(risk, latestDraft) };
+              return [risk.id, responseDraftSummary(risk, latestDraft)];
             } catch {
-              return { ...risk, response_summary: RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle };
+              return [risk.id, RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle];
             }
           }));
-          return { ...pageData, items, queryKey: riskQueryKey };
+          return Object.fromEntries(entries);
         }
-      : () => Promise.resolve({ items: [], total: 0, page: 1, page_size: RISK_PAGE_SIZE, queryKey: riskQueryKey }),
+      : () => Promise.resolve({}),
   );
-  const riskPageData = loadedRiskPageData?.queryKey === riskQueryKey ? loadedRiskPageData : null;
-  const riskyStories = riskPageData?.items ?? [];
-  const riskTotal = riskPageData?.total ?? 0;
+
+  const severityCounts = SEVERITY_BANDS.map((band) => ({
+    ...band,
+    count: allRiskEvents.filter((risk) => severityBandOf(risk) === band.id).length,
+  }));
 
   useEffect(() => {
-    if (riskPageLoading || !riskPageData) return;
     const lastPage = Math.max(1, Math.ceil(riskTotal / RISK_PAGE_SIZE));
     if (riskPage > lastPage) setRiskPage(lastPage);
-  }, [riskPage, riskPageData, riskPageLoading, riskTotal]);
+  }, [riskPage, riskTotal]);
 
   const error = companiesError || riskPageError || dailyError
     ? getErrorMessage(companiesError ?? riskPageError ?? dailyError) : null;
@@ -434,67 +479,155 @@ export default function MainPage({ onOpenCompany }) {
         neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_neutral_story_count ?? 0), 0),
       };
 
+  const riskRatio = periodStoryCount > 0 ? periodRiskCount / periodStoryCount : 0;
+  const periodNegativeCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_negative_story_count ?? 0), 0);
+  const negativeRatio = periodStoryCount > 0 ? periodNegativeCount / periodStoryCount : 0;
+  const respondedCount = allRiskEvents.filter((risk) => risk.response_generation_status === "generated").length;
+
   return <section className="workspace main-workspace briefing-workspace">
-    <div className="briefing-page-head">
-      <p className="main-page-intro briefing-description">실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</p>
-      <div className="briefing-page-filters">
-        <AnalysisPeriodControl period={period} onChange={(field, value) => { setRiskPage(1); changePeriod(field, value); }} />
-      <label className="briefing-company-picker"><span>분석 기업</span><select value={selectedCompanyId ? String(selectedCompanyId) : ""} onChange={(event) => selectCompany(event.target.value)} disabled={!companies.length}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label>
+    {/* 담당자가 화면을 열자마자 알아야 하는 것: 어느 기업을, 언제 기준으로 보고 있는가 */}
+    <section className="panel briefing-hero">
+      <div className="briefing-hero-copy">
+        <p className="eyebrow">AI RISK BRIEFING</p>
+        <h1>{selectedCompany ? selectedCompany.name + "에 지금 어떤 위험이 있나요?" : "AI 리스크 브리핑"}</h1>
+        <p className="briefing-hero-description">실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</p>
       </div>
-    </div>
+      <div className="briefing-hero-controls">
+        <label className="briefing-company-picker"><span>분석 기업</span><select value={selectedCompanyId ? String(selectedCompanyId) : ""} onChange={(event) => selectCompany(event.target.value)} disabled={!companies.length}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label>
+        <AnalysisPeriodControl period={period} onChange={(field, value) => { setRiskPage(1); changePeriod(field, value); }} />
+      </div>
+    </section>
+
     <div className="main-page-shell briefing-shell">
       {error && <div className="notice error">{error}</div>}
       {loading ? <p className="empty-state">브리핑을 불러오는 중입니다.</p> : !selectedCompany ? <p className="empty-state">등록된 기업 정보가 없습니다.</p> : <div className="briefing-grid">
-        <section className="panel briefing-overview-panel">
-          <div className="briefing-overview-head">
-            <PanelTitle
-              title={briefingView === "average" ? "전체 평균" : selectedCompany.name}
-              description={briefingView === "average" ? `등록 기업 ${formatNumber(companies.length)}곳 기준` : selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}
-            />
-            <div className="briefing-overview-controls">
-            <div className="briefing-view-tabs" role="tablist" aria-label="브리핑 비교 기준">
-              <button id="briefing-company-tab" type="button" role="tab" aria-selected={briefingView === "company"} aria-controls="briefing-overview-charts" className={briefingView === "company" ? "active" : ""} onClick={() => setBriefingView("company")}>{selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}</button>
-              <button id="briefing-average-tab" type="button" role="tab" aria-selected={briefingView === "average"} aria-controls="briefing-overview-charts" className={briefingView === "average" ? "active" : ""} onClick={() => setBriefingView("average")}>전체 평균</button>
+
+        <section className="briefing-kpi-grid" aria-label="선택 기간 요약">
+          <article className="panel briefing-kpi danger">
+            <p className="briefing-kpi-label">위험 판정률</p>
+            <strong>{formatPercent(riskRatio)}</strong>
+            <small>판정 대상 {formatNumber(periodStoryCount)}건 중 {formatNumber(periodRiskCount)}건</small>
+          </article>
+          <article className="panel briefing-kpi warning">
+            <p className="briefing-kpi-label">위험 이슈</p>
+            <strong>{formatNumber(allRiskEvents.length)}건</strong>
+            <small>대응 방안 생성 완료 {formatNumber(respondedCount)}건</small>
+          </article>
+          <article className="panel briefing-kpi">
+            <p className="briefing-kpi-label">부정 이슈 비율</p>
+            <strong>{formatPercent(negativeRatio)}</strong>
+            <small>부정 {formatNumber(periodNegativeCount)}건</small>
+          </article>
+          <article className="panel briefing-kpi success">
+            <p className="briefing-kpi-label">판정 대상 신호</p>
+            <strong>{formatNumber(periodStoryCount)}건</strong>
+            <small>{periodLabel}</small>
+          </article>
+        </section>
+
+        <section className="briefing-insight-grid">
+          <article className="panel briefing-severity-panel">
+            <div className="briefing-overview-head">
+              <PanelTitle kicker="RISK LEVEL" title="위험 수준 분포" description={selectedCompany.name + " · " + periodLabel} />
             </div>
-            </div>
-          </div>
-          {dailyLoading ? <p className="panel-empty" role="status">선택한 기간의 데이터를 불러오는 중입니다.</p> : dailyError ? <p className="panel-empty">선택한 기간의 데이터를 불러오지 못했습니다.</p> : <div id="briefing-overview-charts" className="briefing-overview-charts" role="tabpanel" aria-labelledby={`briefing-${briefingView}-tab`}>
-            <section className="briefing-ratio-pane" aria-label="위험 및 감성 비율">
-              <div className="briefing-ratio-head">
-                <div className="briefing-ratio-tabs" role="tablist" aria-label="비율 종류">
-                  <button type="button" role="tab" aria-selected={ratioView === "risk"} className={ratioView === "risk" ? "active" : ""} onClick={() => setRatioView("risk")}>위험 비율</button>
-                  <button type="button" role="tab" aria-selected={ratioView === "sentiment"} className={ratioView === "sentiment" ? "active" : ""} onClick={() => setRatioView("sentiment")}>부정 비율</button>
+            {allRiskEvents.length ? <div className="briefing-severity-bars">
+              {severityCounts.map((band) => {
+                const ratio = allRiskEvents.length ? band.count / allRiskEvents.length : 0;
+                return <div className="briefing-severity-row" key={band.id}>
+                  <div className="briefing-severity-head">
+                    <span>{band.label}</span>
+                    <strong>{formatNumber(band.count)}건 · {formatPercent(ratio)}</strong>
+                  </div>
+                  <div className="briefing-severity-track">
+                    <i className={band.tone} style={{ width: Math.round(ratio * 100) + "%" }} />
+                  </div>
+                </div>;
+              })}
+            </div> : <p className="panel-empty">선택한 기간에 위험 사건이 없습니다.</p>}
+          </article>
+
+          <article className="panel briefing-overview-panel">
+            <div className="briefing-overview-head">
+              <PanelTitle
+                kicker="COMPOSITION"
+                title={briefingView === "average" ? "전체 평균" : selectedCompany.name}
+                description={briefingView === "average" ? "등록 기업 " + formatNumber(companies.length) + "곳 기준" : selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}
+              />
+              <div className="briefing-overview-controls">
+                <div className="briefing-view-tabs" role="tablist" aria-label="브리핑 비교 기준">
+                  <button id="briefing-company-tab" type="button" role="tab" aria-selected={briefingView === "company"} aria-controls="briefing-overview-charts" className={briefingView === "company" ? "active" : ""} onClick={() => setBriefingView("company")}>{selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}</button>
+                  <button id="briefing-average-tab" type="button" role="tab" aria-selected={briefingView === "average"} aria-controls="briefing-overview-charts" className={briefingView === "average" ? "active" : ""} onClick={() => setBriefingView("average")}>전체 평균</button>
                 </div>
+              </div>
+            </div>
+            {dailyLoading ? <p className="panel-empty" role="status">선택한 기간의 데이터를 불러오는 중입니다.</p> : dailyError ? <p className="panel-empty">선택한 기간의 데이터를 불러오지 못했습니다.</p> : <div id="briefing-overview-charts" role="tabpanel" aria-labelledby={"briefing-" + briefingView + "-tab"}>
+              <div className="briefing-ratio-tabs" role="tablist" aria-label="비율 종류">
+                <button type="button" role="tab" aria-selected={ratioView === "risk"} className={ratioView === "risk" ? "active" : ""} onClick={() => setRatioView("risk")}>위험 비율</button>
+                <button type="button" role="tab" aria-selected={ratioView === "sentiment"} className={ratioView === "sentiment" ? "active" : ""} onClick={() => setRatioView("sentiment")}>부정 비율</button>
               </div>
               <div className="briefing-ratio-content" role="tabpanel" aria-label={ratioView === "risk" ? "위험 비율" : "긍정 부정 중립 비율"}>
                 {ratioView === "risk"
                   ? <RiskRatioCard periodLabel={periodLabel} {...selectedRiskRatio} />
                   : <SentimentRatioCard periodLabel={periodLabel} {...selectedSentimentRatio} />}
               </div>
-            </section>
-            <section className="briefing-trend-pane" aria-label={`${periodLabel} 위험 및 부정 비율 추이`}>
-              <RiskOverviewTrendChart
-                legendTitle="날짜별 위험·부정 통계"
-                days={briefingSummaries}
-                displayDates={trendDisplayDates}
-                basis="stories"
-                ariaLabel={briefingView === "average" ? `등록 기업 전체의 ${periodLabel} 평균 위험 이슈와 부정 이슈 비율` : `${selectedCompany.name} ${periodLabel} 위험 이슈와 부정 이슈 비율`}
-              />
-            </section>
-          </div>}
+            </div>}
+          </article>
         </section>
+
+        <section className="panel briefing-trend-panel" aria-label={periodLabel + " 위험 및 부정 비율 추이"}>
+          <div className="briefing-overview-head">
+            <PanelTitle kicker="TREND" title="날짜별 위험·부정 통계" description={periodLabel} />
+          </div>
+          <div className="briefing-trend-pane">
+            <RiskOverviewTrendChart
+              legendTitle=""
+              days={briefingSummaries}
+              displayDates={trendDisplayDates}
+              basis="stories"
+              ariaLabel={briefingView === "average" ? "등록 기업 전체의 " + periodLabel + " 평균 위험 이슈와 부정 이슈 비율" : selectedCompany.name + " " + periodLabel + " 위험 이슈와 부정 이슈 비율"}
+            />
+          </div>
+        </section>
+
         <section className="panel briefing-risk-articles">
-          <div className="pipeline-panel-heading story-group-heading">
-            <div className="story-view-tabs" role="tablist" aria-label="선택 기간 위험 사건 보기">
+          <div className="briefing-overview-head">
+            <PanelTitle kicker="RISK EVENTS" title="위험 사건 찾기" description="수준과 키워드로 좁혀 보고, 카드를 누르면 상세 분석으로 이동합니다." />
+            <span className="pipeline-risk-count-pill">{formatNumber(riskTotal)}건</span>
+          </div>
+          <div className="briefing-event-filters">
+            <label><span>위험 수준</span>
+              <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>
+                <option value="">전체 수준</option>
+                {SEVERITY_BANDS.map((band) => <option key={band.id} value={band.id}>{band.label}</option>)}
+              </select>
+            </label>
+            <label className="briefing-event-search"><span>키워드</span>
+              <input type="search" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="사건 제목·위험 유형 검색" />
+            </label>
+            <div className="story-view-tabs" role="tablist" aria-label="목록 표시 내용">
               <button id="briefing-risk-tab" type="button" role="tab" aria-selected={riskListView === "risk"} aria-controls="briefing-risk-content" className={riskListView === "risk" ? "active" : ""} onClick={() => setRiskListView("risk")}>위험 사건</button>
               <button id="briefing-response-tab" type="button" role="tab" aria-selected={riskListView === "response"} aria-controls="briefing-risk-content" className={riskListView === "response" ? "active" : ""} onClick={() => setRiskListView("response")}>대응 방안</button>
             </div>
           </div>
-          <div id="briefing-risk-content" className="briefing-risk-list" role="tabpanel" aria-labelledby={`briefing-${riskListView}-tab`}>{!riskPageData && !riskPageError ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오는 중입니다.</p> : riskPageError && !riskPageData ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오지 못했습니다.</p> : riskyStories.length ? riskyStories.map((risk) => <button className="briefing-risk-card" type="button" onClick={() => onOpenCompany(selectedCompanyId, risk.id)} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
-            {riskListView === "risk"
-              ? <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
-              : <><small className="briefing-response-context">{riskEventTitle(risk)}</small><span className="briefing-response-summary">{risk.response_summary}</span></>}
-          </button>) : <p className="panel-empty">선택한 기간의 위험 사건이 없습니다.</p>}</div>
+          <div id="briefing-risk-content" className="briefing-event-list" role="tabpanel" aria-labelledby={"briefing-" + riskListView + "-tab"}>
+            {!riskPageData && !riskPageError ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오는 중입니다.</p>
+              : riskPageError && !riskPageData ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오지 못했습니다.</p>
+              : visibleRiskEvents.length ? visibleRiskEvents.map((risk) => {
+                const band = SEVERITY_BANDS.find((item) => item.id === severityBandOf(risk));
+                const types = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
+                return <button className="briefing-event-card" type="button" onClick={() => onOpenCompany(selectedCompanyId, risk.id, { stage: riskListView === "response" ? "response" : "risk" })} key={risk.id} aria-label={riskEventTitle(risk) + (riskListView === "response" ? " 대응 방안 보기" : " 위험 판정 근거 보기")}>
+                  <div className="briefing-event-meta">
+                    <span className={"briefing-event-level " + band.tone}>{band.label}</span>
+                    {types.slice(0, 2).map((item) => <span className="briefing-event-type" key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}
+                    <span className="briefing-event-score">위험도 {formatRiskProbability(risk.risk_probability)}</span>
+                  </div>
+                  <strong className="briefing-event-title">{riskEventTitle(risk)}</strong>
+                  {riskListView === "response"
+                    ? <span className="briefing-event-response">{draftSummaries[risk.id] ?? RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle}</span>
+                    : <span className="briefing-event-response muted">관련 보도 {formatNumber(risk.evidence_article_count ?? 0)}건 · 출처 {formatNumber(risk.source_count ?? 0)}곳</span>}
+                </button>;
+              }) : <p className="panel-empty">조건에 맞는 위험 사건이 없습니다.</p>}
+          </div>
           <Pagination page={riskPage} pageSize={RISK_PAGE_SIZE} total={riskTotal} onChange={setRiskPage} />
         </section>
       </div>}
