@@ -190,7 +190,11 @@ function ResponseDraftContent({ draft, riskTitle }) {
 }
 
 // 위험 이벤트의 유형과 관리 승인이 필요한 대응 초안을 표시한다.
-export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
+// onDraftLoaded는 지금 그리는 초안이 어느 경로의 산출물인지(content_kind) 부모에게 올린다.
+// 화면 제목이 "대응 방안"과 "동종 기업 · 대응 방안"으로 갈리는데, 그 판단 근거를 선택한
+// 기업의 역할이 아니라 **실제로 생성된 초안**에서 가져오기 위해서다. 초안이 아직 없거나
+// 근거부족으로 보류된 상태에서 제목만 먼저 바뀌면 화면이 내용보다 앞서 말하게 된다.
+export function RiskDetail({ risk, canReview = false, onGenerationStarted, onDraftLoaded }) {
   const riskId = risk?.id ?? null;
   const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
@@ -205,6 +209,13 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   }, [riskId]);
   useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
   useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
+  // 초안을 다시 불러올 때마다 부모에게 종류를 알린다. loadDrafts가 아니라 drafts를 보고
+  // 도는 이유는, 콜백이 매 렌더 새로 만들어져도 재조회로 번지지 않게 하기 위해서다
+  // (같은 값을 다시 넣으면 React가 렌더를 건너뛰므로 여기서 멈춘다).
+  useEffect(() => {
+    const shown = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0];
+    onDraftLoaded?.(shown?.content?.content_kind ?? null);
+  }, [drafts, onDraftLoaded]);
   useEffect(() => {
     if (!riskId || !["pending", "generating"].includes(generationStatus)) return undefined;
     const timer = window.setInterval(loadDrafts, 5000);
