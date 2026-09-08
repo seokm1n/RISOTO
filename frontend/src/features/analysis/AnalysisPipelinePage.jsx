@@ -34,7 +34,7 @@ const STAGES = [
   { id: "sentiment", step: "03", label: "감성분석", kicker: "SENTIMENT ANALYSIS", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
   { id: "stories", step: "04", label: "이슈 그룹핑", kicker: "ISSUE GROUPING", description: "같은 사건을 다룬 기사들을 하나의 이슈로 묶습니다." },
   { id: "risk", step: "05", label: "위험판정", kicker: "RISK DETECTION", description: "이슈별 위험도와 유형, 사건 발생 근거를 확인합니다." },
-  { id: "response", step: "06", label: "대응", kicker: "", description: "위험 사건의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
+  { id: "response", step: "06", label: "대응", kicker: "RESPONSE MANAGEMENT", description: "위험 이슈의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
 ];
 const STAGE_IDS = new Set(STAGES.map((stage) => stage.id));
 const FILTER_PAGE_SIZE = 5;
@@ -249,9 +249,21 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
   const events = data.risks?.items ?? [];
   const selected = events.find((risk) => risk.id === selectedRiskId) ?? events[0] ?? null;
   const [evidencePage, setEvidencePage] = useState(1);
+  const [evidenceSort, setEvidenceSort] = useState("time");
   const [listOpen, setListOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const evidenceArticles = selected?.evidence_articles ?? [];
+  const evidenceArticles = useMemo(() => {
+    const articles = selected?.evidence_articles ?? [];
+    const collectedTime = (article) => Date.parse(article.collected_at) || 0;
+    const riskScore = (article) => article.risk_probability != null && Number.isFinite(Number(article.risk_probability))
+      ? Number(article.risk_probability)
+      : -1;
+    return [...articles].sort((left, right) => {
+      const riskDifference = evidenceSort === "risk" ? riskScore(right) - riskScore(left) : 0;
+      return riskDifference || collectedTime(right) - collectedTime(left)
+        || String(left.article_id).localeCompare(String(right.article_id), undefined, { numeric: true });
+    });
+  }, [selected?.evidence_articles, evidenceSort]);
   const evidencePageCount = Math.max(1, Math.ceil(evidenceArticles.length / RISK_EVIDENCE_PAGE_SIZE));
   const visibleEvidencePage = Math.min(evidencePage, evidencePageCount);
   const visibleEvidenceArticles = evidenceArticles.slice(
@@ -305,7 +317,13 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
         <div className="pipeline-risk-head"><div><span className={isRisk ? `severity ${selected.severity}` : "judgment-badge non-risk"}>{isRisk ? selected.severity === "critical" ? "긴급" : "주의" : classificationLabel}</span><h3>{riskEventTitle(selected)}</h3><RiskJudgmentModelInfo risk={selected} /></div></div>
         <div className="pipeline-risk-metrics"><div><span>위험도</span><strong>{formatRiskProbability(selected.risk_probability)}</strong></div><div><span>위험 판정 기사</span><strong>{formatNumber(selected.risk_article_count ?? 0)}건</strong></div><div><span>관련 보도</span><strong>{formatNumber(selected.evidence_article_count ?? evidenceArticles.length)}건</strong></div><div><span>출처</span><strong>{formatNumber(selected.source_count ?? selected.risk_source_count ?? 0)}곳</strong></div></div>
         {isRisk && !!selected.risk_types?.length && <div className="risk-type-list">{selected.risk_types.map((type) => <span className={type.is_primary ? "primary" : ""} key={type.risk_type}>{RISK_TYPE_LABELS[type.risk_type] ?? type.risk_type} {formatPercent(type.probability)}</span>)}</div>}
-        <h4 className="pipeline-evidence-heading">근거 기사</h4>
+        <div className="pipeline-evidence-toolbar">
+          <h4 className="pipeline-evidence-heading">근거 기사</h4>
+          <select aria-label="근거 기사 정렬" value={evidenceSort} onChange={(event) => { setEvidenceSort(event.target.value); setEvidencePage(1); }}>
+            <option value="time">시간순</option>
+            <option value="risk">위험도순</option>
+          </select>
+        </div>
         <div className="pipeline-evidence-list">{visibleEvidenceArticles.map((article) => <a href={article.url} target="_blank" rel="noreferrer" key={article.article_id}><span>{isRisk ? article.evidence_role === "trigger" ? "위험 판정" : "관련 보도" : "판정 기사"}</span><strong>{article.title}</strong><small>{article.source_domain || article.source || "출처 미상"} · 근거 점수 {formatPercent(article.evidence_score)} · 수집 {formatDate(article.collected_at)}</small></a>)}</div>
         <Pagination page={visibleEvidencePage} pageSize={RISK_EVIDENCE_PAGE_SIZE} total={evidenceArticles.length} onChange={setEvidencePage} />
       </> : <p className="panel-empty">확인할 판정 결과를 선택해 주세요.</p>}

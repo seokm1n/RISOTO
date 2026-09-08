@@ -21,7 +21,7 @@ const positiveInteger = (value, fallback = 1) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-// 기사 판정과 스토리 군집으로 확정된 위험 사건의 대응방안을 관리한다.
+// 기사 판정과 스토리 군집으로 확정된 위험 이슈의 대응방안을 관리한다.
 export default function RiskManagementPage({ canReview = false, initialCompanyId = null, initialRiskEventId = null, initialPeriodDays = "all", embedded = false, dateRange = null }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -192,8 +192,8 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const riskCount = (pageData.summary.active ?? 0) + (pageData.summary.history ?? 0);
   const listTitle = eventView === "needs_response" ? "검토 필요 목록" : "위험 목록";
   const emptyMessage = eventView === "needs_response"
-    ? "선택한 기간에 검토가 필요한 위험 사건이 없습니다."
-    : "선택한 기간에 마지막 관련 기사가 추가된 위험 사건이 없습니다.";
+    ? "선택한 기간에 검토가 필요한 위험 이슈가 없습니다."
+    : "선택한 기간에 마지막 관련 기사가 추가된 위험 이슈가 없습니다.";
   const openEvidence = () => {
     if (!selectedRisk || !selectedCompanyId) return;
     const params = new URLSearchParams({
@@ -206,7 +206,7 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   };
 
   return <section className={`${embedded ? "risk-management-embedded" : "workspace"} analysis-statistics-workspace risk-management-workspace pipeline-stage-content`}>
-    <div className="pipeline-stat-grid risk-stage-stat-grid" aria-label="대응 위험 사건 분류">
+    <div className="pipeline-stat-grid risk-stage-stat-grid" aria-label="대응 위험 이슈 분류">
       <button className={`pipeline-stat danger selectable${eventView === "all" ? " active" : ""}`} type="button" aria-pressed={eventView === "all"} onClick={() => updateQuery({ view: "all", response: null }, { resetPage: true, clearSelection: true })}><span>위험</span><strong>{formatNumber(riskCount)}건</strong><small>활성·종료 통합</small></button>
       <button className={`pipeline-stat warning selectable${eventView === "needs_response" ? " active" : ""}`} type="button" aria-pressed={eventView === "needs_response"} onClick={() => updateQuery({ view: "needs_response", response: null }, { resetPage: true, clearSelection: true })}><span>검토 필요</span><strong>{formatNumber(pageData.summary.needs_response)}건</strong><small>미생성·보류·실패</small></button>
     </div>
@@ -220,12 +220,12 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
             <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact plain /></div>
             <span className="pipeline-risk-dropdown-action">{listOpen ? "목록 접기" : "목록 펼치기"}<i aria-hidden="true" /></span>
           </button>
-          {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 사건 목록" : "위험 사건 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><RiskEventListContent risk={risk} judgmentCompact plain /></button>)}</div>}
-        </div> : <p className="panel-empty">{loading || !hasCurrentData ? "사건을 불러오는 중입니다." : emptyMessage}</p>}
+          {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 이슈 목록" : "위험 이슈 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><RiskEventListContent risk={risk} judgmentCompact /></button>)}</div>}
+        </div> : <p className="panel-empty">{loading || !hasCurrentData ? "이슈를 불러오는 중입니다." : emptyMessage}</p>}
       </section>
       <section className="panel pipeline-panel pipeline-risk-evidence">
         <div className="pipeline-panel-heading pipeline-risk-detail-heading">
-          <PanelTitle kicker="RESPONSE PLAN" title={draftKind === "peer_recommendation" ? "동종 기업 · 대응 방안" : "대응 방안"} />
+          <PanelTitle kicker="RESPONSE PLAN" title={draftKind === "peer_recommendation" ? "나의 기업에 미칠 영향" : "대응 방안"} />
           {selectedRisk && <button className="secondary-button" type="button" onClick={openEvidence}>근거 보기</button>}
         </div>
         <RiskDetail key={`${queryKey}:${selectedRisk?.id ?? "none"}`} risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} onDraftLoaded={setDraftKind} />
