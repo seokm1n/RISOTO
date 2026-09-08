@@ -20,12 +20,12 @@ function useElementSize() {
 }
 
 // 화면 목적에 따라 실제 기사 또는 판정 가능한 스토리를 같은 분모로 위험·부정 비율을 비교한다.
-export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, displayDates = null, basis = "stories" }) {
+export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, displayDates = null, basis = "stories", legendTitle = null }) {
   const [canvasRef, { width: measuredWidth, height: measuredHeight }] = useElementSize();
   const [hoveredIndex, setHoveredIndex] = useState(null);
   useEffect(() => { setHoveredIndex(null); }, [basis, days, displayDates]);
   const usesArticleCounts = basis === "articles";
-  const populationLabel = usesArticleCounts ? "기사" : "스토리";
+  const populationLabel = usesArticleCounts ? "기사" : "이슈";
   const chartAriaLabel = ariaLabel ?? `위험 ${populationLabel}와 부정 ${populationLabel} 비율 추이`;
   const displayDateSet = displayDates === null ? null : new Set(displayDates);
   const points = [...days]
@@ -51,8 +51,8 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
       ? displayDateSet.has(day.summary_date)
       : day.risk_count > 0 || day.negative_count > 0);
   if (!points.length) return <div className="main-overview-trend">
-    <div className="main-overview-legend" aria-hidden="true" />
-    <div className="main-chart-canvas" ref={canvasRef}><p className="panel-empty">아직 표시할 위험·부정 {usesArticleCounts ? "기사" : "스토리"} 비율 데이터가 없습니다.</p></div>
+    <div className="main-overview-legend">{legendTitle && <strong className="main-overview-legend-title">{legendTitle}</strong>}</div>
+    <div className="main-chart-canvas" ref={canvasRef}><p className="panel-empty">아직 표시할 위험·부정 {populationLabel} 비율 데이터가 없습니다.</p></div>
   </div>;
 
   const width = measuredWidth || 700, height = measuredHeight || 210;
@@ -62,7 +62,7 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
   const yRatio = (value) => top + plotHeight - Math.min(Math.max(value, 0), 1) * plotHeight;
   const formatDay = (value) => new Date(value).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
   const gridLevels = [0, .5, 1];
-  const labelEvery = 1;
+  const labelEvery = Math.max(1, Math.ceil(points.length / Math.max(2, Math.floor(plotWidth / 65))));
   const hoveredPoint = hoveredIndex === null ? null : points[hoveredIndex] ?? null;
   const hoveredX = hoveredPoint ? x(hoveredIndex) : 0;
   const hoveredTop = hoveredPoint
@@ -94,7 +94,8 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
   };
 
   return <div className="main-overview-trend">
-    <div className="main-overview-legend" aria-hidden="true">
+    <div className="main-overview-legend">
+      {legendTitle && <strong className="main-overview-legend-title">{legendTitle}</strong>}
       <span className="risk"><i />위험 {populationLabel}</span>
       <span className="negative"><i />부정 {populationLabel}</span>
     </div>
