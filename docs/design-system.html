@@ -1,0 +1,672 @@
+<title>RISOTO 디자인 시스템</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+  /* RISOTO는 Pretendard를 씁니다. Pretendard가 설치돼 있지 않은 환경을 위해
+     결이 가장 가까운 Noto Sans KR을 대체로 둡니다. */
+  :root {
+    --cream: #fbf6ee;
+    --paper: #fffdf9;
+    --rice: #eee2d2;
+    --terracotta: #b85836;
+    --terracotta-deep: #8d3f29;
+    --sage: #597265;
+    --gold: #c88d30;
+    --ink-strong: #30251f;
+    --ink-soft: #75695f;
+    --divider: rgba(109, 82, 61, .14);
+    --divider-strong: rgba(109, 82, 61, .22);
+    --radius-panel: 1.7rem;
+    --radius-card: 1.1rem;
+    --radius-control: .8rem;
+    --shadow-soft: 0 16px 38px rgba(82, 54, 34, .08);
+    --shadow-lift: 0 20px 35px rgba(82, 54, 34, .12);
+    --font: "Pretendard Variable", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  body {
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink-strong);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.6;
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1000px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  .eyebrow {
+    margin: 0;
+    color: var(--terracotta);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 14px 0 0;
+    font-size: clamp(1.9rem, 4vw, 2.6rem);
+    font-weight: 700;
+    letter-spacing: -.03em;
+    line-height: 1.15;
+    word-break: keep-all;
+    text-wrap: balance;
+  }
+  .lede {
+    max-width: 40rem;
+    margin: 14px 0 0;
+    color: var(--ink-soft);
+    font-size: 15px;
+    line-height: 1.75;
+    word-break: keep-all;
+  }
+  .masthead { padding-bottom: 40px; border-bottom: 1px solid var(--divider-strong); }
+
+  section { padding: 44px 0; border-bottom: 1px solid var(--divider); }
+  section:last-of-type { border-bottom: 0; }
+  h2 {
+    margin: 0 0 6px;
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+  }
+  .section-note { margin: 0 0 26px; color: var(--ink-soft); font-size: 14px; word-break: keep-all; }
+  h3 {
+    margin: 32px 0 14px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  h3:first-of-type { margin-top: 0; }
+
+  code, .mono { font-family: var(--mono); font-size: .88em; }
+
+  /* ── 색상 ─────────────────────────────────────────────── */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .swatch {
+    overflow: hidden;
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-card);
+    background: var(--paper);
+  }
+  .swatch .chip { height: 74px; border-bottom: 1px solid var(--divider); }
+  .swatch .meta { padding: 11px 13px 13px; }
+  .swatch .name { font-size: 13px; font-weight: 600; }
+  .swatch .role { margin: 2px 0 0; color: var(--ink-soft); font-size: 12px; }
+  .swatch .hex { margin: 7px 0 0; color: var(--ink-soft); font-family: var(--mono); font-size: 11.5px; }
+
+  /* ── 서체 ─────────────────────────────────────────────── */
+  .type-row {
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--divider);
+  }
+  .type-row:last-child { border-bottom: 0; }
+  .type-spec {
+    flex: 0 0 190px;
+    color: var(--ink-soft);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+  .type-spec b { display: block; color: var(--ink-strong); font-family: var(--font); font-size: 12.5px; font-weight: 600; }
+  .type-sample { min-width: 0; word-break: keep-all; }
+
+  .weights { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .weight {
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-card);
+    background: var(--paper);
+    padding: 16px 18px;
+  }
+  .weight .n { font-size: 1.5rem; letter-spacing: -.02em; }
+  .weight .k { margin-top: 6px; font-size: 15px; }
+  .weight .use { margin: 8px 0 0; color: var(--ink-soft); font-size: 12px; }
+
+  /* ── 형태 ─────────────────────────────────────────────── */
+  .shapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+  .shape-demo {
+    display: grid;
+    place-items: center;
+    height: 108px;
+    border: 1px solid var(--divider);
+    background: var(--paper);
+  }
+  .shape-demo.panel { border-radius: var(--radius-panel); box-shadow: var(--shadow-soft); }
+  .shape-demo.card { border-radius: var(--radius-card); }
+  .shape-demo.control { border-radius: var(--radius-control); }
+  .shape-demo.lift { border-radius: var(--radius-panel); box-shadow: var(--shadow-lift); }
+  .shape-demo span { color: var(--ink-soft); font-family: var(--mono); font-size: 11.5px; text-align: center; }
+  .shape-demo span b { display: block; margin-bottom: 3px; color: var(--ink-strong); font-family: var(--font); font-size: 13px; }
+
+  /* ── 컴포넌트 실물 ────────────────────────────────────── */
+  .specimen {
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-panel);
+    background: var(--paper);
+    padding: 26px;
+    box-shadow: var(--shadow-soft);
+  }
+  .specimen + .specimen { margin-top: 16px; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+  .kpi {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-card);
+    background: var(--paper);
+    padding: 20px 22px;
+    box-shadow: var(--shadow-soft);
+  }
+  .kpi.danger { border-left: 5px solid var(--terracotta); }
+  .kpi.danger strong { color: var(--terracotta-deep); }
+  .kpi.warning { border-left: 5px solid var(--gold); }
+  .kpi.warning strong { color: #89611b; }
+  .kpi.success { border-left: 5px solid var(--sage); }
+  .kpi.success strong { color: #3f6254; }
+  .kpi p { margin: 0; color: var(--ink-soft); font-size: 14px; font-weight: 600; }
+  .kpi strong { margin-top: 6px; font-size: 2.15rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
+  .kpi small { color: var(--ink-soft); font-size: 13px; }
+
+  .sev-row + .sev-row { margin-top: 18px; }
+  .sev-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .sev-head span { font-size: 14px; font-weight: 700; }
+  .sev-head strong { color: var(--ink-soft); font-size: 13px; font-weight: 700; }
+  .sev-track { overflow: hidden; height: 12px; margin-top: 9px; border-radius: 999px; background: var(--rice); }
+  .sev-track i { display: block; height: 100%; border-radius: 999px; }
+
+  .event-card {
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-card);
+    background: var(--paper);
+    padding: 16px 18px;
+  }
+  .event-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+  .level { border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; }
+  .level.critical { background: #f6ddd4; color: var(--terracotta-deep); }
+  .level.warning { background: #f9edcf; color: #89611b; }
+  .level.watch { background: #deebe4; color: #3f6254; }
+  .etype { border-radius: 999px; background: var(--rice); padding: 3px 9px; color: #776f59; font-size: 13px; font-weight: 600; }
+  .escore { margin-left: auto; color: var(--ink-soft); font-size: 13px; font-weight: 700; }
+  .etitle { font-size: 15px; font-weight: 700; line-height: 1.45; word-break: keep-all; }
+  .ebody { color: var(--ink-soft); font-size: 14px; line-height: 1.55; word-break: keep-all; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .btn {
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    background: var(--terracotta);
+    padding: 12px 22px;
+    color: #fffaf2;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .btn.secondary { border-color: rgba(109, 82, 61, .28); background: transparent; color: var(--ink-soft); }
+  .nav-pill { display: inline-flex; gap: 3px; border-radius: 1rem; background: rgba(238, 226, 210, .8); padding: 5px; }
+  .nav-pill span { border-radius: var(--radius-control); padding: 10px 16px; font-size: 14px; font-weight: 600; color: var(--ink-soft); }
+  .nav-pill span.active { background: #f6ddd4; color: var(--terracotta-deep); }
+  .field {
+    min-width: 190px;
+    border: 1px solid rgba(109, 82, 61, .22);
+    border-radius: var(--radius-control);
+    background: var(--paper);
+    padding: 11px 13px;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  /* ── 표 ──────────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 11px 14px 11px 0; border-bottom: 1px solid var(--divider); text-align: left; vertical-align: top; }
+  th { color: var(--ink-soft); font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+  td.k { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  td.v { color: var(--ink-soft); word-break: keep-all; }
+
+  /* ── 복사용 토큰 ─────────────────────────────────────── */
+  .code-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .copy-btn {
+    border: 1px solid rgba(109, 82, 61, .28);
+    border-radius: var(--radius-control);
+    background: var(--paper);
+    padding: 9px 16px;
+    color: var(--ink-soft);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .copy-btn:hover { border-color: var(--terracotta); color: var(--terracotta-deep); }
+  pre {
+    overflow-x: auto;
+    margin: 0;
+    border: 1px solid var(--divider);
+    border-radius: var(--radius-card);
+    background: #fffdf9;
+    padding: 22px;
+    color: #4a3f38;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.75;
+    tab-size: 2;
+  }
+  pre .c { color: #a4968a; }
+  pre .p { color: var(--terracotta-deep); }
+
+  footer { padding-top: 34px; color: var(--ink-soft); font-size: 13px; word-break: keep-all; }
+
+  :focus-visible { outline: 3px solid rgba(184, 88, 54, .35); outline-offset: 3px; }
+  @media (max-width: 620px) {
+    .type-row { flex-direction: column; gap: 8px; }
+    .type-spec { flex: none; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">RISOTO · Frontend Design System</p>
+    <h1>크림 바탕 위의 테라코타</h1>
+    <p class="lede">
+      기업 리스크를 실시간으로 감시하는 화면은 하루 종일 켜져 있습니다.
+      그래서 바탕은 눈이 편한 크림 톤으로 두고, 색은 위험도를 말할 때만 씁니다.
+      서체는 한 벌, 굵기는 네 단계, 모서리는 세 단계 — 이 페이지의 모든 색과 글자는
+      실제 제품 CSS에서 그대로 가져온 값이며, 여기 보이는 그대로 렌더링돼 있습니다.
+    </p>
+  </header>
+
+  <!-- ── 서체 ───────────────────────────────────────────── -->
+  <section>
+    <h2>서체</h2>
+    <p class="section-note">
+      <strong>Pretendard</strong> 한 벌만 씁니다. 한글·라틴·숫자를 같은 설계로 그린 폰트라
+      "AI RISK BRIEFING 15건" 같은 문장 안에서 글자체가 갈리지 않습니다.
+      제목용 별도 서체는 두지 않고, 위계는 크기와 굵기로만 만듭니다.
+    </p>
+
+    <h3>굵기 — 네 단계</h3>
+    <div class="weights">
+      <div class="weight">
+        <div class="n" style="font-weight:400">400</div>
+        <div class="k" style="font-weight:400">본문과 설명 문장</div>
+        <p class="use">Regular</p>
+      </div>
+      <div class="weight">
+        <div class="n" style="font-weight:500">500</div>
+        <div class="k" style="font-weight:500">입력값, 보조 강조</div>
+        <p class="use">Medium</p>
+      </div>
+      <div class="weight">
+        <div class="n" style="font-weight:600">600</div>
+        <div class="k" style="font-weight:600">라벨, 버튼, 부제</div>
+        <p class="use">SemiBold</p>
+      </div>
+      <div class="weight">
+        <div class="n" style="font-weight:700">700</div>
+        <div class="k" style="font-weight:700">제목, 수치, 배지</div>
+        <p class="use">Bold — 상한</p>
+      </div>
+    </div>
+    <p class="section-note" style="margin-top:16px">
+      800·900은 쓰지 않습니다. <code>font-synthesis: none</code>으로 가짜 굵기도 막아둡니다.
+    </p>
+
+    <h3>크기 사다리</h3>
+    <div class="type-row">
+      <div class="type-spec"><b>페이지 제목</b>clamp(1.7rem, 2.6vw, 2.5rem)<br>700 / -.03em / lh 1.15</div>
+      <div class="type-sample" style="font-size:2.5rem;font-weight:700;letter-spacing:-.03em;line-height:1.15">쿠팡에 지금 어떤 위험이 있나요?</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>섹션 제목</b>clamp(1.65rem, 2.5vw, 2.35rem)<br>700 / -.05em</div>
+      <div class="type-sample" style="font-size:2.35rem;font-weight:700;letter-spacing:-.05em;line-height:1.1">위험 수준 분포</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>수치</b>2.15rem · 700<br>-.03em / tabular</div>
+      <div class="type-sample" style="font-size:2.15rem;font-weight:700;letter-spacing:-.03em;line-height:1.05;color:var(--terracotta-deep)">25.9%</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>패널 제목</b>1.45rem · 700<br>-.04em</div>
+      <div class="type-sample" style="font-size:1.45rem;font-weight:700;letter-spacing:-.04em">최근 위험 이슈 및 대응 방안</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>--text-emphasis</b>1rem · 16px<br>600</div>
+      <div class="type-sample" style="font-size:1rem;font-weight:600">기간 요약 설명문</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>--text-body</b>.9375rem · 15px<br>400 / lh 1.5 — 기본값</div>
+      <div class="type-sample" style="font-size:.9375rem;line-height:1.5">실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>--text-small</b>.875rem · 14px<br>400~700</div>
+      <div class="type-sample" style="font-size:.875rem;color:var(--ink-soft)">대응 방안 생성 완료 14건</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>--text-caption</b>.8125rem · 13px<br>700 — 배지·각주</div>
+      <div class="type-sample" style="font-size:.8125rem;font-weight:700;color:var(--ink-soft)">관련 보도 2건 · 출처 2곳</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec"><b>키커(eyebrow)</b>.8125rem · 700<br>+.16em / 대문자</div>
+      <div class="type-sample" style="font-size:.8125rem;font-weight:700;letter-spacing:.16em;color:var(--terracotta)">AI RISK BRIEFING</div>
+    </div>
+
+    <h3>한글 조판 규칙</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><td class="k">word-break: keep-all</td><td class="v">제목과 본문에 전부 적용. 낱말 중간에서 줄이 끊기는 것을 막습니다.</td></tr>
+        <tr><td class="k">letter-spacing</td><td class="v">큰 제목은 -.015em ~ -.05em로 조이고, 대문자 키커만 +.16em로 벌립니다.</td></tr>
+        <tr><td class="k">font-synthesis: none</td><td class="v">브라우저가 가짜 볼드·이탤릭을 합성하지 못하게 막습니다.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 색상 ───────────────────────────────────────────── -->
+  <section>
+    <h2>색상</h2>
+    <p class="section-note">
+      바탕 계열 3개, 글자 2개, 의미 색 3개가 전부입니다.
+      테라코타는 강조와 위험에만 쓰고, 나머지 화면은 크림과 종이색으로 조용히 둡니다.
+    </p>
+
+    <h3>바탕</h3>
+    <div class="swatches">
+      <div class="swatch">
+        <div class="chip" style="background:#fbf6ee"></div>
+        <div class="meta"><div class="name">Cream</div><p class="role">페이지 바탕</p><p class="hex">--cream · #fbf6ee</p></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#fffdf9"></div>
+        <div class="meta"><div class="name">Paper</div><p class="role">패널·카드 면</p><p class="hex">--paper · #fffdf9</p></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#eee2d2"></div>
+        <div class="meta"><div class="name">Rice</div><p class="role">트랙·칩 바탕</p><p class="hex">--rice · #eee2d2</p></div>
+      </div>
+    </div>
+
+    <h3>글자</h3>
+    <div class="swatches">
+      <div class="swatch">
+        <div class="chip" style="background:#30251f"></div>
+        <div class="meta"><div class="name">Ink Strong</div><p class="role">제목·본문</p><p class="hex">--ink-strong · #30251f</p></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#75695f"></div>
+        <div class="meta"><div class="name">Ink Soft</div><p class="role">설명·라벨·각주</p><p class="hex">--ink-soft · #75695f</p></div>
+      </div>
+    </div>
+
+    <h3>의미 — 위험도</h3>
+    <div class="swatches">
+      <div class="swatch">
+        <div class="chip" style="background:#b85836"></div>
+        <div class="meta"><div class="name">Terracotta</div><p class="role">강조 · 긴급</p><p class="hex">--terracotta · #b85836</p></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#8d3f29"></div>
+        <div class="meta"><div class="name">Terracotta Deep</div><p class="role">눌림 상태 · 배지 글자</p><p class="hex">--terracotta-deep · #8d3f29</p></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#c88d30"></div>
+        <div class="meta"><div class="name">Gold</div><p class="role">주의</p><p class="hex">--gold · #c88d30</p></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#597265"></div>
+        <div class="meta"><div class="name">Sage</div><p class="role">관찰 · 정상</p><p class="hex">--sage · #597265</p></div>
+      </div>
+    </div>
+
+    <h3>선과 링</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><td class="k">--divider</td><td class="v">rgba(109, 82, 61, .14) — 기본 구분선, 카드 테두리</td></tr>
+        <tr><td class="k">--divider-strong</td><td class="v">rgba(109, 82, 61, .22) — 섹션 구분</td></tr>
+        <tr><td class="k">--divider-accent</td><td class="v">rgba(184, 88, 54, .22) — 강조 구분</td></tr>
+        <tr><td class="k">--focus-ring</td><td class="v">rgba(184, 88, 54, .35) — 3px outline, offset 3px</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 형태 ───────────────────────────────────────────── -->
+  <section>
+    <h2>형태</h2>
+    <p class="section-note">
+      모서리는 담는 그릇의 크기에 따라 세 단계로 갈립니다. 그림자는 두 종류뿐이고,
+      떠 있는 느낌은 큰 패널에만 씁니다.
+    </p>
+    <div class="shapes">
+      <div>
+        <div class="shape-demo panel"><span><b>패널</b>--radius-panel<br>1.7rem</span></div>
+      </div>
+      <div>
+        <div class="shape-demo card"><span><b>카드</b>--radius-card<br>1.1rem</span></div>
+      </div>
+      <div>
+        <div class="shape-demo control"><span><b>컨트롤</b>--radius-control<br>.8rem</span></div>
+      </div>
+      <div>
+        <div class="shape-demo lift"><span><b>호버</b>--shadow-lift<br>0 20px 35px</span></div>
+      </div>
+    </div>
+    <div class="table-wrap" style="margin-top:26px">
+      <table>
+        <tr><td class="k">--shadow-soft</td><td class="v">0 16px 38px rgba(82, 54, 34, .08) — 모든 패널의 기본</td></tr>
+        <tr><td class="k">--shadow-lift</td><td class="v">0 20px 35px rgba(82, 54, 34, .12) — 누를 수 있는 카드에 호버할 때</td></tr>
+        <tr><td class="k">border</td><td class="v">1px solid rgba(109, 82, 61, .14) — 그림자만으로는 경계가 흐려서 항상 같이 씁니다</td></tr>
+        <tr><td class="k">배지 · 트랙</td><td class="v">border-radius: 999px — 알약 형태</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 컴포넌트 ───────────────────────────────────────── -->
+  <section>
+    <h2>컴포넌트</h2>
+    <p class="section-note">
+      제품에서 실제로 쓰는 조합입니다. 아래는 설명이 아니라 같은 CSS로 그린 실물입니다.
+    </p>
+
+    <h3>수치 카드 — 왼쪽 5px 색 레일로 위험도를 말합니다</h3>
+    <div class="kpi-grid">
+      <article class="kpi danger">
+        <p>위험 판정률</p>
+        <strong>25.9%</strong>
+        <small>판정 대상 58건 중 15건</small>
+      </article>
+      <article class="kpi warning">
+        <p>위험 이슈</p>
+        <strong>15건</strong>
+        <small>대응 방안 생성 완료 14건</small>
+      </article>
+      <article class="kpi success">
+        <p>판정 대상 신호</p>
+        <strong>58건</strong>
+        <small>2026-09-02 ~ 2026-09-08</small>
+      </article>
+    </div>
+
+    <h3>분포 막대</h3>
+    <div class="specimen">
+      <div class="sev-row">
+        <div class="sev-head"><span>긴급</span><strong>2건 · 13.3%</strong></div>
+        <div class="sev-track"><i style="width:13.3%;background:var(--terracotta)"></i></div>
+      </div>
+      <div class="sev-row">
+        <div class="sev-head"><span>주의</span><strong>11건 · 73.4%</strong></div>
+        <div class="sev-track"><i style="width:73.4%;background:var(--gold)"></i></div>
+      </div>
+      <div class="sev-row">
+        <div class="sev-head"><span>관찰</span><strong>2건 · 13.3%</strong></div>
+        <div class="sev-track"><i style="width:13.3%;background:var(--sage)"></i></div>
+      </div>
+    </div>
+
+    <h3>사건 카드 — 배지 · 유형 · 위험도 · 제목 · 요약</h3>
+    <div class="event-card">
+      <div class="event-meta">
+        <span class="level critical">긴급</span>
+        <span class="etype">보안·개인정보</span>
+        <span class="escore">위험도 93.4%</span>
+      </div>
+      <div class="etitle">쿠팡 6247억 '철퇴' 맞았는데…'3954만 계정' 정보유출 티빙은 100억대?</div>
+      <div class="ebody">첫 안내는 평판 방어보다 고객과 투자자가 지금 확인할 수 있는 공식 채널과 문의 창구를 제시하는 내용으로 구성합니다.</div>
+    </div>
+    <div class="event-card" style="margin-top:10px">
+      <div class="event-meta">
+        <span class="level warning">주의</span>
+        <span class="etype">재무·지배구조</span>
+        <span class="escore">위험도 80.7%</span>
+      </div>
+      <div class="etitle">쿠팡, 공정위 현장조사 사상 첫 거부</div>
+      <div class="ebody">관련 보도 2건 · 출처 2곳</div>
+    </div>
+
+    <h3>컨트롤</h3>
+    <div class="controls">
+      <button class="btn" type="button">대응 방안 생성</button>
+      <button class="btn secondary" type="button">취소</button>
+      <span class="field">사건 제목·위험 유형 검색</span>
+    </div>
+    <div class="controls" style="margin-top:16px">
+      <div class="nav-pill">
+        <span class="active">AI 리스크 브리핑</span>
+        <span>분석 파이프라인</span>
+        <span>관리</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 레이아웃 · 모션 ────────────────────────────────── -->
+  <section>
+    <h2>레이아웃과 움직임</h2>
+    <p class="section-note">
+      상단바 하나에 탭 세 개, 그 아래는 전부 한 줄로 흐르는 단일 컬럼입니다.
+      사이드바는 파이프라인 화면에만 있습니다.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <tr><th style="width:210px">항목</th><th>값</th></tr>
+        <tr><td class="k">.workspace</td><td class="v">max-width: calc(1320px + 10vw) · padding: 36px 5vw 100px · 가운데 정렬</td></tr>
+        <tr><td class="k">.panel</td><td class="v">padding: 24px · 제목 아래 1px 구분선(하단 여백 17px)</td></tr>
+        <tr><td class="k">상단바</td><td class="v">rgba(255, 253, 249, .96) 반투명 · 하단 1px 선 · 탭은 알약 컨테이너 안에</td></tr>
+        <tr><td class="k">배경 텍스처</td><td class="v">340px 원 두 개, 1px rgba(184,88,54,.15) 테두리만. <code>overflow-x: clip</code>으로 가둡니다</td></tr>
+        <tr><td class="k">반응형</td><td class="v">1080px에서 2열, 640px에서 1열로 접힘</td></tr>
+        <tr><td class="k">진입</td><td class="v">risoto-fade-up · .5s ease · 아래에서 14px 올라오며 나타남. 패널이 아니라 <em>화면 단위</em>로 한 번만</td></tr>
+        <tr><td class="k">호버</td><td class="v">카드 translateY(-3px) + shadow-lift · 목록 행 translateX(3px)</td></tr>
+        <tr><td class="k">접근성</td><td class="v">focus-visible 3px 링 · <code>prefers-reduced-motion</code>에서 모든 애니메이션·트랜지션 해제</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 복사용 ─────────────────────────────────────────── -->
+  <section>
+    <h2>복사해서 쓰기</h2>
+    <p class="section-note">
+      이 블록 하나만 붙여 넣으면 톤이 그대로 따라옵니다.
+    </p>
+    <div class="code-head">
+      <h3 style="margin:0">:root 토큰 전체</h3>
+      <button class="copy-btn" type="button" id="copy">복사</button>
+    </div>
+<pre id="tokens"><span class="c">/* 서체: 한글·라틴을 한 벌로 */</span>
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+
+:root {
+  <span class="c">/* 서체 */</span>
+  <span class="p">--font-soft</span>: "Pretendard Variable", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+
+  <span class="c">/* 글자 크기 */</span>
+  <span class="p">--text-caption</span>: .8125rem;   <span class="c">/* 13px */</span>
+  <span class="p">--text-small</span>: .875rem;      <span class="c">/* 14px */</span>
+  <span class="p">--text-body</span>: .9375rem;      <span class="c">/* 15px */</span>
+  <span class="p">--text-emphasis</span>: 1rem;      <span class="c">/* 16px */</span>
+  <span class="p">--section-title-size</span>: clamp(1.65rem, 2.5vw, 2.35rem);
+
+  <span class="c">/* 팔레트 */</span>
+  <span class="p">--cream</span>: #fbf6ee;
+  <span class="p">--paper</span>: #fffdf9;
+  <span class="p">--rice</span>: #eee2d2;
+  <span class="p">--terracotta</span>: #b85836;
+  <span class="p">--terracotta-deep</span>: #8d3f29;
+  <span class="p">--sage</span>: #597265;
+  <span class="p">--gold</span>: #c88d30;
+  <span class="p">--ink-strong</span>: #30251f;
+  <span class="p">--ink-soft</span>: #75695f;
+
+  <span class="c">/* 선 · 면 */</span>
+  <span class="p">--divider</span>: rgba(109, 82, 61, .14);
+  <span class="p">--divider-strong</span>: rgba(109, 82, 61, .22);
+  <span class="p">--divider-accent</span>: rgba(184, 88, 54, .22);
+  <span class="p">--focus-ring</span>: rgba(184, 88, 54, .35);
+  <span class="p">--panel-surface</span>: rgba(255, 253, 249, .88);
+
+  <span class="c">/* 상태 */</span>
+  <span class="p">--success-strong</span>: #3f6254;
+  <span class="p">--success</span>: var(--sage);
+  <span class="p">--success-soft</span>: #deebe4;
+  <span class="p">--success-border</span>: #9db6a7;
+
+  <span class="c">/* 형태 */</span>
+  <span class="p">--radius-panel</span>: 1.7rem;
+  <span class="p">--radius-card</span>: 1.1rem;
+  <span class="p">--radius-control</span>: .8rem;
+  <span class="p">--shadow-soft</span>: 0 16px 38px rgba(82, 54, 34, .08);
+  <span class="p">--shadow-lift</span>: 0 20px 35px rgba(82, 54, 34, .12);
+
+  font-family: var(--font-soft);
+  color: var(--ink-strong);
+  background: var(--cream);
+  font-synthesis: none;
+}
+
+<span class="c">/* 굵기 상한을 700으로 묶는다 (기본 bolder는 900까지 올라감) */</span>
+b, strong { font-weight: 700; }
+
+<span class="c">/* 위험도 배지 */</span>
+.level.critical { background: #f6ddd4; color: #8d3f29; }
+.level.warning  { background: #f9edcf; color: #89611b; }
+.level.watch    { background: #deebe4; color: #3f6254; }</pre>
+  </section>
+
+  <footer>
+    값은 <code>frontend/src/styles.css</code>에서 추출했습니다.
+    팔레트와 형태 토큰은 파일 끝의 “캔바 시안 테마 레이어” 블록에, 서체와 크기 토큰은 파일 맨 위 <code>:root</code>에 있습니다.
+    이 페이지의 Pretendard는 설치된 환경에서만 정확히 보이며, 없을 경우 결이 가장 가까운 Noto Sans KR로 대체됩니다.
+  </footer>
+
+</div>
+
+<script>
+  document.getElementById("copy").addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    const text = document.getElementById("tokens").innerText;
+    const done = () => {
+      button.textContent = "복사됨";
+      setTimeout(() => { button.textContent = "복사"; }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, selectInstead);
+    } else {
+      selectInstead();
+    }
+    function selectInstead() {
+      // 클립보드 접근이 막힌 환경에서는 대신 전체를 선택해 준다.
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById("tokens"));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = "선택됨 · 직접 복사";
+      setTimeout(() => { button.textContent = "복사"; }, 2200);
+    }
+  });
+</script>

@@ -7,6 +7,16 @@
     <link rel="icon" type="image/png" href="/risoto-app-icon.png" />
     <link rel="apple-touch-icon" href="/risoto-app-icon.png" />
     <title>RISOTO · 로그인</title>
+    <script>
+      // React가 마운트되기 전에 테마를 확정한다. 이게 없으면 다크를 쓰는 사람이
+      // 새로고침할 때마다 크림색 화면이 한 번 번쩍인다.
+      (function () {
+        try {
+          var saved = localStorage.getItem("risoto.theme");
+          if (saved === "dark" || saved === "warm") document.documentElement.dataset.theme = saved;
+        } catch (error) { /* 저장소가 막힌 환경에서는 기본 테마로 간다 */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

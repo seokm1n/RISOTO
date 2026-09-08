@@ -25,6 +25,7 @@ import { EMPTY_NOTIFICATIONS } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 import { clearSelectedCompanyId } from "../../shared/selectedCompanySession";
 import { clearAnalysisPipelineRiskEventId } from "../../shared/analysisPipelineSession";
+import { useTheme } from "./theme";
 
 const GENERAL_NAV_ITEMS = [
   { id: "main", label: "AI 리스크 브리핑", path: "/main" },
@@ -141,6 +142,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
   const [readNotificationIds, setReadNotificationIds] = useState(() => new Set());
   const [markingAllNotificationsRead, setMarkingAllNotificationsRead] = useState(false);
   const [logoutNoticeOpen, setLogoutNoticeOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
   const [loggingOut, setLoggingOut] = useState(false);
   const { confirm, confirmationDialog } = useAppConfirm();
 
@@ -300,6 +302,11 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <div className="topbar-actions">
         {!isAdmin && mainCompany && <button className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} type="button" onClick={openCollectionAtTop} aria-live="polite" aria-label={`${mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"} · 수집관리로 이동`} aria-current={page === "manage" ? "page" : undefined} title="수집관리로 이동"><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"}</span></button>}
         <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`읽지 않은 위험 알림 ${notificationUnreadTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationUnreadTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationUnreadTotal > 99 ? "99+" : notificationUnreadTotal}</span>}</button>
+        <button className="theme-toggle" type="button" onClick={toggleTheme} title={theme === "dark" ? "밝은 화면으로 전환" : "어두운 화면으로 전환"} aria-label={theme === "dark" ? "밝은 화면으로 전환" : "어두운 화면으로 전환"} aria-pressed={theme === "dark"}>
+          {theme === "dark"
+            ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.4v2.6M12 19v2.6M4.5 12H1.9M22.1 12h-2.6M6.7 6.7 4.9 4.9M19.1 19.1l-1.8-1.8M17.3 6.7l1.8-1.8M4.9 19.1l1.8-1.8" /></svg>
+            : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.3A8.6 8.6 0 0 1 9.7 3.5a8.7 8.7 0 1 0 10.8 10.8Z" /></svg>}
+        </button>
         <button className={`account-button ${page === "account" ? "active" : ""}`} type="button" onClick={() => goTo("/account")} title={`${session.user.email} · 마이페이지`} aria-current={page === "account" ? "page" : undefined}><span>{session.user.email}</span><strong>마이페이지</strong></button>
         <button className="logout-button" type="button" onClick={requestLogout}>로그아웃</button>
       </div>
