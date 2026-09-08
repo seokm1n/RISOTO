@@ -28,7 +28,7 @@ import { RiskEventListContent, RiskJudgmentModelInfo } from "./AnalysisStatistic
 
 const STAGES = [
   { id: "collection", step: "01", label: "실시간 수집(15분)", kicker: "COLLECTION WINDOWS", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다." },
-  { id: "filtering", step: "02", label: "데이터 정리", kicker: "ARTICLE FILTERING", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다." },
+  { id: "filtering", step: "02", label: "데이터 정제", kicker: "ARTICLE FILTERING", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다." },
   { id: "sentiment", step: "03", label: "감성 분석", kicker: "SENTIMENT ANALYSIS", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
   { id: "stories", step: "04", label: "주제별 이슈 모음", kicker: "STORY CLUSTERING", description: "여러 출처의 유사 기사가 어떤 하나의 스토리로 묶였는지 확인합니다." },
   { id: "risk", step: "05", label: "위험판정", kicker: "RISK DETECTION", description: "스토리별 위험도와 유형, 사건 발생 근거를 확인합니다." },
@@ -401,8 +401,7 @@ export default function AnalysisPipelinePage() {
   const updateRiskClassification = (classification) => updateRiskQuery({ classification, view: null, risk_type: null, severity: null, response: null });
   const openRiskResponse = (risk) => {
     setAnalysisPipelineRiskEventId(selectedCompanyId, risk.id);
-    const responseView = risk.status !== "closed" && ["idle", "deferred", "failed"].includes(risk.response_generation_status) ? "needs_response" : "all";
-    const params = new URLSearchParams({ companyId: String(selectedCompanyId), eventId: String(risk.id), view: responseView });
+    const params = new URLSearchParams({ companyId: String(selectedCompanyId), eventId: String(risk.id) });
     params.set("days", "all");
     navigate(`/analysis/response?${params}`);
   };

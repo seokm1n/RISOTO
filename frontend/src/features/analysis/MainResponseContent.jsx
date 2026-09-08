@@ -78,7 +78,7 @@ export function FoldSection({ title, children }) {
 
 // 모델이 쓴 줄글을 문장 단위로 끊는다. 종결부호로 끝나는 낱말에서만 자르므로
 // "3.5%" 같은 숫자 가운데 마침표에는 걸리지 않는다.
-function toBullets(text) {
+export function toBullets(text) {
   if (typeof text !== "string") return [];
   const sentences = [];
   let buffer = "";
@@ -92,6 +92,16 @@ function toBullets(text) {
   }
   if (buffer) sentences.push(buffer);
   return sentences;
+}
+
+// 문장이 여럿이면 글머리 기호로, 한 문장뿐이면 문단으로 보여준다. 모델 서술문을
+// 다루는 화면(메인·동종·이전 형식)이 전부 같은 규칙으로 정리하도록 공유한다.
+export function BulletText({ text }) {
+  if (!text) return null;
+  const bullets = toBullets(text);
+  return bullets.length > 1
+    ? <ul>{bullets.map((sentence, index) => <li key={index}>{sentence}</li>)}</ul>
+    : <p>{text}</p>;
 }
 
 function ScenarioSelector({ scenarios, active, onChange }) {
@@ -214,14 +224,14 @@ function SituationSection({ scenario }) {
               </ul>
             )}
             {secondaryRisks.length > 0 && (
-              <details className="response-minor-disclosure">
-                <summary>추가 위험 {secondaryRisks.length}건</summary>
+              <div className="response-minor-disclosure">
+                <span className="response-minor-disclosure-label">추가 위험 {secondaryRisks.length}건</span>
                 <ul>
                   {secondaryRisks.map((risk, index) => (
                     <li key={`secondary-risk-${index}`}>{risk}</li>
                   ))}
                 </ul>
-              </details>
+              </div>
             )}
           </article>
         )}
@@ -246,25 +256,27 @@ function PlanSection({ report }) {
       <ol className="response-timeline">
         {bands.map((band) => (
           <li className="response-timeline-band" key={band.label}>
-            <div className="response-timeline-marker">
-              <span className="response-timeline-dot" aria-hidden="true" />
-              <strong>{band.label}</strong>
-              <span>{band.items.length}개</span>
-            </div>
-            <div className="response-timeline-tasks">
-              {band.items.map((item, index) => {
-                order += 1;
-                return (
-                  <article className="response-timeline-task" key={`${band.label}-${index}`}>
-                    <span className="response-task-number">{String(order).padStart(2, "0")}</span>
-                    <div className="response-task-copy">
-                      <strong>{item.task}</strong>
-                      <small>{item.owner ? `담당 · ${item.owner}` : "담당 부서 확인 필요"}</small>
-                    </div>
-                    <span className="response-task-due">{deadlineLabel(item.deadline_hours)}</span>
-                  </article>
-                );
-              })}
+            <div className="response-timeline-rail" aria-hidden="true"><span className="response-timeline-dot" /></div>
+            <div className="response-timeline-body">
+              <div className="response-timeline-marker">
+                <strong>{band.label}</strong>
+                <span>{band.items.length}개</span>
+              </div>
+              <div className="response-timeline-tasks">
+                {band.items.map((item, index) => {
+                  order += 1;
+                  return (
+                    <article className="response-timeline-task" key={`${band.label}-${index}`}>
+                      <span className="response-task-number">{String(order).padStart(2, "0")}</span>
+                      <div className="response-task-copy">
+                        <strong>{item.task}</strong>
+                        <small>{item.owner ? `담당 · ${item.owner}` : "담당 부서 확인 필요"}</small>
+                      </div>
+                      <span className="response-task-due">{deadlineLabel(item.deadline_hours)}</span>
+                    </article>
+                  );
+                })}
+              </div>
             </div>
           </li>
         ))}
@@ -290,20 +302,24 @@ function StrategySection({ report }) {
           const bullets = toBullets(strategy.detail);
           return (
             <article key={`${strategy.title ?? "strategy"}-${index}`}>
-              <div className="response-strategy-meta">
-                <span>{STRATEGY_LABELS[strategy.strategy_type] ?? humanize(strategy.strategy_type)}</span>
-                {strategy.target_stakeholder && <small>대상 · {strategy.target_stakeholder}</small>}
+              <div className="response-strategy-head">
+                <div className="response-strategy-title-row">
+                  <h5>{strategy.title}</h5>
+                  <span className="response-strategy-type-tag">{STRATEGY_LABELS[strategy.strategy_type] ?? humanize(strategy.strategy_type)}</span>
+                </div>
+                {strategy.target_stakeholder && <small className="response-strategy-target">대상 · {strategy.target_stakeholder}</small>}
               </div>
-              <h5>{strategy.title}</h5>
-              {bullets.length > 1 ? (
-                <ul className="response-strategy-points">
-                  {bullets.map((sentence, order) => (
-                    <li key={`strategy-${index}-${order}`}>{sentence}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>{strategy.detail}</p>
-              )}
+              <div className="response-strategy-body">
+                {bullets.length > 1 ? (
+                  <ul className="response-strategy-points">
+                    {bullets.map((sentence, order) => (
+                      <li key={`strategy-${index}-${order}`}>{sentence}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{strategy.detail}</p>
+                )}
+              </div>
             </article>
           );
         })}
@@ -331,7 +347,7 @@ function FollowUpSection({ report }) {
         {report?.limitations && (
           <article className="response-caution-card">
             <h5>사용 전 확인</h5>
-            <p>{report.limitations}</p>
+            <BulletText text={report.limitations} />
           </article>
         )}
       </div>
@@ -364,7 +380,7 @@ function AppendixSection({ content, report }) {
     <>
       {basis && (
         <FoldSection title="판단 근거 (수치)">
-          <p>{basis}</p>
+          <BulletText text={basis} />
         </FoldSection>
       )}
 

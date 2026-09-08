@@ -1,6 +1,6 @@
 // 두 컴포넌트를 메인 렌더러에서 가져다 쓴다. 같은 것을 두 번 만들면 한쪽만 고쳐졌을 때
 // 담당자가 두 화면을 다른 상황으로 읽는다 - NoEvidenceNotice를 공유하는 이유와 같다.
-import { FoldSection, NoEvidenceNotice } from "./MainResponseContent";
+import { BulletText, FoldSection, NoEvidenceNotice } from "./MainResponseContent";
 
 const DIRECTION_PRESENTATION = {
   부정적_파급: { label: "부정 영향 가능", tone: "urgent" },
@@ -213,12 +213,12 @@ function FollowUpSection({ impact, recommendation }) {
         )}
         {recommendation?.realert_condition && (
           <FoldSection title="다시 알릴 기준">
-            <p>{recommendation.realert_condition}</p>
+            <BulletText text={recommendation.realert_condition} />
           </FoldSection>
         )}
         {recommendation?.limitations && (
           <FoldSection title="사용 전 확인">
-            <p>{recommendation.limitations}</p>
+            <BulletText text={recommendation.limitations} />
           </FoldSection>
         )}
       </div>
@@ -267,7 +267,7 @@ export default function PeerRecommendationContent({ content }) {
           {recommendation.source_event && (
             <article>
               <h5>동종 기업에서 일어난 일</h5>
-              <p>{recommendation.source_event}</p>
+              <BulletText text={recommendation.source_event} />
             </article>
           )}
           {recommendation.headline && (
