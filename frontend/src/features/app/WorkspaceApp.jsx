@@ -196,12 +196,16 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     });
   }, [goTo]);
 
+  // stage를 주면 그 단계로 바로 연다(예: 브리핑에서 "대응 화면에서 보기").
+  // 주지 않으면 예전대로 사건이 있으면 위험판정, 없으면 수집 화면이다.
   const openAnalysisStatistics = useCallback((companyId, riskEventId = null, options) => {
+    const { stage, ...navOptions } = options ?? {};
     const params = new URLSearchParams();
     if (companyId) params.set("companyId", String(companyId));
     if (riskEventId) params.set("eventId", String(riskEventId));
     const query = params.size ? `?${params}` : "";
-    goTo(`/analysis/${riskEventId ? "risk" : "collection"}${query}`, options);
+    const target = stage ?? (riskEventId ? "risk" : "collection");
+    goTo(`/analysis/${target}${query}`, navOptions);
   }, [goTo]);
 
   const requestLogout = async () => {
