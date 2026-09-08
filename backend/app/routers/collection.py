@@ -1079,29 +1079,37 @@ def list_risk_judgments_page(
             eligible_stories.c.last_evidence_at >= cutoff
         )
 
+    # 요약과 목록이 같은 기준으로 세게 맞춘다. _date_filters는 bounds(명시적 날짜 범위)가
+    # 있을 때만 조건을 만들어서, 화면이 days("최근 7일")로 조회하면 요약은 전체 기간을
+    # 세고 아래 목록(list_risk_events_page)은 days를 반영해 서로 다른 숫자가 나왔다
+    # (실측 쿠팡: 요약 13건 vs 목록 0건). days일 때도 목록과 같은 시각 기준을 건다.
+    risk_time_filters = _date_filters(_risk_event_time(view), bounds)
+    if bounds is None and isinstance(days, int):
+        _, risk_cutoff = seoul_period_start(days)
+        risk_time_filters = (_risk_event_time(view) >= risk_cutoff,)
+
     active_count = db.scalar(
         select(func.count(RiskEvent.id)).where(
             *event_filters,
-            *_date_filters(_risk_event_time(view), bounds),
+            *risk_time_filters,
             RiskEvent.status.in_(active_statuses),
         )
     ) or 0
     history_count = db.scalar(
         select(func.count(RiskEvent.id)).where(
             *event_filters,
-            *_date_filters(_risk_event_time(view), bounds),
+            *risk_time_filters,
             RiskEvent.status == "closed",
         )
-    ) or 0
-    non_risk_count = db.scalar(
-        select(func.count()).select_from(all_non_risk_story_ids.subquery())
     ) or 0
     filtered_non_risk_count = db.scalar(
         select(func.count()).select_from(non_risk_story_ids.subquery())
     ) or 0
     summary = RiskJudgmentSummaryRead(
         risk=active_count + history_count,
-        non_risk=filtered_non_risk_count if bounds else non_risk_count,
+        # non_risk_story_ids는 bounds와 days를 모두 반영해 걸러 둔 것이라 그대로 쓴다.
+        # 예전에는 days일 때 걸러지지 않은 수를 골라 위험 건수와 기준이 어긋났다.
+        non_risk=filtered_non_risk_count,
         active=active_count,
         history=history_count,
     )
