@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
+import { useSharedResource } from "../../shared/useSharedResource";
 import { PanelTitle } from "../../shared/components";
 import { formatNumber } from "../../shared/presentation";
 import { RecentCollectionDate, RiskDetail, RiskEventListContent } from "../analysis/AnalysisStatisticsPage";
@@ -25,12 +26,10 @@ const positiveInteger = (value, fallback = 1) => {
 export default function RiskManagementPage({ canReview = false, initialCompanyId = null, initialRiskEventId = null, initialPeriodDays = "all", embedded = false, dateRange = null }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [companies, setCompanies] = useState([]);
-  const [loadedPageData, setPageData] = useState(EMPTY_PAGE_DATA);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data: companies = [], error: companiesError } = useSharedResource(
+    "/companies", () => api.get("/companies").then((response) => response.data),
+  );
   const [listOpen, setListOpen] = useState(false);
-  const loadSequence = useRef(0);
   const dropdownRef = useRef(null);
 
   const selectedCompanyId = searchParams.get("companyId") || (initialCompanyId ? String(initialCompanyId) : "");
@@ -42,10 +41,6 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const endDate = dateRange?.end ?? "";
   const hasDateRange = Boolean(startDate && endDate);
   const queryKey = JSON.stringify([selectedCompanyId, eventView, hasDateRange ? [startDate, endDate] : period]);
-  const currentQueryKey = useRef(queryKey);
-  currentQueryKey.current = queryKey;
-  const hasCurrentData = loadedPageData.queryKey === queryKey;
-  const pageData = hasCurrentData ? loadedPageData : EMPTY_PAGE_DATA;
   const hasRiskSelectionQuery = searchParams.has("eventId") || searchParams.has("riskEventId");
   const selectedRiskId = positiveInteger(
     searchParams.get("eventId") ?? searchParams.get("riskEventId") ?? initialRiskEventId,
@@ -69,33 +64,13 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   }, [setSearchParams]);
 
   useEffect(() => {
-    let active = true;
-    api.get("/companies")
-      .then((response) => {
-        if (!active) return;
-        const nextCompanies = response.data ?? [];
-        setCompanies(nextCompanies);
-        const requested = nextCompanies.find((company) => String(company.id) === selectedCompanyId);
-        const fallback = nextCompanies.find((company) => company.company_role === "main") ?? nextCompanies[0];
-        if (!requested && fallback) updateQuery({ companyId: fallback.id }, { resetPage: true, clearSelection: true });
-      })
-      .catch((requestError) => active && setError(getErrorMessage(requestError)));
-    return () => { active = false; };
-  }, [selectedCompanyId, updateQuery]);
+    const requested = companies.find((company) => String(company.id) === selectedCompanyId);
+    const fallback = companies.find((company) => company.company_role === "main") ?? companies[0];
+    if (!requested && fallback) updateQuery({ companyId: fallback.id }, { resetPage: true, clearSelection: true });
+  }, [companies, selectedCompanyId, updateQuery]);
 
-  const loadRisks = useCallback(async ({ silent = false } = {}) => {
-    if (queryKey !== currentQueryKey.current) return;
-    if (!selectedCompanyId) {
-      setPageData({ ...EMPTY_PAGE_DATA, queryKey });
-      setLoading(false);
-      return;
-    }
-    const requestId = ++loadSequence.current;
-    if (!silent) {
-      setLoading(true);
-      setError(null);
-      setPageData((current) => current.queryKey === queryKey ? current : { ...EMPTY_PAGE_DATA, queryKey });
-    }
+  const { data: loadedPageData, loading, error: risksError, refresh } = useSharedResource(`risk-management:${queryKey}`, async () => {
+    if (!selectedCompanyId) return { ...EMPTY_PAGE_DATA, queryKey };
     const params = new URLSearchParams({
       view: eventView === "needs_response" ? "active" : "all",
       page: "1",
@@ -106,45 +81,31 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
       params.set("start_date", startDate);
       params.set("end_date", endDate);
     } else if (period !== "all") params.set("days", period);
-    try {
-      const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
-      if (requestId !== loadSequence.current || queryKey !== currentQueryKey.current) return;
-      const data = response.data ?? {};
-      const total = Number(data.total) || 0;
-      const items = [...(data.items ?? [])];
-      if (hasDateRange) {
-        const totalPages = Math.ceil(total / PAGE_SIZE);
-        for (let page = 2; page <= totalPages; page += 1) {
-          params.set("page", String(page));
-          const nextResponse = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
-          if (requestId !== loadSequence.current || queryKey !== currentQueryKey.current) return;
-          const nextItems = nextResponse.data?.items ?? [];
-          items.push(...nextItems);
-          if (!nextItems.length) break;
-        }
+    const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
+    const data = response.data ?? {};
+    const total = Number(data.total) || 0;
+    const items = [...(data.items ?? [])];
+    if (hasDateRange) {
+      const totalPages = Math.ceil(total / PAGE_SIZE);
+      for (let page = 2; page <= totalPages; page += 1) {
+        params.set("page", String(page));
+        const nextResponse = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
+        const nextItems = nextResponse.data?.items ?? [];
+        items.push(...nextItems);
+        if (!nextItems.length) break;
       }
-      setPageData({
-        queryKey,
-        items: [...new Map(items.map((risk) => [risk.id, risk])).values()],
-        total,
-        summary: data.summary ?? EMPTY_PAGE_DATA.summary,
-      });
-      setError(null);
-    } catch (requestError) {
-      if (requestId === loadSequence.current && queryKey === currentQueryKey.current) setError(getErrorMessage(requestError));
-    } finally {
-      if (requestId === loadSequence.current && queryKey === currentQueryKey.current) setLoading(false);
     }
-  }, [endDate, eventView, hasDateRange, period, queryKey, selectedCompanyId, startDate]);
-
-  useEffect(() => {
-    loadRisks();
-    const timer = window.setInterval(() => loadRisks({ silent: true }), 30000);
-    return () => {
-      window.clearInterval(timer);
-      loadSequence.current += 1;
+    return {
+      queryKey,
+      items: [...new Map(items.map((risk) => [risk.id, risk])).values()],
+      total,
+      summary: data.summary ?? EMPTY_PAGE_DATA.summary,
     };
-  }, [loadRisks]);
+  });
+  const error = companiesError || risksError ? getErrorMessage(companiesError || risksError) : null;
+  const hasCurrentData = loadedPageData?.queryKey === queryKey;
+  const pageData = hasCurrentData ? loadedPageData : EMPTY_PAGE_DATA;
+  const loadRisks = useCallback(() => refresh().catch(() => undefined), [refresh]);
 
   useEffect(() => {
     setListOpen(false);
@@ -224,7 +185,7 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
       </section>
       <section className="panel pipeline-panel pipeline-risk-evidence">
         <div className="pipeline-panel-heading pipeline-risk-detail-heading">
-          <PanelTitle kicker="RESPONSE PLAN" title={isCompetitor ? "나의 기업에 미칠 영향" : "대응 방안"} />
+          <PanelTitle title={isCompetitor ? "나의 기업에 미칠 영향" : "대응 방안"} />
           {selectedRisk && <button className="secondary-button" type="button" onClick={openEvidence}>근거 보기</button>}
         </div>
         <RiskDetail key={`${queryKey}:${selectedRisk?.id ?? "none"}`} risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} />

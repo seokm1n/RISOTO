@@ -1,4 +1,5 @@
 import axios from "axios";
+import { invalidateResourceCache } from "./shared/resourceCache";
 
 // 모든 화면이 공유하는 API 기준 주소, 제한 시간과 JSON 헤더를 중앙에서 설정한다.
 export const api = axios.create({
@@ -23,7 +24,14 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = (response.config.method ?? "get").toLowerCase();
+    if (["post", "put", "patch", "delete"].includes(method)
+      && !/^\/(auth|notifications)(\/|$)/.test(response.config.url ?? "")) {
+      invalidateResourceCache();
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("risoto:unauthorized"));

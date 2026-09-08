@@ -1,3 +1,4 @@
+import { IconBadge } from "./Icon";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -12,7 +13,7 @@ export const formatIncidentError = (value) => Object.entries(SOURCE_LABELS).redu
   (message, [source, label]) => message.replace(new RegExp(`^${source}:`, "i"), `${label}:`), String(value ?? ""),
 );
 
-export function AppNoticeDialog({ kicker, title, children, confirmLabel = "확인", cancelLabel = null, onConfirm, onClose, busy = false, tone = "default" }) {
+export function AppNoticeDialog({ title, children, confirmLabel = "확인", cancelLabel = null, onConfirm, onClose, busy = false, tone = "default" }) {
   const dismiss = onClose ?? onConfirm;
   const cancelRef = useRef(null);
   const confirmRef = useRef(null);
@@ -46,8 +47,8 @@ export function AppNoticeDialog({ kicker, title, children, confirmLabel = "확�
   return <div className="app-notice-layer">
     <button className="company-edit-backdrop" type="button" onClick={dismiss} aria-label={`${title} 안내창 닫기`} disabled={busy} tabIndex={-1} />
     <section className={`app-notice-dialog ${tone}`} role="dialog" aria-modal="true" aria-label={title}>
-      <div className="app-notice-mark" aria-hidden="true"><span>{tone === "danger" ? "!" : "i"}</span></div>
-      <span className="eyebrow">{kicker}</span>
+      <IconBadge name={tone === "danger" ? "risk" : "info"} className="app-notice-mark" />
+
       <h2>{title}</h2>
       <div className="app-notice-copy">{children}</div>
       <div className="app-notice-actions">
@@ -82,7 +83,6 @@ export function useAppConfirm() {
   }, []);
 
   const confirmationDialog = options ? <AppNoticeDialog
-    kicker={options.kicker ?? "PLEASE CONFIRM"}
     title={options.title}
     confirmLabel={options.confirmLabel ?? "확인"}
     cancelLabel={options.cancelLabel ?? "취소"}
@@ -110,8 +110,8 @@ export function IncidentList({ incidents = [], companies = [], onAcknowledge }) 
   </article>)}</div>;
 }
 
-export function Metric({ label, value, tone = "", small = false }) {
-  return <article className={`metric ${tone}`}><span>{label}</span><strong className={small ? "metric-date" : ""}>{small ? value : formatNumber(value)}</strong></article>;
+export function Metric({ label, value, tone = "", small = false, icon = "analysis" }) {
+  return <article className={`metric ${tone}`}><div className="metric-label-row"><span>{label}</span><IconBadge name={tone === "danger" ? "risk" : icon} /></div><strong className={small ? "metric-date" : ""}>{small ? value : formatNumber(value)}</strong></article>;
 }
 
 // 전체 항목 수를 기준으로 이전·다음 페이지 이동 UI를 표시한다.
@@ -122,6 +122,6 @@ export function Pagination({ page, pageSize, total, onChange }) {
 }
 
 // 패널의 보조 문구와 제목을 공통 레이아웃으로 표시한다.
-export function PanelTitle({ kicker, title, description }) {
-  return <div className="panel-title">{kicker && <span className="eyebrow">{kicker}</span>}<h2>{title}</h2>{description && <p className="panel-title-description">{description}</p>}</div>;
+export function PanelTitle({ title, description, icon, kicker }) {
+  return <div className="panel-title"><div className={`panel-title-band${icon ? " panel-title-with-icon" : ""}`}>{icon && <IconBadge name={icon} />}<h2>{title}</h2></div>{kicker && <p className="panel-title-context">{kicker}</p>}{description && <p className="panel-title-description">{description}</p>}</div>;
 }

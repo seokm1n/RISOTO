@@ -146,11 +146,6 @@ function ScenarioSelector({ scenarios, active, onChange, brief }) {
                 humanize(scenario.stance) ||
                 `${index + 1}번째 대응안`}
             </strong>
-            {/* 세 카드를 나란히 놓는 이유는 비교하기 위해서다. 제목만으로는 무엇이
-                다른지 알 수 없어 한 줄짜리 대비를 붙인다. */}
-            {scenario.report?.scenario_contrast && (
-              <small>{scenario.report.scenario_contrast}</small>
-            )}
             </button>
           ))}
         </div>

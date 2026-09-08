@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
+import { useSharedResource } from "../../shared/useSharedResource";
 import { Pagination, PanelTitle, useAppConfirm } from "../../shared/components";
 import RiskOverviewTrendChart from "../../shared/RiskOverviewTrendChart";
 import MainResponseContent from "./MainResponseContent";
@@ -25,7 +26,7 @@ function FeatureWindowSummary({ window: featureWindow }) {
   if (!featureWindow) return <p className="panel-empty">아직 생성된 15분 특징 구간이 없습니다.</p>;
   const endTime = new Date(featureWindow.window_end).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }).replace(/^(오전|오후)\s*/, "");
   return <div className="feature-window-summary">
-    <div className="feature-window-head"><div><span className="eyebrow">LATEST 15-MINUTE COLLECTION</span><h2>최근 15분 수집</h2><strong>{formatDate(featureWindow.window_start)} – {endTime}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span></div></div>
+    <div className="feature-window-head"><div><h2>최근 15분 수집</h2><strong>{formatDate(featureWindow.window_start)} – {endTime}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span></div></div>
     <div className="window-metrics"><div><span>기사</span><strong>{formatNumber(featureWindow.article_count)}<small className="count-unit">건</small></strong></div><div><span>스토리</span><strong>{formatNumber(featureWindow.story_count)}<small className="count-unit">건</small></strong></div><div><span>확산</span><strong>{formatNumber(featureWindow.amplification_count)}<small className="count-unit">건</small></strong></div><div><span>언론사</span><strong>{formatNumber(featureWindow.publisher_count)}<small className="count-unit">건</small></strong></div><div><span>위험도</span><strong>{formatRiskProbability(featureWindow.risk_probability)}</strong></div></div>
     {featureWindow.data_quality === "unavailable" && <p className="window-warning">수집 불가 구간이므로 위험도를 계산하지 않았습니다.</p>}
   </div>;
@@ -216,24 +217,17 @@ function ResponseDraftContent({ draft, riskTitle, risk }) {
 // 위험 이벤트의 유형과 관리 승인이 필요한 대응 초안을 표시한다.
 export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const riskId = risk?.id ?? null;
-  const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
   const [generationStatus, setGenerationStatus] = useState(risk?.response_generation_status ?? "idle");
-  const loadDrafts = useCallback(async () => {
-    if (!riskId) { setDrafts([]); return; }
-    try {
-      const response = await api.get(`/risk-events/${riskId}/response-drafts`);
-      const nextDrafts = response.data ?? [];
-      setDrafts(nextDrafts);
-    } catch (requestError) { setError(getErrorMessage(requestError)); }
-  }, [riskId]);
-  useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
+  const { data: drafts = [], error: draftsError, refresh: refreshDrafts } = useSharedResource(
+    `response-drafts:${riskId}`,
+    () => riskId ? api.get(`/risk-events/${riskId}/response-drafts`).then((response) => response.data ?? []) : Promise.resolve([]),
+    { intervalMs: ["pending", "generating"].includes(generationStatus) ? 5000 : 30000 },
+  );
+  const loadDrafts = () => refreshDrafts().catch((requestError) => setError(getErrorMessage(requestError)));
+  useEffect(() => { setNotes(""); setError(null); }, [riskId]);
   useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
-  useEffect(() => {
-    if (!riskId || !["pending", "generating"].includes(generationStatus)) return undefined;
-    const timer = window.setInterval(loadDrafts, 5000);
-    return () => window.clearInterval(timer);
-  }, [generationStatus, loadDrafts, riskId]);
   if (!risk) return <p className="panel-empty">확인할 위험 이벤트를 선택해 주세요.</p>;
 
   const v3Draft = drafts.find((draft) => draft.schema_version === 3);
@@ -275,47 +269,36 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
       </div>
     </div>
     {generationStatus === "failed" && risk.response_generation_error && <div className="notice error">{risk.response_generation_error}</div>}
-    {error && <div className="notice error">{error}</div>}
+    {(error || draftsError) && <div className="notice error">{error || getErrorMessage(draftsError)}</div>}
     {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} risk={risk} />{reviewFooter}</>}
   </div>;
 }
 
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
 export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister = false, onOpenCollectedArticles, onOpenRiskManagement, onMonitoringChanged }) {
-  const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
-  const [data, setData] = useState(null); const [error, setError] = useState(null);
+  const { data: companies = [], error: companiesError } = useSharedResource(
+    "/companies", () => api.get("/companies").then((response) => response.data),
+  );
+  const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
+  const [actionError, setError] = useState(null);
   const [changingState, setChangingState] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const refreshSequence = useRef(0);
   const { confirm, confirmationDialog } = useAppConfirm();
-  // 선택 기업의 모니터링 수치와 추세 데이터를 병렬로 갱신한다.
-  const refresh = useCallback(async () => {
-    const requestId = ++refreshSequence.current;
-    try {
-      const companyResponse = await api.get("/companies"); const nextCompanies = companyResponse.data;
-      if (requestId !== refreshSequence.current) return;
-      setCompanies(nextCompanies);
-      const requestedCompany = nextCompanies.find((company) => String(company.id) === String(selectedId));
-      const mainCompany = nextCompanies.find((company) => company.company_role === "main");
-      const id = requestedCompany?.id ?? mainCompany?.id ?? nextCompanies[0]?.id;
-      if (!id) { setData(null); return; }
-      if (String(id) !== String(selectedId)) {
-        setSelectedId(String(id));
-      }
-      const featureWindowLimit = STATISTICS_PERIOD_DAYS * 96;
-      const [monitoring, windows, dailySummaries] = await Promise.all([
-        api.get(`/companies/${id}/monitoring`), api.get(`/companies/${id}/feature-windows?limit=${featureWindowLimit}`),
-        api.get(`/companies/${id}/daily-summaries?days=${STATISTICS_PERIOD_DAYS}`),
-      ]);
-      if (requestId !== refreshSequence.current) return;
-      setData({ monitoring: monitoring.data, windows: windows.data, dailySummaries: dailySummaries.data }); setError(null);
-    } catch (requestError) { if (requestId === refreshSequence.current) setError(getErrorMessage(requestError)); }
-  }, [selectedId]);
-  // 수집 주기보다 빠른 30초 간격으로 서버 현황을 다시 조회한다.
-  useEffect(() => { refresh(); const timer = window.setInterval(refresh, 30000); return () => { window.clearInterval(timer); refreshSequence.current += 1; }; }, [refresh]);
+  const selected = companies.find((company) => String(company.id) === selectedId)
+    ?? companies.find((company) => company.company_role === "main") ?? companies[0];
+  const id = selected?.id;
+  useEffect(() => { if (id) setSelectedId(String(id)); }, [id]);
+  const { data, error: dataError, refresh } = useSharedResource(`statistics:${id}:${STATISTICS_PERIOD_DAYS}`, async () => {
+    if (!id) return null;
+    const [monitoring, windows, dailySummaries] = await Promise.all([
+      api.get(`/companies/${id}/monitoring`), api.get(`/companies/${id}/feature-windows?limit=${STATISTICS_PERIOD_DAYS * 96}`),
+      api.get(`/companies/${id}/daily-summaries?days=${STATISTICS_PERIOD_DAYS}`),
+    ]);
+    return { monitoring: monitoring.data, windows: windows.data, dailySummaries: dailySummaries.data };
+  });
+  const error = actionError || (companiesError || dataError ? getErrorMessage(companiesError || dataError) : null);
   // 서버 요청 없이 카운트다운 표시만 매초 다시 계산하도록 현재 시각을 갱신한다.
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  const selected = companies.find((company) => String(company.id) === String(selectedId));
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   const latestWindow = data?.windows?.[0] ?? null;
@@ -357,7 +340,7 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
     <div className="monitor-toolbar"><div className="analysis-toolbar-filters"><label><span className="analysis-field-label">분석 기업</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label></div><div className="analysis-toolbar-actions">{selected && canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}</div></div>
     {error && <div className="notice error">{error}</div>}
     {!selected ? <p className="empty-state">먼저 기업 등록 페이지에서 모니터링할 기업을 등록해 주세요.</p> : data && <>
-      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 최근 7일 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle kicker="COLLECTED ARTICLES" title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle kicker="RISK EVENTS" title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
+      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 최근 7일 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
       <FeatureWindowSummary window={latestWindow} />
       <section className="panel statistics-overview-trend">
         <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 기사 2건 이상 스토리 기준`} title="위험·부정 스토리 비율 추이" />
