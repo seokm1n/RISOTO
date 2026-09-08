@@ -2266,8 +2266,10 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 
 .response-plan-content { display: grid; gap: 18px; }
 /* 대응전략 생성이 메인, 실행 계획 타임라인은 옆에 붙는 2분할 레이아웃. */
-.response-plan-columns { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(260px,1fr); align-items: start; gap: 18px; margin-top: 18px; }
-.response-plan-main, .response-plan-side { display: grid; min-width: 0; gap: 18px; }
+.response-plan-columns { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(260px,1fr); align-items: stretch; gap: 18px; }
+/* 두 칸의 높이를 같게 맞춘다. 접이가 열리고 닫혀 내용 길이가 바뀌어도 격자가
+   같은 높이를 잡고, 내용은 위에서부터 쌓인다. */
+.response-plan-main, .response-plan-side { display: grid; align-content: start; min-width: 0; gap: 9px; height: 100%; }
 .response-strategy-main .response-section-heading { border-bottom-color: rgba(178,113,76,.28); }
 .response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel) {
   display: grid;
@@ -2594,19 +2596,106 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 
 .response-operations-view .response-empty-note { margin: 0; color: #8a7d74; font-size: .8rem; }
 
-/* 왼쪽 대응안 목록 / 오른쪽 선택한 안의 방향 */
-.response-option-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .78fr); align-items: start; gap: 12px; }
-.response-option-split > .response-option-tabs { grid-template-columns: 1fr !important; }
+
+/* AI 리스크 브리핑 - 위험 사건 한 줄, 펼치면 대응 요약 */
+.briefing-risk-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+.briefing-risk-card > summary::-webkit-details-marker { display: none; }
+.briefing-risk-card > summary > strong { min-width: 0; flex: 1 1 auto; }
+.briefing-risk-card > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #a4917f;
+  border-bottom: 2px solid #a4917f;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 140ms ease;
+}
+.briefing-risk-card[open] > summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.briefing-risk-response { display: grid; gap: 6px; margin-top: 11px; padding-top: 11px; border-top: 1px solid rgba(112, 91, 76, .16); }
+.briefing-response-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+.briefing-response-points > li { color: #4f453f; font-size: var(--text-small); font-weight: 700; }
+.briefing-response-foot { display: flex; justify-content: flex-end; }
+.briefing-response-more {
+  justify-self: start;
+  border: 1px solid #cbc8bd;
+  border-radius: 999px;
+  background: transparent;
+  padding: 5px 12px;
+  color: #8a5a3c;
+  font-size: var(--text-caption);
+  font-weight: 800;
+  cursor: pointer;
+}
+.briefing-response-more:hover { border-color: #a84f32; color: #a84f32; }
+
+/* 대응 방향 선택: 왼쪽에 안 목록, 오른쪽에 고른 안의 권고. 권고가 1~2문장이라
+   오른쪽을 넓게 잡는다. */
+/* 대응 방향 선택: 왼쪽 안 목록, 오른쪽 권고. 격자 자동 배치가 상황에 따라 어긋나서
+   flex로 고정한다 - nowrap이면 두 요소는 어떤 경우에도 같은 줄에 남는다. */
+.response-option-split {
+  display: flex;
+  flex-wrap: nowrap;
+  /* stretch라야 두 영역의 아래끝이 맞는다. 어느 쪽이 길든 다른 쪽이 따라 늘어난다. */
+  align-items: stretch;
+  gap: 14px;
+  min-width: 0;
+}
+.response-option-split > .response-option-tabs {
+  flex: 0 0 34%;
+  min-width: 0;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  /* 카드가 둘이든 셋이든 남는 높이를 똑같이 나눠 갖는다. 위에 몰아 두면 왼쪽만
+     짧게 끝나 오른쪽 권고 카드와 아래끝이 어긋난다. */
+  grid-auto-rows: 1fr;
+  align-content: stretch;
+}
+.response-option-split > article.recommended { flex: 1 1 0; min-width: 0; align-content: start; }
 .response-option-split > article.recommended {
   display: grid;
   gap: 6px;
-  padding: 13px 15px;
+  padding: 14px 16px;
   border: 1px solid var(--divider-strong);
   border-left: 4px solid #6d9279;
   border-radius: 12px;
   background: #e4e9dc;
 }
-.response-option-split > article.recommended p { margin: 0; color: #425546; font-size: .9rem; font-weight: 900; line-height: 1.5; }
+.response-option-split > article.recommended h5 { margin: 0; color: #46614f; font-size: .78rem; font-weight: 900; }
+.response-option-split > article.recommended p { margin: 0; color: #3f5544; font-size: .88rem; font-weight: 700; line-height: 1.65; }
+
+/* 대응 상세 - 한 번 펼치면 대응전략·핵심 상황·실행 계획이 함께 나온다. */
+.response-detail-fold { border-top: 1px solid var(--divider-strong); padding-top: 14px; }
+.response-detail-fold > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 9px;
+  color: #765343;
+  font-size: .86rem;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+.response-detail-fold > summary::-webkit-details-marker { display: none; }
+.response-detail-fold > summary::after { content: "펼치기"; margin-left: auto; color: #9c5a3d; font-size: .74rem; font-weight: 900; }
+.response-detail-fold[open] > summary::after { content: "접기"; }
+.response-detail-fold > summary > span { color: #8a7d74; font-size: .76rem; font-weight: 700; }
+.response-detail-fold[open] > .response-plan-columns { margin-top: 14px; }
 
 /* 한계 고지 - 접지 않는다 */
 .response-limitations {
@@ -2714,7 +2803,6 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   }
   .response-task-due { grid-column: 2; justify-self: start; }
   .response-summary-rows > div { grid-template-columns: 1fr; }
-  .response-option-split { grid-template-columns: 1fr; }
   .response-section-heading { align-items: flex-start !important; }
 }
 
@@ -2750,6 +2838,11 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 }
 
 .briefing-ratio-note, .pipeline-cohort-note { margin: 10px 0; color: #746a64; font-size: var(--text-caption); line-height: 1.6; }
+
+@media (max-width: 860px) {
+  .response-option-split { flex-wrap: wrap; }
+  .response-option-split > .response-option-tabs { flex-basis: 100%; }
+}
 
 /* ── 동종 기업 카드 글자 위계 ------------------------------------------------
    브라우저 계산값으로 재 보니(파일만 읽으면 어느 규칙이 이기는지 알 수 없다) 카드 안

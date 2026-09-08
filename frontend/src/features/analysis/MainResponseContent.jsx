@@ -180,10 +180,13 @@ const TIER_TONES = { T1_관찰: "watch", T2_주시: "caution", T3_긴급: "urgen
 function RiskSummaryHeader({ content, risk, scenario }) {
   if (!content.risk_type_label && !content.tier) return null;
   const report = scenario?.report ?? {};
+  // 한 문장만 뽑으면 무슨 일인지 알 수 없다. 라벨을 떼고 앞의 두세 항목을 이어 붙여
+  // 담당자가 이 카드만 읽고도 사안을 파악할 수 있게 한다.
   const rows = summaryRows(report.summary_points ?? []);
-  const headline = rows[0]?.text
-    || report.risk_assessment?.primary_risks?.[0]
-    || "생성된 대응안의 상황 요약을 확인해 주세요.";
+  const headline = rows.length
+    ? rows.slice(0, 3).map((row) => row.text.replace(/[.\s]+$/, "")).join(". ") + "."
+    : report.risk_assessment?.primary_risks?.[0]
+      || "생성된 대응안의 상황 요약을 확인해 주세요.";
   const tone = TIER_TONES[content.tier] ?? "caution";
   const tierLabel = TIER_LABELS[content.tier] ?? humanize(content.tier);
   const facts = [
@@ -214,18 +217,22 @@ function RiskSummaryHeader({ content, risk, scenario }) {
   );
 }
 
-// 선택한 안이 무엇을 하자는 것인지 한 줄로 먼저 보여 준다. 대응 방향 선택 탭과 같은
-// 행에 놓아, 고른 결과가 어느 카드인지 눈으로 이어지게 한다.
-function BriefCard({ scenario }) {
+// 고른 안이 무엇을 하자는 것인지 오른쪽에 붙여 준다. 동종 경로 화면의 "현재 권고"와
+// 같은 자리·같은 카드라, 두 경로를 오가는 담당자가 같은 것으로 읽는다.
+function RecommendationCard({ scenario }) {
   const report = scenario?.report ?? {};
+  // 1~2문장짜리 권고를 우선 쓴다. 그 필드가 없던 시절의 초안은 전략 제목·관점 이름으로
+  // 내려간다(짧지만 빈 카드보다는 낫다).
   const headline =
+    report.scenario_recommendation ||
+    (Array.isArray(report.strategies) && report.strategies[0]?.detail) ||
     report.scenario_headline ||
     STANCE_LABELS[scenario?.stance] ||
     humanize(scenario?.stance);
   if (!headline) return null;
   return (
     <article className="recommended">
-      <h5>이 안의 방향</h5>
+      <h5>현재 권고</h5>
       <p>{headline}</p>
     </article>
   );
@@ -249,7 +256,10 @@ function SituationSection({ scenario }) {
   }
 
   return (
-    <section className="response-overview-panel bare">
+    <section className="response-overview-panel">
+      <header className="response-section-heading">
+        <div><h4>핵심 상황과 우선 확인할 위험</h4></div>
+      </header>
       <div className="response-overview-grid">
         {rows.length > 0 && (
           <article className="response-summary-card">
@@ -304,9 +314,7 @@ function PlanSection({ report }) {
   return (
     <section className="response-workboard response-timeline-board">
       <header className="response-section-heading">
-        <div>
-          <h4>실행 계획</h4>
-        </div>
+        <div><h4>실행 계획</h4></div>
       </header>
       {bands.length === 0 && (
         <p className="response-empty-note">생성된 실행 과제가 없습니다.</p>
@@ -348,10 +356,7 @@ function StrategySection({ report }) {
   return (
     <section className="response-workboard response-strategy-main">
       <header className="response-section-heading">
-        <div>
-          <span>대응전략 생성</span>
-          <h4>가능한 대응 방향 {strategies.length}가지</h4>
-        </div>
+        <div><h4>대응전략</h4></div>
       </header>
       <div className="response-strategy-grid">
         {strategies.map((strategy, index) => {
@@ -622,24 +627,30 @@ export default function MainResponseContent({ content, risk }) {
         scenarios={scenarios}
         active={active}
         onChange={setActive}
-        brief={current ? <BriefCard scenario={current} /> : null}
+        brief={current ? <RecommendationCard scenario={current} /> : null}
       />
 
       {current ? (
-        <div className="response-plan-columns" role="tabpanel">
-          <div className="response-plan-main">
-            <StrategySection report={report} />
-            <SituationSection scenario={current} />
-          </div>
-          <div className="response-plan-side">
-            <PlanSection report={report} />
-            <div className="response-fold-stack">
-              <FollowUpSection report={report} />
-              <AppendixSection content={content} report={report} />
-              <VerificationNotice verification={current.verification} />
+        <details className="response-detail-fold" role="tabpanel">
+          <summary>
+            <strong>대응 상세</strong>
+            <span>대응전략 · 핵심 상황 · 실행 계획</span>
+          </summary>
+          <div className="response-plan-columns">
+            <div className="response-plan-main">
+              <StrategySection report={report} />
+              <SituationSection scenario={current} />
+            </div>
+            <div className="response-plan-side">
+              <PlanSection report={report} />
+              <div className="response-fold-stack">
+                <FollowUpSection report={report} />
+                <AppendixSection content={content} report={report} />
+                <VerificationNotice verification={current.verification} />
+              </div>
             </div>
           </div>
-        </div>
+        </details>
       ) : (
         <p className="response-empty-state">생성된 대응안이 없습니다.</p>
       )}
