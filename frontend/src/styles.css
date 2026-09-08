@@ -1,4 +1,7 @@
 @import url("https://cdn.jsdelivr.net/gh/innks/NanumSquareRound@1c6bf0ee5e0e17e2552311aac31ba157dcb805e8/nanumsquareround.min.css");
+/* 캔바 시안 톤: 라틴은 Fraunces(제목)·DM Sans(본문), 한글은 같은 결의 고운바탕·본고딕으로 받는다.
+   Fraunces에는 한글 글리프가 없어 한글 제목이 기본 세리프로 떨어지므로 짝을 반드시 지정한다. */
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap");
 @import "tailwindcss";
 
 /* 전역 색상과 브라우저 기본 요소 */
@@ -1222,7 +1225,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .briefing-ratio-tabs button.active { border-color: #8e3e26; background: #8e3e26; color: #fffaf1; box-shadow: 0 2px 7px rgba(98,39,21,.22); }
 .briefing-ratio-tabs button:focus-visible { outline: 3px solid rgba(182,82,50,.2); outline-offset: 3px; }
 .briefing-ratio-content { display: grid; align-content: center; min-height: 0; }
-.briefing-ratio-card { display: grid; min-width: 0; grid-template-columns: minmax(124px,.82fr) minmax(140px,1.18fr); align-items: center; gap: 20px; padding: 14px 12px; border: 1px solid rgba(180,96,42,.12); border-radius: 12px; background: var(--panel-surface); }
+.briefing-ratio-card { display: grid; min-width: 0; grid-template-columns: minmax(124px,.82fr) minmax(168px,1.18fr); align-items: center; gap: 20px; padding: 14px 12px; border: 1px solid rgba(180,96,42,.12); border-radius: 12px; background: var(--panel-surface); }
 .briefing-pie-wrap { position: relative; display: grid; min-width: 0; place-items: center; }
 .collection-pie { position: relative; display: grid; width: min(158px,100%); aspect-ratio: 1; place-items: center; justify-self: center; border-radius: 50%; }
 .collection-pie svg { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -1251,7 +1254,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .briefing-ratio-card dl { display: grid; width: 100%; gap: 9px; margin: 0; }
 .briefing-ratio-card dl div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--divider); }
 .briefing-ratio-card dl div:last-child { padding-bottom: 0; border-bottom: 0; }
-.briefing-ratio-card dt { display: flex; align-items: center; gap: 7px; color: #6f655e; font-size: var(--text-small); }
+.briefing-ratio-card dt { display: flex; align-items: center; gap: 7px; color: #6f655e; font-size: var(--text-small); white-space: nowrap; }
 .briefing-ratio-card dt i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #c8a45f; background: transparent; }
 .briefing-ratio-card dt i.risk { border: 0; background: #b65232; }
 .briefing-ratio-card dt i.normal { border: 0; background: #e4c88d; }
@@ -2750,3 +2753,256 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 }
 
 .briefing-ratio-note, .pipeline-cohort-note { margin: 10px 0; color: #746a64; font-size: var(--text-caption); line-height: 1.6; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   캔바 시안 테마 레이어
+   ---------------------------------------------------------------------------
+   페이지별 마크업을 건드리지 않고 전 화면 톤을 한 번에 맞추기 위한 층이다.
+   같은 특이도면 뒤에 온 규칙이 이기므로 파일 맨 끝에 둔다. 되돌릴 때는 이
+   블록만 지우면 원래 톤으로 돌아간다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* 시안 팔레트 */
+  --cream: #fbf6ee;
+  --paper: #fffdf9;
+  --rice: #eee2d2;
+  --terracotta: #b85836;
+  --terracotta-deep: #8d3f29;
+  --sage: #597265;
+  --gold: #c88d30;
+
+  /* 기존 토큰을 시안 값으로 갈아끼운다 - 이 한 줄들이 전 페이지에 퍼진다 */
+  --ink-strong: #30251f;
+  --ink-soft: #75695f;
+  --panel-surface: rgba(255, 253, 249, .88);
+  --divider: rgba(109, 82, 61, .14);
+  --divider-strong: rgba(109, 82, 61, .22);
+  --divider-accent: rgba(184, 88, 54, .22);
+  --focus-ring: rgba(184, 88, 54, .35);
+  --success-strong: #3f6254;
+  --success: var(--sage);
+  --success-soft: #deebe4;
+  --success-border: #9db6a7;
+
+  /* 시안 서체: 라틴은 Fraunces/DM Sans, 한글은 고운바탕/본고딕이 받는다 */
+  --font-soft: "DM Sans", "Noto Sans KR", "Pretendard", "Apple SD Gothic Neo", sans-serif;
+  --font-display: "Fraunces", "Gowun Batang", "Noto Serif KR", Georgia, serif;
+
+  --radius-panel: 1.7rem;
+  --radius-card: 1.1rem;
+  --radius-control: .8rem;
+  --shadow-soft: 0 16px 38px rgba(82, 54, 34, .08);
+  --shadow-lift: 0 20px 35px rgba(82, 54, 34, .12);
+
+  color: var(--ink-strong);
+  background: var(--cream);
+}
+
+body { background: var(--cream); }
+
+/* ── 서체 ───────────────────────────────────────────────────────────────── */
+h1, h2, h3, h4,
+.brand, .panel-title h2, .workspace-head h1, .pipeline-heading h1,
+.analysis-pipeline-sidebar h2, .my-page-head h1, .login-card h2,
+.login-story-copy h1, .app-notice-dialog h2, .admin-modal-head h2 {
+  font-family: var(--font-display);
+  letter-spacing: -.015em;
+}
+/* 대문자 라틴 키커는 시안처럼 자간을 넓게 */
+.eyebrow, .response-ui-kicker, .pipeline-stage-kicker, .panel-title .eyebrow {
+  font-family: var(--font-soft);
+  letter-spacing: .16em;
+}
+
+/* ── 면(surface) ────────────────────────────────────────────────────────── */
+.workspace { position: relative; }
+/* 시안의 배경 원형 텍스처. 콘텐츠 아래에 깔고 클릭을 막지 않는다. */
+.workspace::before,
+.workspace::after {
+  position: absolute;
+  z-index: 0;
+  width: 340px;
+  height: 340px;
+  border: 1px solid rgba(184, 88, 54, .15);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+.workspace::before { top: -120px; left: -90px; }
+.workspace::after { top: 280px; right: -160px; }
+.workspace > * { position: relative; z-index: 1; }
+/* 원형 텍스처가 좌우로 삐져나가면 페이지에 가로 스크롤이 생긴다. clip은 hidden과 달리
+   스크롤 컨테이너를 만들지 않아 sticky 헤더나 세로 스크롤에 영향을 주지 않는다. */
+.workspace { overflow-x: clip; }
+
+.panel,
+.my-page-shell,
+.edit-card.account-settings-card,
+.app-notice-dialog,
+.admin-modal,
+.collection-articles-modal {
+  border: 1px solid rgba(109, 82, 61, .14);
+  border-radius: var(--radius-panel);
+  background: var(--paper);
+  box-shadow: var(--shadow-soft);
+}
+
+/* 패널 안에 들어가는 작은 카드들은 한 단계 작은 반경으로 */
+.pipeline-stat,
+.main-metric-tile,
+.main-summary-metrics .metric,
+.briefing-ratio-card,
+.company-card,
+.response-overview-grid > article,
+.response-legacy-overview > article,
+.response-strategy-grid > article,
+.response-followup-grid > article,
+.response-peer-followup-grid > article,
+.response-timeline-task,
+.response-fold,
+.response-operations-view .response-time-group,
+.response-operations-view .response-channel-group,
+.response-option-tab,
+.statistics-count-card,
+.readiness-task-list li {
+  border-radius: var(--radius-card);
+}
+
+.response-operations-view .response-command-card,
+.response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel),
+.response-operations-view .response-option-panel,
+.response-draft.response-draft-hold {
+  border-radius: var(--radius-panel);
+}
+
+/* 시안의 좌측 컬러 보더 카드 - 위험도에 따라 색이 갈린다 */
+.pipeline-stat.danger { border-left: 5px solid var(--terracotta); }
+.pipeline-stat.warning { border-left: 5px solid var(--gold); }
+.pipeline-stat.success { border-left: 5px solid var(--sage); }
+.pipeline-stat { transition: transform .2s ease, box-shadow .2s ease; }
+.pipeline-stat.selectable:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
+
+.risk-event-list-item,
+.briefing-risk-list > .briefing-risk-card {
+  border-radius: var(--radius-card);
+  transition: transform .2s ease, background .2s ease;
+}
+.risk-event-list-item:hover,
+.briefing-risk-list > .briefing-risk-card:hover { transform: translateX(3px); }
+
+/* ── 컨트롤 ─────────────────────────────────────────────────────────────── */
+.submit-button,
+.secondary-button,
+.company-register-button,
+.admin-refresh-button,
+.draft-review button,
+.account-delete-confirm,
+.collection-articles-close,
+.app-notice-actions .secondary-button,
+.app-notice-actions .submit-button {
+  border-radius: var(--radius-control);
+}
+.submit-button {
+  background: var(--terracotta);
+  transition: background .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.submit-button:hover:not(:disabled) { background: var(--terracotta-deep); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(141, 63, 41, .22); }
+.secondary-button { border-color: rgba(109, 82, 61, .28); color: var(--ink-soft); }
+.secondary-button:hover:not(:disabled) { border-color: var(--terracotta); color: var(--terracotta-deep); }
+
+input[type="text"], input[type="email"], input[type="password"], input[type="date"],
+select, textarea, .text-field, .login-form > input, .login-password-field,
+.my-password-field, .account-delete-modal > input {
+  border-radius: var(--radius-control);
+}
+
+:is(button, input, select, a):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+/* ── 상단바 ─────────────────────────────────────────────────────────────── */
+.topbar { background: var(--paper); border-bottom: 1px solid rgba(109, 82, 61, .14); }
+.main-nav button { border-radius: var(--radius-control); padding: 12px 16px; }
+.main-nav button.active { background: #f6ddd4; color: var(--terracotta-deep); }
+.brand-icon { border-radius: 12px; }
+
+/* ── 배지·필 ────────────────────────────────────────────────────────────── */
+.risk-event-type-row span.primary,
+.pipeline-risk-count-pill { background: #f6ddd4; color: var(--terracotta-deep); }
+.response-priority-pill.urgent { background: var(--terracotta); }
+.response-priority-pill.caution { background: var(--gold); }
+.response-priority-pill.watch { background: var(--sage); }
+.state-badge.active, .quality-pill.complete { background: var(--success-soft); color: var(--success-strong); }
+
+/* ── 진입 애니메이션 ────────────────────────────────────────────────────── */
+@keyframes risoto-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* 패널마다 걸면 데이터 갱신 때마다 다시 튀므로 화면 단위로만 한 번 재생한다. */
+.workspace, .analysis-pipeline-shell, .login-card, .my-page-shell {
+  animation: risoto-fade-up .5s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace, .analysis-pipeline-shell, .login-card, .my-page-shell,
+  .pipeline-stat, .risk-event-list-item, .briefing-risk-list > .briefing-risk-card,
+  .submit-button { animation: none; transition: none; }
+}
+
+/* 시안처럼 패널이 내용 높이에 맞게 잡히도록. 추이 차트가 남는 세로 공간을 전부
+   먹어버려(flex:1 + 컨테이너 측정 방식) 비율 카드 위아래로 빈 공간이 크게 생겼다. */
+.briefing-overview-charts { min-height: 0; }
+.briefing-trend-pane .main-chart-canvas { max-height: 260px; }
+.briefing-ratio-pane { justify-content: flex-start; }
+
+/* 시안 스탯 카드처럼 큰 수치는 라벨을 아래에 두고 쌓는다. 가로로 붙여 두면 좁은
+   칸에서 "수집 활/성"처럼 라벨이 어색하게 끊긴다. */
+.collection-big-stat { flex-direction: column; align-items: flex-start; gap: 2px; }
+.collection-big-stat strong { font-size: clamp(2.6rem, 4.4vw, 3.6rem); font-weight: 700; letter-spacing: -.04em; }
+.collection-big-stat span { font-size: var(--text-small); }
+
+/* ── 랜딩·로그인: 어두운 히어로를 시안의 크림 톤으로 ────────────────────── */
+.login-page { background: var(--cream); }
+.login-story {
+  background:
+    radial-gradient(circle at 78% 16%, rgba(200, 141, 48, .12), transparent 30%),
+    linear-gradient(150deg, var(--paper) 0%, var(--cream) 52%, #f6ece0 100%);
+  color: var(--ink-strong);
+}
+/* 시안의 원형 텍스처 톤으로 */
+.login-story::before {
+  border-color: rgba(184, 88, 54, .16);
+  box-shadow: 0 0 0 90px rgba(184, 88, 54, .045), 0 0 0 180px rgba(184, 88, 54, .03), 0 0 0 270px rgba(184, 88, 54, .015);
+}
+.login-story::after {
+  background-image: linear-gradient(rgba(109, 82, 61, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(109, 82, 61, .05) 1px, transparent 1px);
+}
+.login-brand span { font-family: var(--font-display); }
+.login-brand small { color: var(--ink-soft); }
+.login-brand img { box-shadow: 0 8px 22px rgba(82, 54, 34, .14); }
+.login-kicker { color: var(--terracotta); }
+.login-story-copy h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.03em; }
+.login-story-copy h1 em { color: var(--terracotta); }
+.login-story-copy > p { color: var(--ink-soft); }
+.login-start {
+  border-color: var(--terracotta);
+  border-radius: var(--radius-control);
+  background: var(--terracotta);
+  color: #fffaf2;
+  box-shadow: 0 14px 30px rgba(141, 63, 41, .18);
+}
+.login-start:hover { background: var(--terracotta-deep); }
+.login-copyright { color: var(--ink-soft); }
+
+.login-access { background: radial-gradient(circle at 80% 12%, rgba(200, 141, 48, .12), transparent 24%), var(--cream); }
+.login-access-modal { background: rgba(48, 37, 31, .55); }
+.login-card { border-radius: var(--radius-panel); background: var(--paper); box-shadow: 0 30px 80px rgba(82, 54, 34, .16); }
+.login-card h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.03em; }
+.login-role-switch { border-radius: var(--radius-control); background: var(--rice); }
+.login-role-switch button { border-radius: calc(var(--radius-control) - .2rem); }
+.login-role-switch button.active { background: var(--paper); color: var(--terracotta-deep); }
+.login-submit { border-radius: var(--radius-control); background: var(--terracotta); }
+.login-submit:hover:not(:disabled) { background: var(--terracotta-deep); }
+.login-error { border-radius: 0 var(--radius-control) var(--radius-control) 0; }
+.auth-switch-button, .login-close:hover { color: var(--terracotta); }
