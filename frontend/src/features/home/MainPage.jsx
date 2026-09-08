@@ -11,8 +11,9 @@ import {
 } from "../../shared/presentation";
 import { useSharedResource } from "../../shared/useSharedResource";
 import { resolveSelectedCompany, setSelectedCompanyId as rememberSelectedCompanyId } from "../../shared/selectedCompanySession";
+import AnalysisPeriodControl from "../../shared/AnalysisPeriodControl";
+import { useAnalysisPeriod } from "../../shared/useAnalysisPeriod";
 
-const MAIN_TREND_DAYS = 7;
 const RISK_PAGE_SIZE = 3;
 
 const RESPONSE_STATUS_SUMMARIES = {
@@ -31,18 +32,24 @@ function mean(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
-function averageCompanyRatio(groups, numeratorKey, denominatorKey) {
-  let totalNumerator = 0;
-  let totalDenominator = 0;
+function averageCompanyRisk(groups) {
+  const totals = { story: 0, risk: 0, nonRisk: 0 };
   const ratios = groups.flatMap((days) => {
-    const denominator = days.reduce((sum, day) => sum + Math.max(Number(day[denominatorKey]) || 0, 0), 0);
-    const numerator = days.reduce((sum, day) => sum + Math.max(Number(day[numeratorKey]) || 0, 0), 0);
-    totalNumerator += numerator;
-    totalDenominator += denominator;
-    if (denominator <= 0) return [];
-    return [Math.min(numerator / denominator, 1)];
+    const story = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_story_count) || 0, 0), 0);
+    const risk = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_risk_story_count) || 0, 0), 0);
+    const nonRisk = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_non_risk_story_count) || 0, 0), 0);
+    totals.story += story;
+    totals.risk += risk;
+    totals.nonRisk += nonRisk;
+    return story > 0 ? [{ risk: risk / story, nonRisk: nonRisk / story }] : [];
   });
-  return { ratio: mean(ratios), totalNumerator, totalDenominator };
+  return {
+    ratios: {
+      risk: mean(ratios.map((item) => item.risk)),
+      nonRisk: mean(ratios.map((item) => item.nonRisk)),
+    },
+    totals,
+  };
 }
 
 function averageCompanySentiment(groups) {
@@ -141,6 +148,7 @@ function averageDailySummaries(groups) {
       eligible_neutral_story_count: 0,
       eligible_negative_story_count: 0,
       eligible_risk_story_count: 0,
+      eligible_non_risk_story_count: 0,
       story_count: 0,
       risk_event_count: 0,
     };
@@ -155,6 +163,7 @@ function averageDailySummaries(groups) {
     current.eligible_neutral_story_count += day.eligible_neutral_story_count ?? 0;
     current.eligible_negative_story_count += day.eligible_negative_story_count ?? 0;
     current.eligible_risk_story_count += day.eligible_risk_story_count ?? 0;
+    current.eligible_non_risk_story_count += day.eligible_non_risk_story_count ?? 0;
     current.story_count += day.story_count ?? 0;
     current.risk_event_count += day.risk_event_count ?? 0;
     byDate.set(day.summary_date, current);
@@ -184,6 +193,7 @@ function averageDailySummaries(groups) {
         eligible_neutral_story_count: oneDecimal(day.eligible_neutral_story_count),
         eligible_negative_story_count: oneDecimal(day.eligible_negative_story_count),
         eligible_risk_story_count: oneDecimal(day.eligible_risk_story_count),
+        eligible_non_risk_story_count: oneDecimal(day.eligible_non_risk_story_count),
         eligible_risk_story_ratio: ratios?.samples ? ratios.risk / ratios.samples : 0,
         eligible_negative_story_ratio: ratios?.samples ? ratios.negative / ratios.samples : 0,
         story_count: oneDecimal(day.story_count),
@@ -244,31 +254,30 @@ function InteractiveDonut({ periodLabel, segments, ariaLabel, tooltipId, valueFo
   </div>;
 }
 
-function RiskRatioCard({ periodLabel, storyCount, riskCount, average = null }) {
+function RiskRatioCard({ periodLabel, storyCount, riskCount, nonRiskCount, average = null }) {
   const safeStoryCount = Math.max(Number(storyCount) || 0, 0);
-  const safeRiskCount = Math.min(Math.max(Number(riskCount) || 0, 0), safeStoryCount);
-  const nonRiskCount = Math.max(safeStoryCount - safeRiskCount, 0);
+  const safeRiskCount = Math.max(Number(riskCount) || 0, 0);
+  const safeNonRiskCount = Math.max(Number(nonRiskCount) || 0, 0);
   const isAverage = average !== null;
-  const riskRatio = isAverage ? Math.min(Math.max(average.ratio, 0), 1) : safeStoryCount > 0 ? safeRiskCount / safeStoryCount : 0;
-  const nonRiskRatio = 1 - riskRatio;
-  const totalRiskCount = Math.max(Number(average?.totalNumerator) || 0, 0);
-  const totalNonRiskCount = Math.max((Number(average?.totalDenominator) || 0) - totalRiskCount, 0);
+  const riskRatio = isAverage ? average.ratios.risk : safeStoryCount > 0 ? safeRiskCount / safeStoryCount : 0;
+  const nonRiskRatio = isAverage ? average.ratios.nonRisk : safeStoryCount > 0 ? safeNonRiskCount / safeStoryCount : 0;
+  const displayCounts = isAverage ? average.totals : { story: safeStoryCount, risk: safeRiskCount, nonRisk: safeNonRiskCount };
   return <article className="briefing-ratio-card">
     <InteractiveDonut
       periodLabel={periodLabel}
       segments={[
-        { key: "risk", label: "위험", value: isAverage ? riskRatio : safeRiskCount, className: "risk" },
-        { key: "normal", label: "비위험", value: isAverage ? nonRiskRatio : nonRiskCount, className: "normal" },
+        { key: "risk", label: "위험 이슈", value: isAverage ? riskRatio : safeRiskCount, className: "risk" },
+        { key: "normal", label: "비위험 이슈", value: isAverage ? nonRiskRatio : safeNonRiskCount, className: "normal" },
       ]}
       ariaLabel={isAverage
         ? `${periodLabel} 등록 기업 평균 위험 ${formatPercent(riskRatio)}, 비위험 ${formatPercent(nonRiskRatio)}`
-        : `${periodLabel} 판정 대상 스토리 ${safeStoryCount}건 중 위험 ${safeRiskCount}건, 비위험 ${nonRiskCount}건`}
+        : `${periodLabel} 판정 완료 이슈 ${safeStoryCount}건 중 위험 ${safeRiskCount}건, 비위험 ${safeNonRiskCount}건`}
       tooltipId="risk-ratio-tooltip"
       valueFormatter={isAverage ? formatPercent : countValueText}
     />
     <dl>
-      <div className="risk"><dt><i className="risk" />위험</dt><dd>{formatPercent(riskRatio)} · {formatNumber(isAverage ? totalRiskCount : safeRiskCount)}건</dd></div>
-      <div className="normal"><dt><i className="normal" />비위험</dt><dd>{formatPercent(nonRiskRatio)} · {formatNumber(isAverage ? totalNonRiskCount : nonRiskCount)}건</dd></div>
+      <div className="risk"><dt><i className="risk" />위험 이슈</dt><dd>{formatPercent(riskRatio)} · {formatNumber(displayCounts.risk)}건</dd></div>
+      <div className="normal"><dt><i className="normal" />비위험 이슈</dt><dd>{formatPercent(nonRiskRatio)} · {formatNumber(displayCounts.nonRisk)}건</dd></div>
     </dl>
   </article>;
 }
@@ -295,27 +304,28 @@ function SentimentRatioCard({ periodLabel, storyCount, positiveCount, negativeCo
         { key: "pending", label: "분석 대기", value: isAverage ? pendingRatio : pending, className: "pending" },
       ]}
       ariaLabel={isAverage
-        ? `${periodLabel} 판정 대상 스토리 ${displayCounts.story}건의 등록 기업 평균: 긍정 ${formatPercent(positiveRatio)}, 부정 ${formatPercent(negativeRatio)}, 중립 ${formatPercent(neutralRatio)}, 분석 대기 ${formatPercent(pendingRatio)}`
-        : `${periodLabel} 판정 대상 스토리 ${stories}건 중 긍정 ${positive}건, 부정 ${negative}건, 중립 ${neutral}건, 분석 대기 ${pending}건`}
+        ? `${periodLabel} 판정 완료 이슈 ${displayCounts.story}건의 등록 기업 평균: 긍정 ${formatPercent(positiveRatio)}, 부정 ${formatPercent(negativeRatio)}, 중립 ${formatPercent(neutralRatio)}, 분석 대기 ${formatPercent(pendingRatio)}`
+        : `${periodLabel} 판정 완료 이슈 ${stories}건 중 긍정 ${positive}건, 부정 ${negative}건, 중립 ${neutral}건, 분석 대기 ${pending}건`}
       tooltipId="sentiment-ratio-tooltip"
       valueFormatter={isAverage ? formatPercent : countValueText}
     />
     <dl>
-      <div className="positive"><dt><i className="positive" />긍정</dt><dd>{formatPercent(positiveRatio)} · {formatNumber(displayCounts.positive)}건</dd></div>
-      <div className="negative"><dt><i className="negative" />부정</dt><dd>{formatPercent(negativeRatio)} · {formatNumber(displayCounts.negative)}건</dd></div>
-      <div className="neutral"><dt><i className="neutral" />중립</dt><dd>{formatPercent(neutralRatio)} · {formatNumber(displayCounts.neutral)}건</dd></div>
+      <div className="positive"><dt><i className="positive" />긍정 이슈</dt><dd>{formatPercent(positiveRatio)} · {formatNumber(displayCounts.positive)}건</dd></div>
+      <div className="negative"><dt><i className="negative" />부정 이슈</dt><dd>{formatPercent(negativeRatio)} · {formatNumber(displayCounts.negative)}건</dd></div>
+      <div className="neutral"><dt><i className="neutral" />중립 이슈</dt><dd>{formatPercent(neutralRatio)} · {formatNumber(displayCounts.neutral)}건</dd></div>
       {displayCounts.pending > 0 && <div className="pending"><dt><i className="pending" />분석 대기</dt><dd>{formatPercent(pendingRatio)} · {formatNumber(displayCounts.pending)}건</dd></div>}
     </dl>
   </article>;
 }
 
-// 로그인 직후 나의 기업과 등록 기업 평균을 비교하고 활성 위험 사건과 대응을 브리핑한다.
+// 로그인 직후 나의 기업과 등록 기업 평균을 비교하고 선택 기간의 위험 사건과 대응을 브리핑한다.
 export default function MainPage({ onOpenCompany }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [briefingView, setBriefingView] = useState("company");
   const [ratioView, setRatioView] = useState("risk");
-  const [ratioPeriod, setRatioPeriod] = useState("sevenDays");
+  const { period, changePeriod } = useAnalysisPeriod();
   const [riskPage, setRiskPage] = useState(1);
+  const [riskListView, setRiskListView] = useState("risk");
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
     "/companies", () => api.get("/companies").then((response) => response.data),
   );
@@ -340,7 +350,7 @@ export default function MainPage({ onOpenCompany }) {
 
   useEffect(() => {
     setRiskPage(1);
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, period.start, period.end]);
 
   const selectCompany = (companyId) => {
     rememberSelectedCompanyId(companyId);
@@ -352,10 +362,10 @@ export default function MainPage({ onOpenCompany }) {
     });
   };
 
-  const { data: dailyGroups = [] } = useSharedResource(
-    companyIds ? `main-briefing-daily:${companyIds}` : "skip:main-briefing-daily",
+  const { data: dailyGroups = [], error: dailyError, loading: dailyLoading } = useSharedResource(
+    companyIds ? `main-briefing-daily:judged:${companyIds}:${period.start}:${period.end}` : "skip:main-briefing-daily",
     companyIds
-      ? () => Promise.all(companies.map((company) => api.get(`/companies/${company.id}/daily-summaries?days=${MAIN_TREND_DAYS}`).then((response) => response.data)))
+      ? () => Promise.all(companies.map((company) => api.get(`/companies/${company.id}/daily-summaries?start_date=${period.start}&end_date=${period.end}`).then((response) => response.data)))
       : () => Promise.resolve([]),
   );
   const selectedIndex = companies.findIndex((company) => company.id === selectedCompanyId);
@@ -366,11 +376,18 @@ export default function MainPage({ onOpenCompany }) {
     .filter((day) => (day.eligible_story_count ?? 0) > 0)
     .map((day) => day.summary_date);
 
-  const { data: riskPageData, error: riskPageError, loading: riskPageLoading } = useSharedResource(
-    selectedCompanyId ? `main-briefing-risks:${selectedCompanyId}:${riskPage}` : "skip:main-briefing-risks",
+  const riskQueryKey = selectedCompanyId
+    ? `main-briefing-risks:judged:${selectedCompanyId}:${period.start}:${period.end}:${riskPage}`
+    : "skip:main-briefing-risks";
+  const { data: loadedRiskPageData, error: riskPageError, loading: riskPageLoading } = useSharedResource(
+    riskQueryKey,
     selectedCompanyId
       ? async () => {
-          const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?view=active&page=${riskPage}&page_size=${RISK_PAGE_SIZE}&response=all`);
+          const params = new URLSearchParams({
+            view: "all", page: String(riskPage), page_size: String(RISK_PAGE_SIZE), response: "all",
+            start_date: period.start, end_date: period.end,
+          });
+          const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
           const pageData = response.data ?? { items: [], total: 0, page: riskPage, page_size: RISK_PAGE_SIZE };
           const items = await Promise.all((pageData.items ?? []).map(async (risk) => {
             try {
@@ -382,55 +399,48 @@ export default function MainPage({ onOpenCompany }) {
               return { ...risk, response_summary: RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle };
             }
           }));
-          return { ...pageData, items };
+          return { ...pageData, items, queryKey: riskQueryKey };
         }
-      : () => Promise.resolve({ items: [], total: 0, page: 1, page_size: RISK_PAGE_SIZE }),
+      : () => Promise.resolve({ items: [], total: 0, page: 1, page_size: RISK_PAGE_SIZE, queryKey: riskQueryKey }),
   );
+  const riskPageData = loadedRiskPageData?.queryKey === riskQueryKey ? loadedRiskPageData : null;
   const riskyStories = riskPageData?.items ?? [];
   const riskTotal = riskPageData?.total ?? 0;
 
   useEffect(() => {
-    if (riskPageLoading) return;
+    if (riskPageLoading || !riskPageData) return;
     const lastPage = Math.max(1, Math.ceil(riskTotal / RISK_PAGE_SIZE));
     if (riskPage > lastPage) setRiskPage(lastPage);
-  }, [riskPage, riskPageLoading, riskTotal]);
+  }, [riskPage, riskPageData, riskPageLoading, riskTotal]);
 
-  const error = companiesError || riskPageError ? getErrorMessage(companiesError ?? riskPageError) : null;
-  const todayKey = new Date().toLocaleDateString("sv-SE");
-  const todaySummary = briefingSummaries.find((day) => day.summary_date === todayKey);
-  const todayStoryCount = todaySummary?.eligible_story_count ?? 0;
-  const todayRiskStoryCount = todaySummary?.eligible_risk_story_count ?? 0;
-  const sevenDayStoryCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0);
-  const sevenDayRiskStoryCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_risk_story_count ?? 0), 0);
-  const todaySentiment = {
-    storyCount: todaySummary?.eligible_story_count ?? 0,
-    positiveCount: todaySummary?.eligible_positive_story_count ?? 0,
-    negativeCount: todaySummary?.eligible_negative_story_count ?? 0,
-    neutralCount: todaySummary?.eligible_neutral_story_count ?? 0,
-  };
-  const sevenDaySentiment = {
-    storyCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0),
-    positiveCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_positive_story_count ?? 0), 0),
-    negativeCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_negative_story_count ?? 0), 0),
-    neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_neutral_story_count ?? 0), 0),
-  };
-  const periodLabel = ratioPeriod === "today" ? "1일" : "7일";
-  const ratioGroups = ratioPeriod === "today"
-    ? dailyGroups.map((days) => days.filter((day) => day.summary_date === todayKey))
-    : dailyGroups;
+  const error = companiesError || riskPageError || dailyError
+    ? getErrorMessage(companiesError ?? riskPageError ?? dailyError) : null;
+  const periodLabel = `${period.start} ~ ${period.end}`;
+  const periodStoryCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_story_count ?? 0), 0);
+  const periodRiskCount = briefingSummaries.reduce((sum, day) => sum + (day.eligible_risk_story_count ?? 0), 0);
   const selectedRiskRatio = briefingView === "average"
-    ? { average: averageCompanyRatio(ratioGroups, "eligible_risk_story_count", "eligible_story_count") }
-    : ratioPeriod === "today"
-      ? { storyCount: todayStoryCount, riskCount: todayRiskStoryCount }
-      : { storyCount: sevenDayStoryCount, riskCount: sevenDayRiskStoryCount };
+    ? { average: averageCompanyRisk(dailyGroups) }
+    : {
+        storyCount: periodStoryCount,
+        riskCount: periodRiskCount,
+        nonRiskCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_non_risk_story_count ?? 0), 0),
+      };
   const selectedSentimentRatio = briefingView === "average"
-    ? { average: averageCompanySentiment(ratioGroups) }
-    : ratioPeriod === "today" ? todaySentiment : sevenDaySentiment;
+    ? { average: averageCompanySentiment(dailyGroups) }
+    : {
+        storyCount: periodStoryCount,
+        positiveCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_positive_story_count ?? 0), 0),
+        negativeCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_negative_story_count ?? 0), 0),
+        neutralCount: briefingSummaries.reduce((sum, day) => sum + (day.eligible_neutral_story_count ?? 0), 0),
+      };
 
   return <section className="workspace main-workspace briefing-workspace">
     <div className="briefing-page-head">
       <p className="main-page-intro briefing-description">실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</p>
+      <div className="briefing-page-filters">
+        <AnalysisPeriodControl period={period} onChange={(field, value) => { setRiskPage(1); changePeriod(field, value); }} />
       <label className="briefing-company-picker"><span>분석 기업</span><select value={selectedCompanyId ? String(selectedCompanyId) : ""} onChange={(event) => selectCompany(event.target.value)} disabled={!companies.length}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label>
+      </div>
     </div>
     <div className="main-page-shell briefing-shell">
       {error && <div className="notice error">{error}</div>}
@@ -441,21 +451,19 @@ export default function MainPage({ onOpenCompany }) {
               title={briefingView === "average" ? "전체 평균" : selectedCompany.name}
               description={briefingView === "average" ? `등록 기업 ${formatNumber(companies.length)}곳 기준` : selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}
             />
+            <div className="briefing-overview-controls">
             <div className="briefing-view-tabs" role="tablist" aria-label="브리핑 비교 기준">
               <button id="briefing-company-tab" type="button" role="tab" aria-selected={briefingView === "company"} aria-controls="briefing-overview-charts" className={briefingView === "company" ? "active" : ""} onClick={() => setBriefingView("company")}>{selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}</button>
               <button id="briefing-average-tab" type="button" role="tab" aria-selected={briefingView === "average"} aria-controls="briefing-overview-charts" className={briefingView === "average" ? "active" : ""} onClick={() => setBriefingView("average")}>전체 평균</button>
             </div>
+            </div>
           </div>
-          <div id="briefing-overview-charts" className="briefing-overview-charts" role="tabpanel" aria-labelledby={`briefing-${briefingView}-tab`}>
+          {dailyLoading ? <p className="panel-empty" role="status">선택한 기간의 데이터를 불러오는 중입니다.</p> : dailyError ? <p className="panel-empty">선택한 기간의 데이터를 불러오지 못했습니다.</p> : <div id="briefing-overview-charts" className="briefing-overview-charts" role="tabpanel" aria-labelledby={`briefing-${briefingView}-tab`}>
             <section className="briefing-ratio-pane" aria-label="위험 및 감성 비율">
               <div className="briefing-ratio-head">
                 <div className="briefing-ratio-tabs" role="tablist" aria-label="비율 종류">
                   <button type="button" role="tab" aria-selected={ratioView === "risk"} className={ratioView === "risk" ? "active" : ""} onClick={() => setRatioView("risk")}>위험 비율</button>
                   <button type="button" role="tab" aria-selected={ratioView === "sentiment"} className={ratioView === "sentiment" ? "active" : ""} onClick={() => setRatioView("sentiment")}>부정 비율</button>
-                </div>
-                <div className="briefing-period-tabs" role="tablist" aria-label="비율 기간">
-                  <button type="button" role="tab" aria-selected={ratioPeriod === "today"} className={ratioPeriod === "today" ? "active" : ""} onClick={() => setRatioPeriod("today")}>1일</button>
-                  <button type="button" role="tab" aria-selected={ratioPeriod === "sevenDays"} className={ratioPeriod === "sevenDays" ? "active" : ""} onClick={() => setRatioPeriod("sevenDays")}>7일</button>
                 </div>
               </div>
               <div className="briefing-ratio-content" role="tabpanel" aria-label={ratioView === "risk" ? "위험 비율" : "긍정 부정 중립 비율"}>
@@ -464,24 +472,29 @@ export default function MainPage({ onOpenCompany }) {
                   : <SentimentRatioCard periodLabel={periodLabel} {...selectedSentimentRatio} />}
               </div>
             </section>
-            <section className="briefing-trend-pane" aria-label="최근 7일 위험 및 부정 비율 추이">
-              <div className="briefing-chart-heading"><strong>최근 7일 추이</strong><small>날짜별 위험·부정 비율</small></div>
+            <section className="briefing-trend-pane" aria-label={`${periodLabel} 위험 및 부정 비율 추이`}>
               <RiskOverviewTrendChart
+                legendTitle="날짜별 위험·부정 통계"
                 days={briefingSummaries}
                 displayDates={trendDisplayDates}
                 basis="stories"
-                ariaLabel={briefingView === "average" ? "등록 기업 전체의 최근 7일 평균 위험 스토리와 부정 스토리 비율" : `${selectedCompany.name} 최근 7일 위험 스토리와 부정 스토리 비율`}
+                ariaLabel={briefingView === "average" ? `등록 기업 전체의 ${periodLabel} 평균 위험 이슈와 부정 이슈 비율` : `${selectedCompany.name} ${periodLabel} 위험 이슈와 부정 이슈 비율`}
               />
             </section>
-          </div>
+          </div>}
         </section>
         <section className="panel briefing-risk-articles">
-          <div className="briefing-risk-head"><PanelTitle title="최근 위험 사건" description="현재 활성 상태인 사건과 최신 대응 방안을 확인할 수 있습니다." /></div>
-          <div className="briefing-risk-columns"><strong>위험사건</strong><strong>대응 방안</strong></div>
-          <div className="briefing-risk-list">{riskPageLoading && !riskPageData ? <p className="panel-empty">활성 위험 사건을 불러오는 중입니다.</p> : riskyStories.length ? riskyStories.map((risk) => <button className="briefing-risk-card" type="button" onClick={() => onOpenCompany(selectedCompanyId, risk.id)} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
-            <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
-            <span className="briefing-response-summary" title={risk.response_summary}>{risk.response_summary}</span>
-          </button>) : <p className="panel-empty">현재 활성 위험 사건이 없습니다.</p>}</div>
+          <div className="pipeline-panel-heading story-group-heading">
+            <div className="story-view-tabs" role="tablist" aria-label="선택 기간 위험 사건 보기">
+              <button id="briefing-risk-tab" type="button" role="tab" aria-selected={riskListView === "risk"} aria-controls="briefing-risk-content" className={riskListView === "risk" ? "active" : ""} onClick={() => setRiskListView("risk")}>위험 사건</button>
+              <button id="briefing-response-tab" type="button" role="tab" aria-selected={riskListView === "response"} aria-controls="briefing-risk-content" className={riskListView === "response" ? "active" : ""} onClick={() => setRiskListView("response")}>대응 방안</button>
+            </div>
+          </div>
+          <div id="briefing-risk-content" className="briefing-risk-list" role="tabpanel" aria-labelledby={`briefing-${riskListView}-tab`}>{!riskPageData && !riskPageError ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오는 중입니다.</p> : riskPageError && !riskPageData ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오지 못했습니다.</p> : riskyStories.length ? riskyStories.map((risk) => <button className="briefing-risk-card" type="button" onClick={() => onOpenCompany(selectedCompanyId, risk.id)} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
+            {riskListView === "risk"
+              ? <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
+              : <><small className="briefing-response-context">{riskEventTitle(risk)}</small><span className="briefing-response-summary">{risk.response_summary}</span></>}
+          </button>) : <p className="panel-empty">선택한 기간의 위험 사건이 없습니다.</p>}</div>
           <Pagination page={riskPage} pageSize={RISK_PAGE_SIZE} total={riskTotal} onChange={setRiskPage} />
         </section>
       </div>}

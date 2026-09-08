@@ -1,12 +1,15 @@
 """Shared ORM-to-API projections that keep router contracts consistent."""
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import (
     ArticleRiskAssessment,
     NewsArticle,
+    RawNewsArticle,
     RiskEvent,
     RiskEventArticle,
     RiskEventType,
@@ -15,18 +18,59 @@ from app.schemas import RiskEventRead
 from app.services.story_risk import source_domain
 
 
-def risk_event_read(db: Session, event: RiskEvent) -> RiskEventRead:
-    """Project a window-centric risk event with all evidence and type links."""
-    evidence_rows = db.execute(
-        select(RiskEventArticle, NewsArticle)
-        .join(NewsArticle, NewsArticle.id == RiskEventArticle.article_id)
-        .where(RiskEventArticle.risk_event_id == event.id)
-        .order_by(RiskEventArticle.evidence_score.desc(), NewsArticle.published_at.desc().nullslast())
-    ).all()
+
+def article_collection_times(db: Session, articles: list[NewsArticle]) -> dict[int, datetime]:
+    """Prefer the original collection timestamp over the processed article creation time."""
+    raw_ids = {article.raw_article_id for article in articles if article.raw_article_id is not None}
+    raw_times = dict(db.execute(
+        select(RawNewsArticle.id, RawNewsArticle.collected_at)
+        .where(RawNewsArticle.id.in_(raw_ids))
+    ).all()) if raw_ids else {}
+    return {
+        article.id: raw_times.get(article.raw_article_id) or article.created_at
+        for article in articles
+    }
+
+def risk_event_read(
+    db: Session,
+    event: RiskEvent,
+    *,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+    included_article_ids: list[int] | None = None,
+) -> RiskEventRead:
+    """Project a risk event, optionally limiting evidence and its counts to a period."""
+    article_time = func.coalesce(NewsArticle.published_at, NewsArticle.created_at)
+    period_filters = []
+    if period_start is not None:
+        period_filters.append(article_time >= period_start)
+    if period_end is not None:
+        period_filters.append(article_time < period_end)
+    if included_article_ids is not None:
+        period_filters.append(NewsArticle.id.in_(included_article_ids))
+        evidence_query = (
+            select(RiskEventArticle, NewsArticle)
+            .select_from(NewsArticle)
+            .outerjoin(RiskEventArticle, (RiskEventArticle.article_id == NewsArticle.id)
+                       & (RiskEventArticle.risk_event_id == event.id))
+            .where(*period_filters)
+        )
+    else:
+        evidence_query = (
+            select(RiskEventArticle, NewsArticle)
+            .join(NewsArticle, NewsArticle.id == RiskEventArticle.article_id)
+            .where(RiskEventArticle.risk_event_id == event.id, *period_filters)
+        )
+    evidence_rows = db.execute(evidence_query.order_by(
+        RiskEventArticle.evidence_score.desc().nullslast(), NewsArticle.published_at.desc().nullslast(),
+    )).all()
     if not evidence_rows and event.article_id is not None:
-        article = db.get(NewsArticle, event.article_id)
+        article = db.scalar(select(NewsArticle).where(
+            NewsArticle.id == event.article_id, *period_filters,
+        ))
         if article is not None:
             evidence_rows = [(None, article)]
+    collected_times = article_collection_times(db, [article for _link, article in evidence_rows])
     article_ids = [article.id for _link, article in evidence_rows]
     assessments = {
         item.article_id: item
@@ -74,7 +118,9 @@ def risk_event_read(db: Session, event: RiskEvent) -> RiskEventRead:
     return RiskEventRead(
         id=event.id,
         company_id=event.company_id,
-        article_id=event.article_id,
+        article_id=primary_article.id if period_filters and primary_article else (
+            None if period_filters else event.article_id
+        ),
         article_title=primary_article.title if primary_article else None,
         article_url=primary_article.url if primary_article else None,
         feature_window_id=event.feature_window_id,
@@ -102,6 +148,8 @@ def risk_event_read(db: Session, event: RiskEvent) -> RiskEventRead:
                 "source": article.source,
                 "source_domain": source_domain(article.original_url or article.url),
                 "published_at": article.published_at,
+                "created_at": article.created_at,
+                "collected_at": collected_times.get(article.id),
                 "evidence_role": evidence_role(article.id),
                 "evidence_score": link.evidence_score if link else 0.0,
                 "risk_probability": link.risk_probability if link else None,
