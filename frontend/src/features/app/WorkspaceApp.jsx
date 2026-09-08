@@ -17,6 +17,7 @@ import MyPage from "../account/MyPage";
 import AnalysisManagementPage from "../analysis/AnalysisManagementPage";
 import AnalysisPipelinePage from "../analysis/AnalysisPipelinePage";
 import MainPage from "../home/MainPage";
+import RiskBriefPage from "../home/RiskBriefPage";
 import ManagementPage from "../management/ManagementPage";
 import ModelManagementPage from "../models/ModelManagementPage";
 import NotificationDrawer from "../notifications/NotificationDrawer";
@@ -70,6 +71,7 @@ const pageFromPath = (pathname) => {
   if (pathname === "/reviews") return "admin-review";
   if (pathname === "/manage") return "manage";
   if (pathname === "/collection") return "manage";
+  if (pathname === "/risk") return "main";
   if (pathname === "/risk-management") return "risk-management";
   if (pathname.startsWith("/analysis/")) return "statistics";
   if (pathname === "/companies" || pathname === "/companies/new" || /^\/companies\/[^/]+\/settings$/.test(pathname)) return "manage";
@@ -221,6 +223,15 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     goTo(`/analysis/${target}${query}`, navOptions);
   }, [goTo]);
 
+  // 브리핑의 우선순위 위험 카드에서 쓴다. 파이프라인 단계가 아니라 판정·대응을
+  // 한 화면에 합친 새 상세 페이지로 곧장 들어간다.
+  const openRiskBrief = useCallback((companyId, riskEventId) => {
+    const params = new URLSearchParams();
+    if (companyId) params.set("companyId", String(companyId));
+    if (riskEventId) params.set("eventId", String(riskEventId));
+    goTo(`/risk${params.size ? `?${params}` : ""}`);
+  }, [goTo]);
+
   const requestLogout = async () => {
     if (managementDirty && page === "manage") {
       const confirmed = await confirm({
@@ -298,7 +309,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
     if (item.company_id) openAnalysisStatistics(item.company_id, item.risk_event_id);
   };
 
-  return <main className={`min-h-screen ${isAdmin ? "admin-app" : "general-app"}`}>
+  return <main className={`min-h-screen ${isAdmin ? "admin-app" : "general-app"}${page === "main" ? " signal-scope" : ""}`}>
     <header className="topbar">
       <button className="brand" onClick={() => goTo(homePath)}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span className="brand-copy"><strong>RISOTO</strong><small>기업 위험 탐지와 대응</small></span></button>
       <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={activeNavId === item.id ? "active" : ""} aria-current={activeNavId === item.id ? "page" : undefined} onClick={() => { if (item.id !== "management" || !isManagementPage) goTo(item.path); }} key={item.id}><Icon name={item.icon} tone="neutral" /><span>{item.label}</span></button>)}</nav>
@@ -331,7 +342,8 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       <Route path="*" element={<Navigate to="/admin/members" replace />} />
     </> : <>
       <Route path="/" element={<Navigate to="/main" replace />} />
-      <Route path="/main" element={<MainPage onOpenCompany={openAnalysisStatistics} />} />
+      <Route path="/main" element={<MainPage onOpenRisk={openRiskBrief} />} />
+      <Route path="/risk" element={<RiskBriefPage />} />
       <Route path="/account" element={<MyPage session={session} onAccountDeleted={handleAccountDeleted} />} />
       <Route path="/manage" element={<ManagementRoute onOpenCompany={openAnalysisStatistics} onMonitoringChanged={refreshUserCompanies} companyProps={companyAdministrationProps} />} />
       <Route path="/collection" element={<Navigate to="/manage?section=collection" replace />} />

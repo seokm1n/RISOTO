@@ -1,18 +1,16 @@
-import { IconBadge } from "../../shared/Icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
-import { useSharedResource } from "../../shared/useSharedResource";
 import {
   getAnalysisPipelineRiskEventId,
   setAnalysisPipelineRiskEventId,
 } from "../../shared/analysisPipelineSession";
 import AnalysisPeriodControl from "../../shared/AnalysisPeriodControl";
-import DatePicker from "../../shared/DatePicker";
 import { useAnalysisPeriod } from "../../shared/useAnalysisPeriod";
 import { Pagination, PanelTitle } from "../../shared/components";
 import { resolveSelectedCompany, setSelectedCompanyId as rememberSelectedCompanyId } from "../../shared/selectedCompanySession";
+import CompanySearchField from "../../shared/CompanySearchField";
 import { CollectedArticlesDialog } from "../collection/CollectionPage";
 import RiskManagementPage from "../risk-management/RiskManagementPage";
 import {
@@ -29,15 +27,15 @@ import {
   sentimentKind,
   sentimentText,
 } from "../../shared/presentation";
-import { RecentCollectionDate, RiskEventListContent, RiskJudgmentModelInfo } from "./AnalysisStatisticsPage";
+import { RiskEventListContent, RiskJudgmentModelInfo } from "./AnalysisStatisticsPage";
 
 const STAGES = [
-  { id: "collection", step: "01", label: "실시간 수집 (15분)", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다." },
-  { id: "filtering", step: "02", label: "수집 결과 필터링", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다." },
-  { id: "sentiment", step: "03", label: "감성 분석", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
-  { id: "stories", step: "04", label: "주제별 이슈 모음", description: "같은 사건을 다룬 기사들을 하나의 이슈로 묶습니다." },
-  { id: "risk", step: "05", label: "위험 판정", description: "이슈별 위험도와 유형, 사건 발생 근거를 확인합니다." },
-  { id: "response", step: "06", label: "대응 방안", description: "위험 이슈의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
+  { id: "collection", step: "01", label: "15분 수집", kicker: "COLLECTION WINDOWS", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다." },
+  { id: "filtering", step: "02", label: "정제", kicker: "ARTICLE FILTERING", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다." },
+  { id: "sentiment", step: "03", label: "감성분석", kicker: "SENTIMENT ANALYSIS", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
+  { id: "stories", step: "04", label: "이슈 그룹핑", kicker: "ISSUE GROUPING", description: "같은 사건을 다룬 기사들을 하나의 이슈로 묶습니다." },
+  { id: "risk", step: "05", label: "위험판정", kicker: "RISK DETECTION", description: "이슈별 위험도와 유형, 사건 발생 근거를 확인합니다." },
+  { id: "response", step: "06", label: "대응", kicker: "RESPONSE MANAGEMENT", description: "위험 이슈의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
 ];
 const STAGE_IDS = new Set(STAGES.map((stage) => stage.id));
 const FILTER_PAGE_SIZE = 5;
@@ -47,6 +45,34 @@ const SENTIMENT_PAGE_SIZE = 5;
 const RISK_EVIDENCE_PAGE_SIZE = 5;
 const ARTICLE_FETCH_BATCH_SIZE = 1000;
 const RISK_CLASSIFICATIONS = new Set(["risk", "non_risk"]);
+const WINDOW_RANGE_OPTIONS = [
+  { id: "today", label: "오늘", days: 1 },
+  { id: "7d", label: "7일", days: 7 },
+  { id: "30d", label: "30일", days: 30 },
+];
+const WINDOW_QUALITY_FILTERS = [
+  { id: "", label: "전체" },
+  { id: "completed", label: "완료" },
+  { id: "partial", label: "부분·실패" },
+];
+
+function DatabaseIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></svg>; }
+function FilterIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16l-6 8v6l-4 2v-8Z" /></svg>; }
+function SmileIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" /></svg>; }
+function LayersIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /></svg>; }
+function AlertIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3 2 20h20L12 3Z" /><path d="M12 10v4M12 17h.01" /></svg>; }
+function ClipboardIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M9 11h6M9 15h6" /></svg>; }
+function NewspaperIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h13a2 2 0 0 1 2 2v12a2 2 0 0 1-2-2H4Z" /><path d="M4 5v14M8 9h7M8 13h7M8 17h4" /></svg>; }
+function GlobeIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z" /></svg>; }
+function CheckCircleIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.5 2.5 5-5.5" /></svg>; }
+function RefreshIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 0 0-14.9-3.4M4 13a8 8 0 0 0 14.9 3.4" /><path d="M4 4v5h5M20 20v-5h-5" /></svg>; }
+function ChevronRightIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6" /></svg>; }
+function CalendarIconSmall() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>; }
+
+const STAGE_ICONS = {
+  collection: DatabaseIcon, filtering: FilterIcon, sentiment: SmileIcon,
+  stories: LayersIcon, risk: AlertIcon, response: ClipboardIcon,
+};
 
 function seoulDateValue(value = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -62,6 +88,14 @@ function seoulDateValue(value = new Date()) {
 function seoulDateRange(value) {
   const start = new Date(`${value}T00:00:00+09:00`);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+// "7일"/"30일" 탭은 anchor 날짜를 끝으로, days만큼 거슬러 올라간 구간을 만든다.
+function seoulDateRangeSpan(anchor, days) {
+  const end = new Date(`${anchor}T00:00:00+09:00`);
+  end.setUTCDate(end.getUTCDate() + 1);
+  const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
@@ -84,36 +118,110 @@ async function fetchAllCompanyArticles(companyId, period, periodBasis = "article
 const safeNumber = (value) => Math.max(Number(value) || 0, 0);
 function Stat({ label, value, note, tone = "", active = false, onClick }) {
   const className = `pipeline-stat ${tone}${onClick ? " selectable" : ""}${active ? " active" : ""}`;
-  const content = <><div className="metric-label-row"><span>{label}</span><IconBadge name={tone === "danger" ? "risk" : tone === "success" ? "check" : tone === "warning" ? "clock" : "articles"} /></div><strong>{value}</strong>{note && <small>{note}</small>}</>;
+  const content = <><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</>;
   return onClick
     ? <button className={className} type="button" aria-pressed={active} onClick={onClick}>{content}</button>
     : <article className={className}>{content}</article>;
 }
 
-function CollectionStage({ data, date, page, onDateChange, onPageChange, onOpenWindow }) {
-  const latest = data.latestWindow ?? data.windows?.[0];
+const WINDOW_QUALITY_LABELS = { complete: "완료", partial: "부분 완료", unavailable: "실패" };
+
+function DeltaBadge({ value, caption }) {
+  if (value == null || !Number.isFinite(value)) return <span className="pipeline-quad-delta">{caption}</span>;
+  const dir = value > 0 ? "up" : value < 0 ? "down" : "flat";
+  const sign = value > 0 ? "+" : value < 0 ? "" : "±";
+  return <span className="pipeline-quad-delta"><b className={dir}>{sign}{formatNumber(value)}</b>{caption}</span>;
+}
+
+function CollectionStage({
+  data, range, onRangeChange, qualityFilter, onQualityFilterChange,
+  page, onPageChange, onOpenWindow, onOpenAllHistory,
+}) {
   const windows = data.windows ?? [];
-  const visibleWindows = windows.slice(
-    (page - 1) * COLLECTION_PAGE_SIZE,
-    page * COLLECTION_PAGE_SIZE,
-  );
+  const latest = data.latestWindow ?? windows[0] ?? null;
+  const previous = useMemo(() => {
+    if (!latest) return null;
+    return [...windows]
+      .filter((window) => window.id !== latest.id && new Date(window.window_start) < new Date(latest.window_start))
+      .sort((left, right) => new Date(right.window_start) - new Date(left.window_start))[0] ?? null;
+  }, [windows, latest]);
+  const delta = (key) => latest && previous ? (latest[key] ?? 0) - (previous[key] ?? 0) : null;
+  const successCount = latest?.successful_sources?.length ?? 0;
+  const totalSources = successCount + (latest?.failed_sources?.length ?? 0);
+  const qualityDetail = !latest ? "생성 전"
+    : `${successCount}/${totalSources || successCount} 성공 · ${formatDate(latest.window_end)} 구간 · ${totalSources === 0 ? "수집원 정보 없음" : successCount === totalSources ? "모든 수집원 성공" : "일부 수집원 실패"}`;
+
+  const filteredWindows = windows.filter((window) => qualityFilter === ""
+    || (qualityFilter === "completed" ? window.data_quality === "complete" : window.data_quality !== "complete"));
+  const visibleWindows = filteredWindows.slice((page - 1) * COLLECTION_PAGE_SIZE, page * COLLECTION_PAGE_SIZE);
+
   return <div className="pipeline-stage-content">
-    <div className="pipeline-stat-grid">
-      <Stat label="최근 구간 기사" value={`${formatNumber(latest?.article_count)}건`} note="정제 통과" />
-      <Stat label="최근 구간 스토리" value={`${formatNumber(latest?.story_count)}건`} note="중복 보도 통합" />
-      <Stat label="출처" value={`${formatNumber(latest?.publisher_count)}곳`} note="최근 15분" />
-      <Stat label="수집 품질" value={latest ? DATA_QUALITY_LABELS[latest.data_quality] : "대기"} note={latest ? formatDate(latest.window_end) : "생성 전"} tone={latest?.data_quality ?? ""} />
+    <div className="pipeline-step-head">
+      <div>
+        <div className="pipeline-step-kicker"><span className="step">STEP 01</span><span className="kind">COLLECTION WINDOWS</span></div>
+        <h2>15분 수집</h2>
+        <p>서울 시간 :00/:15/:30/:45 구간마다 NAVER·Kakao·Tavily·YouTube에서 원문을 모읍니다. 전체 실패 구간은 0건으로 대체하지 않습니다.</p>
+      </div>
+      <div className="pipeline-range-tabs" role="tablist" aria-label="조회 범위">
+        {WINDOW_RANGE_OPTIONS.map((option) => <button type="button" role="tab" aria-selected={range === option.id} className={range === option.id ? "active" : ""} onClick={() => onRangeChange(option.id)} key={option.id}>{option.label}</button>)}
+      </div>
     </div>
-    <section className="panel pipeline-panel">
-      <div className="pipeline-panel-heading collection-window-heading"><PanelTitle title="날짜별 수집 구간" /><div className="briefing-date-field"><span>조회 날짜</span><DatePicker label="조회 날짜" value={date} max={seoulDateValue()} onChange={onDateChange} /></div></div>
-      <div className="pipeline-table-wrap"><table className="pipeline-table"><thead><tr><th>구간</th><th>품질</th><th>기사</th><th>스토리</th><th>확산</th><th>출처</th><th>위험도</th></tr></thead><tbody>{visibleWindows.map((window) => <tr className="pipeline-window-row" tabIndex={0} role="link" aria-label={`${formatDate(window.window_start)} 수집 기사 보기`} onClick={() => onOpenWindow(window)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenWindow(window); } }} key={window.id}><td>{formatDate(window.window_start)}</td><td><span className={`quality-pill ${window.data_quality}`}>{DATA_QUALITY_LABELS[window.data_quality]}</span></td><td>{formatNumber(window.article_count)}</td><td>{formatNumber(window.story_count)}</td><td>{formatNumber(window.amplification_count)}</td><td>{formatNumber(window.publisher_count)}</td><td>{formatRiskProbability(window.risk_probability)}</td></tr>)}</tbody></table></div>
-      {!windows.length && <p className="panel-empty">선택한 날짜에 생성된 15분 수집 구간이 없습니다.</p>}
-      <Pagination page={page} pageSize={COLLECTION_PAGE_SIZE} total={windows.length} onChange={onPageChange} />
-    </section>
-    <section className="panel pipeline-panel">
-      <PanelTitle title="최근 수집 실행 이력" />
-      <div className="pipeline-result-list">{(data.jobs?.items ?? []).map((job) => <article className="pipeline-result-row" key={job.id}><div><span className={`pipeline-status ${job.status}`}>{job.status === "completed" ? "완료" : job.status === "partial" ? "부분 완료" : job.status === "failed" ? "실패" : "진행 중"}</span><strong>{job.job_type === "realtime" ? "실시간 수집" : job.job_type === "backfill" ? "과거 기사 수집" : "수동 수집"}</strong></div><p>조회 {formatNumber(job.query_count)}회 · 수집 {formatNumber(job.fetched_count)}건 · 신규 {formatNumber(job.new_count)}건 · 연결 {formatNumber(job.matched_count)}건</p><small>{(job.sources ?? []).map((source) => SOURCE_LABELS[source] ?? source).join(", ")} · {formatDate(job.completed_at ?? job.started_at)}</small></article>)}</div>
-      {!data.jobs?.items?.length && <p className="panel-empty">수집 실행 이력이 없습니다.</p>}
+
+    <div className="pipeline-quad-grid">
+      <article className="pipeline-quad-card">
+        <div className="pipeline-quad-head"><span>최근 구간 기사</span><NewspaperIcon /></div>
+        <div className="pipeline-quad-value">{formatNumber(latest?.article_count)}건</div>
+        <DeltaBadge value={delta("article_count")} caption="정제 통과 기준" />
+      </article>
+      <article className="pipeline-quad-card">
+        <div className="pipeline-quad-head"><span>최근 구간 스토리</span><LayersIcon /></div>
+        <div className="pipeline-quad-value">{formatNumber(latest?.story_count)}건</div>
+        <DeltaBadge value={delta("story_count")} caption="중복 보도 통합" />
+      </article>
+      <article className="pipeline-quad-card">
+        <div className="pipeline-quad-head"><span>출처 언론사</span><GlobeIcon /></div>
+        <div className="pipeline-quad-value">{formatNumber(latest?.publisher_count)}곳</div>
+        <DeltaBadge value={delta("publisher_count")} caption="최근 15분" />
+      </article>
+      <article className="pipeline-quad-card">
+        <div className="pipeline-quad-head"><span>수집 품질</span><CheckCircleIcon /></div>
+        <div className="pipeline-quad-value complete">{latest ? WINDOW_QUALITY_LABELS[latest.data_quality] ?? latest.data_quality : "대기"}</div>
+        <span className="pipeline-quad-delta">{qualityDetail}</span>
+      </article>
+    </div>
+
+    <section className="brief-lower-grid">
+      <article className="brief-panel">
+        <div className="brief-panel-head">
+          <div><h3>날짜별 수집 구간</h3><p className="sub">행을 누르면 그 구간에 수집된 기사를 볼 수 있습니다. 위험도 50% 이상은 보라로 표시합니다.</p></div>
+        </div>
+        <div className="pipeline-table-toolbar">
+          <div className="brief-mode-group" role="tablist" aria-label="수집 품질 필터">
+            {WINDOW_QUALITY_FILTERS.map((option) => <button type="button" role="tab" aria-selected={qualityFilter === option.id} className={qualityFilter === option.id ? "active" : ""} onClick={() => onQualityFilterChange(option.id)} key={option.id || "all"}>{option.label}</button>)}
+          </div>
+        </div>
+        <div className="pipeline-table-wrap"><table className="pipeline-table"><thead><tr><th>구간</th><th>품질</th><th>기사</th><th>스토리</th><th>확산</th><th>출처</th><th>위험도</th></tr></thead><tbody>{visibleWindows.map((window) => <tr className="pipeline-window-row" tabIndex={0} role="link" aria-label={`${formatDate(window.window_start)} 수집 기사 보기`} onClick={() => onOpenWindow(window)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenWindow(window); } }} key={window.id}><td>{formatDate(window.window_start)}</td><td><span className={`brief-badge ${window.data_quality === "complete" ? "watch" : window.data_quality === "partial" ? "warning" : "critical"}`}>{WINDOW_QUALITY_LABELS[window.data_quality] ?? window.data_quality}</span></td><td>{window.data_quality === "unavailable" ? "–" : formatNumber(window.article_count)}</td><td>{window.data_quality === "unavailable" ? "–" : formatNumber(window.story_count)}</td><td>{window.data_quality === "unavailable" ? "–" : formatNumber(window.amplification_count)}</td><td>{window.data_quality === "unavailable" ? "–" : formatNumber(window.publisher_count)}</td><td>{window.data_quality === "unavailable" ? <span className="pipeline-window-risk"><span className="pipeline-window-risk-track"><i style={{ width: 0 }} /></span><span>–</span></span> : <span className="pipeline-window-risk"><span className="pipeline-window-risk-track"><i className={(window.risk_probability ?? 0) >= 0.5 ? "high" : ""} style={{ width: `${Math.round((window.risk_probability ?? 0) * 100)}%` }} /></span><span>{formatRiskProbability(window.risk_probability)}</span></span>}</td></tr>)}</tbody></table></div>
+        {!filteredWindows.length && <p className="brief-empty-note">{qualityFilter ? "조건에 맞는 수집 구간이 없습니다." : "선택한 날짜에 생성된 15분 수집 구간이 없습니다."}</p>}
+        <Pagination page={page} pageSize={COLLECTION_PAGE_SIZE} total={filteredWindows.length} onChange={onPageChange} />
+      </article>
+
+      <article className="brief-panel">
+        <div className="brief-panel-head"><div><h3>최근 수집 실행 이력</h3><p className="sub">실시간 · 과거 · 수동 수집 작업</p></div></div>
+        <div className="pipeline-job-list">{(data.jobs?.items ?? []).map((job) => {
+          const dotClass = job.status === "completed" ? "completed" : job.status === "partial" ? "partial" : job.status === "failed" ? "failed" : "running";
+          const statusLabel = job.status === "completed" ? "완료" : job.status === "partial" ? "부분 완료" : job.status === "failed" ? "실패" : "진행 중";
+          const typeLabel = job.job_type === "realtime" ? "실시간 수집" : job.job_type === "backfill" ? "과거 기사 수집" : "수동 수집";
+          return <div className="pipeline-job-row" key={job.id}>
+            <span className={`pipeline-job-dot ${dotClass}`} aria-hidden="true" />
+            <span className="pipeline-job-title">{typeLabel}<span className={`pipeline-job-badge ${dotClass}`}>{statusLabel}</span></span>
+            <span className="pipeline-job-time">{formatDate(job.completed_at ?? job.started_at)}</span>
+            <p className="pipeline-job-detail">조회 {formatNumber(job.query_count)} · 수집 {formatNumber(job.fetched_count)} · 신규 {formatNumber(job.new_count)} · 연결 {formatNumber(job.matched_count)}</p>
+            <small className="pipeline-job-sources">{(job.sources ?? []).map((source) => SOURCE_LABELS[source] ?? source).join(", ") || "출처 없음"}</small>
+          </div>;
+        })}</div>
+        {!data.jobs?.items?.length && <p className="brief-empty-note">수집 실행 이력이 없습니다.</p>}
+        <button type="button" className="pipeline-job-more" onClick={onOpenAllHistory}>수집 관리에서 전체 이력 보기</button>
+      </article>
     </section>
   </div>;
 }
@@ -161,7 +269,7 @@ function FilteringStage({ companyId, data, filterDecision, onDecisionChange, pag
       <Stat label="검토 필요" value={`${formatNumber(summary.review_required_count)}건`} note="관련성·광고성 모호" tone="warning" active={filterDecision === "review_required"} onClick={() => onDecisionChange("review_required")} />
     </div>
     <section className="panel pipeline-panel">
-      <PanelTitle title={resultTitle} />
+      <PanelTitle kicker="FILTER RESULTS" title={resultTitle} />
       {filterDecision === "review_required" && reviewNotice && <div className={`notice ${reviewNotice.type} filter-review-notice`} role="status">{reviewNotice.message}</div>}
       <div className="pipeline-result-list">{(data.filterResults?.items ?? []).map((item) => {
         const decisionLabel = item.decision === "accepted" ? "통과" : item.decision === "review_required" ? "검토 필요" : "제외";
@@ -234,10 +342,18 @@ function SentimentStage({ data }) {
   const distributionTitle = "선택 기간 기사 감성 분포";
   const selectSentiment = (kind) => { setSentimentFilter(kind); setSentimentPage(1); };
   return <div className="pipeline-stage-content">
-    <section className="panel pipeline-panel"><div className="pipeline-panel-heading"><PanelTitle title={distributionTitle} /></div><div className="sentiment-distribution">{["positive", "neutral", "negative"].map((kind) => <div key={kind}><span>{sentimentText(kind)}</span><i><b className={kind} style={{ width: `${analyzed ? counts[kind] / analyzed * 100 : 0}%` }} /></i><strong>{formatPercent(analyzed ? counts[kind] / analyzed : null)} · {formatNumber(counts[kind])}건</strong></div>)}</div></section>
+    <section className="panel pipeline-panel"><div className="pipeline-panel-heading"><PanelTitle kicker="SENTIMENT COMPOSITION" title={distributionTitle} /></div><div className="sentiment-distribution">{["positive", "neutral", "negative"].map((kind) => <div key={kind}><span>{sentimentText(kind)}</span><i><b className={kind} style={{ width: `${analyzed ? counts[kind] / analyzed * 100 : 0}%` }} /></i><strong>{formatPercent(analyzed ? counts[kind] / analyzed : null)} · {formatNumber(counts[kind])}건</strong></div>)}</div></section>
     <div className="pipeline-stat-grid" aria-label="기사 감성 목록 선택"><Stat label="분석 대상" value={`${formatNumber(articles.length)}건`} note={`완료 ${formatNumber(analyzed)}건 · 대기 ${formatNumber(counts.pending)}건`} active={sentimentFilter === "all"} onClick={() => selectSentiment("all")} /><Stat label="긍정" value={`${formatNumber(counts.positive)}건`} note={formatPercent(analyzed ? counts.positive / analyzed : null)} tone="success" active={sentimentFilter === "positive"} onClick={() => selectSentiment("positive")} /><Stat label="중립" value={`${formatNumber(counts.neutral)}건`} note={formatPercent(analyzed ? counts.neutral / analyzed : null)} active={sentimentFilter === "neutral"} onClick={() => selectSentiment("neutral")} /><Stat label="부정" value={`${formatNumber(counts.negative)}건`} note={formatPercent(analyzed ? counts.negative / analyzed : null)} tone="danger" active={sentimentFilter === "negative"} onClick={() => selectSentiment("negative")} /></div>
-    <section className="panel pipeline-panel"><PanelTitle title={listTitle} /><div className="pipeline-result-list">{visibleArticles.map((article) => <a className="pipeline-result-row linked" href={article.url} target="_blank" rel="noreferrer" key={article.id}><div><span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span><strong>{article.title}</strong></div><p>긍정 {formatPercent(article.positive_probability)} · 중립 {formatPercent(article.neutral_probability)} · 부정 {formatPercent(article.negative_probability)}</p><small>{SOURCE_LABELS[article.source] ?? article.source} · 신뢰도 {formatPercent(article.sentiment_confidence)} · {formatDate(article.published_at ?? article.created_at)}</small></a>)}</div>{!filteredArticles.length && <p className="panel-empty">선택한 감성의 분석 결과가 없습니다.</p>}<Pagination page={visibleSentimentPage} pageSize={SENTIMENT_PAGE_SIZE} total={filteredArticles.length} onChange={setSentimentPage} /></section>
+    <section className="panel pipeline-panel"><PanelTitle kicker="ANALYZED ARTICLES" title={listTitle} /><div className="pipeline-result-list">{visibleArticles.map((article) => <a className="pipeline-result-row linked" href={article.url} target="_blank" rel="noreferrer" key={article.id}><div><span className={`sentiment-pill ${sentimentKind(article.sentiment_label)}`}>{sentimentText(article.sentiment_label)}</span><strong>{article.title}</strong></div><p>긍정 {formatPercent(article.positive_probability)} · 중립 {formatPercent(article.neutral_probability)} · 부정 {formatPercent(article.negative_probability)}</p><small>{SOURCE_LABELS[article.source] ?? article.source} · 신뢰도 {formatPercent(article.sentiment_confidence)} · {formatDate(article.published_at ?? article.created_at)}</small></a>)}</div>{!filteredArticles.length && <p className="panel-empty">선택한 감성의 분석 결과가 없습니다.</p>}<Pagination page={visibleSentimentPage} pageSize={SENTIMENT_PAGE_SIZE} total={filteredArticles.length} onChange={setSentimentPage} /></section>
   </div>;
+}
+
+function RecentCollectionDate({ risk }) {
+  const latest = (risk.evidence_articles ?? []).reduce((current, article) => {
+    const value = article.collected_at;
+    return value && (!current || new Date(value) > new Date(current)) ? value : current;
+  }, null);
+  return <small className="pipeline-risk-collected-date">최근 수집 {formatDate(latest)}</small>;
 }
 
 function RiskStage({ data, selectedRiskId, classification, onSelect, onClassificationChange, onOpenResponse }) {
@@ -289,7 +405,7 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
     if (!isRisk || !selected || selected.id === selectedRiskId) return;
     onSelect(selected.id);
   }, [isRisk, onSelect, selected, selectedRiskId]);
-  const listTitle = `${classificationLabel} 목록`;
+  const listTitle = `${classificationLabel} 이슈 선택`;
   const emptyMessage = `선택 기간의 판정 대상 중 ${classificationLabel} 이슈가 없습니다.`;
   return <div className="pipeline-stage-content">
     <div className="pipeline-stat-grid risk-stage-stat-grid">
@@ -307,7 +423,7 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
       </div> : <p className="panel-empty">{emptyMessage}</p>}
     </section>
     <section className="panel pipeline-panel pipeline-risk-evidence">
-      <div className="pipeline-panel-heading pipeline-risk-detail-heading"><PanelTitle title="판정 상세" />{selected && isRisk && <button className="secondary-button" type="button" onClick={() => onOpenResponse(selected)}>대응 보기</button>}</div>
+      <div className="pipeline-panel-heading pipeline-risk-detail-heading"><PanelTitle kicker="DETECTION DETAIL" title="판정 상세" />{selected && isRisk && <button className="secondary-button" type="button" onClick={() => onOpenResponse(selected)}>대응 보기</button>}</div>
       {selected ? <>
         <div className="pipeline-risk-head"><div><span className={isRisk ? `severity ${selected.severity}` : "judgment-badge non-risk"}>{isRisk ? selected.severity === "critical" ? "긴급" : "주의" : classificationLabel}</span><h3>{riskEventTitle(selected)}</h3><RiskJudgmentModelInfo risk={selected} /></div></div>
         <div className="pipeline-risk-metrics"><div><span>위험도</span><strong>{formatRiskProbability(selected.risk_probability)}</strong></div><div><span>위험 판정 기사</span><strong>{formatNumber(selected.risk_article_count ?? 0)}건</strong></div><div><span>관련 보도</span><strong>{formatNumber(selected.evidence_article_count ?? evidenceArticles.length)}건</strong></div><div><span>출처</span><strong>{formatNumber(selected.source_count ?? selected.risk_source_count ?? 0)}곳</strong></div></div>
@@ -326,22 +442,87 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
   </div>;
 }
 
+// 6단계 각각의 "오늘" 수치를 한 화면에서 보여주고, 카드를 누르면 그 단계로
+// 이동한다. 사이드바 대신 이 요약이 단계 사이를 오가는 진입점 역할을 한다.
+function PipelineFlowOverview({ overview, overviewError, stageId, onSelectStage }) {
+  const monitoring = overview?.monitoring;
+  const daily = overview?.daily;
+  const filterSummary = overview?.filterSummary;
+  const riskSummary = overview?.riskSummary;
+  const responseSummary = overview?.responseSummary;
+
+  const counts = {
+    collection: daily?.article_count ?? 0,
+    filtering: filterSummary?.accepted_count ?? 0,
+    sentiment: daily?.negative_article_count ?? 0,
+    stories: daily?.story_count ?? 0,
+    risk: riskSummary?.risk ?? 0,
+    response: responseSummary?.active ?? 0,
+  };
+  const cards = [
+    { id: "collection", step: "01", label: "15분 수집", value: counts.collection, note: "원문 수집" },
+    { id: "filtering", step: "02", label: "정제", value: counts.filtering, note: filterSummary ? `통과 · 제외 ${formatNumber((filterSummary.rejected_count ?? 0) + (filterSummary.duplicate_count ?? 0))} · 검토 ${formatNumber(filterSummary.review_required_count ?? 0)}` : "통과" },
+    { id: "sentiment", step: "03", label: "감성분석", value: counts.sentiment, note: daily ? `부정 · 긍정 ${formatNumber(daily.positive_article_count)} · 중립 ${formatNumber(daily.neutral_article_count)}` : "부정" },
+    { id: "stories", step: "04", label: "이슈 그룹핑", value: counts.stories, note: daily ? `이슈 · 기사 ${formatNumber(daily.article_count)}건 묶음` : "이슈" },
+    { id: "risk", step: "05", label: "위험판정", value: counts.risk, note: "오늘 위험 사건 판정" },
+    { id: "response", step: "06", label: "대응", value: counts.response, note: responseSummary ? `활성 위험 · 검토 필요 ${formatNumber(responseSummary.needs_response ?? 0)}건` : "초안 생성" },
+  ];
+  const maxCount = Math.max(1, counts.collection);
+  const modelLabel = monitoring?.model_version
+    ? `${monitoring.model_version}${monitoring.model_state === "provisional" ? " · provisional" : ""}`
+    : "모델 정보 확인 중";
+
+  return <section className="brief-panel pipeline-flow-panel">
+    <div className="pipeline-flow-head">
+      <div>
+        <h2>오늘의 파이프라인 흐름</h2>
+        <p>{seoulDateValue().slice(5).replace("-", ".")} 기준. 수집된 원문이 6단계를 거쳐 위험 사건과 대응 초안으로 좁혀집니다. 단계를 누르면 아래 내용이 바뀝니다.</p>
+      </div>
+      <span className="pipeline-model-chip">{modelLabel}</span>
+    </div>
+    {overviewError && <div className="notice error">{overviewError}</div>}
+    <div className="pipeline-flow-cards">
+      {cards.map((card) => {
+        const Icon = STAGE_ICONS[card.id];
+        return <button type="button" className={`pipeline-flow-card${stageId === card.id ? " active" : ""}`} onClick={() => onSelectStage(card.id)} key={card.id}>
+          <div className="pipeline-flow-card-head"><span>{card.step} {card.label}</span><Icon /></div>
+          <strong className="flow-value">{formatNumber(card.value)}</strong>
+          <small>{card.note}</small>
+        </button>;
+      })}
+    </div>
+    <div className="pipeline-flow-bar" aria-hidden="true">
+      {cards.map((card) => <div className="pipeline-flow-bar-seg" style={{ width: `${Math.max(4, Math.round(card.value / maxCount * 100))}%` }} key={card.id} />)}
+      <span className="pipeline-flow-bar-arrow">{cards.map((card) => formatNumber(card.value)).join(" → ")}</span>
+    </div>
+  </section>;
+}
+
 export default function AnalysisPipelinePage() {
   const { stage: requestedStage } = useParams();
   const stageId = STAGE_IDS.has(requestedStage) ? requestedStage : "collection";
   const stage = STAGES.find((item) => item.id === stageId);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data: companies = [], loading: companiesLoading, error: companiesError } = useSharedResource(
-    "/companies", () => api.get("/companies").then((response) => response.data),
-  );
+  const [companies, setCompanies] = useState([]);
+  const [companiesLoading, setCompaniesLoading] = useState(true);
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filterDecision, setFilterDecision] = useState("");
   const { period, changePeriod } = useAnalysisPeriod();
   const periodKey = `${period.start}:${period.end}`;
   const periodQuery = `start_date=${period.start}&end_date=${period.end}`;
+  const [loadedKey, setLoadedKey] = useState(null);
   const [page, setPage] = useState(1);
   const [collectionDate, setCollectionDate] = useState(() => seoulDateValue());
+  const [windowRange, setWindowRange] = useState("today");
+  const [qualityFilter, setQualityFilter] = useState("");
   const [articleWindow, setArticleWindow] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [overviewError, setOverviewError] = useState(null);
+  const [manualCollecting, setManualCollecting] = useState(false);
+  const requestSequence = useRef(0);
   const selectedCompanyId = searchParams.get("companyId") ?? "";
   const requestedRiskClassification = searchParams.get("classification") ?? "risk";
   const riskClassification = RISK_CLASSIFICATIONS.has(requestedRiskClassification) ? requestedRiskClassification : "risk";
@@ -349,7 +530,10 @@ export default function AnalysisPipelinePage() {
     ? null : Number(searchParams.get("eventId")) || null;
   const rememberedRiskId = getAnalysisPipelineRiskEventId(selectedCompanyId);
   const selectedRiskId = querySelectedRiskId ?? (riskClassification === "risk" ? rememberedRiskId : null);
-  const viewKey = `${stageId}:${selectedCompanyId}:${stageId === "collection" ? collectionDate : periodKey}:${filterDecision}:${riskClassification}:${page}`;
+  const viewKey = `${stageId}:${selectedCompanyId}:${stageId === "collection" ? `${collectionDate}:${windowRange}` : periodKey}:${filterDecision}:${riskClassification}:${page}`;
+  const currentViewKey = useRef(viewKey);
+  currentViewKey.current = viewKey;
+  const visibleData = loadedKey === viewKey ? data : {};
 
   useEffect(() => {
     if (stageId !== "risk" || requestedRiskClassification === riskClassification) return;
@@ -370,23 +554,39 @@ export default function AnalysisPipelinePage() {
   }, [querySelectedRiskId, riskClassification, selectedCompanyId, stageId]);
 
   useEffect(() => {
-    const selected = resolveSelectedCompany(companies, selectedCompanyId);
-    if (selected) rememberSelectedCompanyId(selected.id);
-    if (selected && String(selected.id) !== selectedCompanyId) {
-      setSearchParams((current) => { const next = new URLSearchParams(current); next.set("companyId", String(selected.id)); return next; }, { replace: true });
-    }
-  }, [companies, selectedCompanyId, setSearchParams]);
+    let active = true;
+    setCompaniesLoading(true);
+    api.get("/companies").then((response) => {
+      if (!active) return;
+      const next = response.data ?? [];
+      setCompanies(next);
+      const selected = resolveSelectedCompany(next, selectedCompanyId);
+      if (selected) rememberSelectedCompanyId(selected.id);
+      if (selected && String(selected.id) !== selectedCompanyId) setSearchParams((current) => { const params = new URLSearchParams(current); params.set("companyId", String(selected.id)); return params; }, { replace: true });
+    }).catch((requestError) => active && setError(getErrorMessage(requestError)))
+      .finally(() => { if (active) setCompaniesLoading(false); });
+    return () => { active = false; };
+  }, [selectedCompanyId, setSearchParams]);
 
-  const { data: visibleData = {}, loading, error: dataError, refresh: load } = useSharedResource(
-    `pipeline:${viewKey}`,
-    async () => {
-      if (!selectedCompanyId || stageId === "response") return {};
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (viewKey !== currentViewKey.current) return;
+    if (!selectedCompanyId) { setLoading(false); return; }
+    const requestId = ++requestSequence.current;
+    if (!silent) { setLoading(true); setError(null); }
+    try {
       let result;
+      if (stageId === "response") {
+        setData({}); setError(null); setLoading(false);
+        return;
+      }
       if (stageId === "collection") {
-        const range = seoulDateRange(collectionDate);
+        const spanDays = WINDOW_RANGE_OPTIONS.find((option) => option.id === windowRange)?.days ?? 1;
+        const range = spanDays === 1 ? seoulDateRange(collectionDate) : seoulDateRangeSpan(collectionDate, spanDays);
         const [monitoring, latestWindows, windows, jobs] = await Promise.all([
           api.get(`/companies/${selectedCompanyId}/monitoring`),
           api.get(`/companies/${selectedCompanyId}/feature-windows?limit=1`),
+          // 서버가 limit을 2000으로 제한한다(30일 * 96구간 = 2880보다 작음). 30일
+          // 범위에서는 가장 최근 2000구간(약 20일 분량)까지만 보인다.
           api.get(`/companies/${selectedCompanyId}/feature-windows?date_from=${encodeURIComponent(range.start)}&date_to=${encodeURIComponent(range.end)}&limit=2000`),
           api.get(`/companies/${selectedCompanyId}/collection-jobs?page=1&page_size=5`),
         ]);
@@ -407,18 +607,52 @@ export default function AnalysisPipelinePage() {
         const items = [...(risks.data?.items ?? [])];
         const totalPages = Math.ceil((risks.data?.total ?? 0) / 100);
         for (let riskPage = 2; riskPage <= totalPages; riskPage += 1) {
+          if (requestId !== requestSequence.current || viewKey !== currentViewKey.current) return;
           params.set("page", String(riskPage));
           const next = await api.get(`/companies/${selectedCompanyId}/risk-judgments/page?${params}`);
           items.push(...(next.data?.items ?? []));
         }
         result = { risks: { ...risks.data, items } };
       }
-      return result;
-    },
-  );
-  const error = companiesError || dataError ? getErrorMessage(companiesError || dataError) : null;
+      if (requestId !== requestSequence.current || viewKey !== currentViewKey.current) return;
+      setData(result); setLoadedKey(viewKey); setError(null);
+    } catch (requestError) { if (requestId === requestSequence.current && viewKey === currentViewKey.current) setError(getErrorMessage(requestError)); }
+    finally { if (requestId === requestSequence.current && viewKey === currentViewKey.current) setLoading(false); }
+  }, [collectionDate, filterDecision, page, period, periodQuery, riskClassification, selectedCompanyId, stageId, viewKey, windowRange]);
 
-  useEffect(() => { setPage(1); }, [selectedCompanyId, stageId, periodKey]);
+  useEffect(() => { load(); const timer = window.setInterval(() => load({ silent: true }), 30000); return () => { window.clearInterval(timer); requestSequence.current += 1; }; }, [load]);
+  useEffect(() => { setPage(1); }, [selectedCompanyId, stageId, periodKey, windowRange, qualityFilter]);
+
+  // 오늘의 파이프라인 흐름 요약은 어느 단계를 보고 있든 항상 "오늘" 기준으로
+  // 6단계 전부를 한 번에 보여준다. 선택한 단계의 조회 범위와는 독립적이다.
+  useEffect(() => {
+    if (!selectedCompanyId) { setOverview(null); return; }
+    let active = true;
+    const today = seoulDateValue();
+    const loadOverview = () => Promise.all([
+      api.get(`/companies/${selectedCompanyId}/monitoring`),
+      api.get(`/companies/${selectedCompanyId}/daily-summaries?start_date=${today}&end_date=${today}`),
+      api.get(`/companies/${selectedCompanyId}/filter-summary?start_date=${today}&end_date=${today}&analysis_only=true`),
+      api.get(`/companies/${selectedCompanyId}/risk-judgments/page?classification=risk&view=all&page=1&page_size=1&start_date=${today}&end_date=${today}`),
+      // 대응 단계는 "오늘 새로 열린 것"이 아니라 지금 활성 상태인 전체를 본다.
+      // 여기만 날짜로 좁히면 위험 사건이 어제 이전에 열렸다는 이유로 0건처럼
+      // 보여 대응이 밀려 있는데도 없는 것처럼 오해하게 된다.
+      api.get(`/companies/${selectedCompanyId}/risk-events/page?view=active&page=1&page_size=1&response=all`),
+    ]).then(([monitoring, daily, filterSummary, riskJudgments, riskEvents]) => {
+      if (!active) return;
+      setOverview({
+        monitoring: monitoring.data,
+        daily: daily.data?.[0] ?? null,
+        filterSummary: filterSummary.data,
+        riskSummary: riskJudgments.data?.summary ?? null,
+        responseSummary: riskEvents.data?.summary ?? null,
+      });
+      setOverviewError(null);
+    }).catch((requestError) => { if (active) setOverviewError(getErrorMessage(requestError)); });
+    loadOverview();
+    const timer = window.setInterval(loadOverview, 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selectedCompanyId]);
 
   const updateRiskSelection = useCallback((eventId) => {
     if (eventId && riskClassification === "risk") {
@@ -439,6 +673,19 @@ export default function AnalysisPipelinePage() {
     navigate(`/analysis/response?${params}`);
   };
   const selectCompany = (companyId) => { rememberSelectedCompanyId(companyId); setSearchParams({ companyId }); };
+  const triggerManualCollection = async () => {
+    if (!selectedCompanyId || manualCollecting) return;
+    setManualCollecting(true);
+    try {
+      // 본문이 필수라 빈 객체라도 보내야 한다 - 모든 필드에 기본값이 있어도
+      // 요청 본문 자체가 없으면 FastAPI가 422로 거부한다.
+      // 실제 네이버·카카오·Tavily·YouTube에 순서대로 질의하는 작업이라 기본
+      // 타임아웃(15초)보다 오래 걸린다 - 정제 재검토 호출과 같은 시간을 준다.
+      await api.post(`/companies/${selectedCompanyId}/collect`, {}, { timeout: 120000 });
+      await load({ silent: true });
+    } catch (requestError) { setError(getErrorMessage(requestError)); }
+    finally { setManualCollecting(false); }
+  };
   const moveStage = (nextStage) => {
     const params = new URLSearchParams();
     if (selectedCompanyId) params.set("companyId", selectedCompanyId);
@@ -451,21 +698,45 @@ export default function AnalysisPipelinePage() {
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   const selectedCompany = companies.find((company) => String(company.id) === selectedCompanyId) ?? null;
+  const monitoringStatus = overview?.monitoring?.monitoring_status;
+  const monitoringLive = monitoringStatus && !["paused", "archived", "error"].includes(monitoringStatus);
+  const lastCollectedLabel = overview?.monitoring?.last_collected_at
+    ? new Date(overview.monitoring.last_collected_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }).replace(/^(오전|오후)\s*/, "")
+    : null;
 
-  return <section className="analysis-pipeline-shell">
-    <aside className="analysis-pipeline-sidebar"><div><h2>분석 파이프라인</h2></div><nav aria-label="분석 파이프라인">{STAGES.map((item, index) => <button type="button" className={stageId === item.id ? "active" : ""} aria-current={stageId === item.id ? "page" : undefined} onClick={() => moveStage(item.id)} key={item.id}><span>{item.step}</span><strong>{item.label}</strong>{index < STAGES.length - 1 && <i aria-hidden="true" />}</button>)}</nav></aside>
-    <main className="workspace analysis-statistics-workspace analysis-pipeline-workspace">
-      <header className="pipeline-heading"><div><h1>{stage.label}</h1><p>{stage.description}</p></div><div className="pipeline-heading-filters">{stageId !== "collection" && <AnalysisPeriodControl period={period} onChange={(field, value) => { setPage(1); changePeriod(field, value); }} />}<label><span>분석 기업</span><select value={selectedCompanyId} onChange={(event) => selectCompany(event.target.value)}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}</select></label></div></header>
-      {error && <div className="notice error">{error}</div>}
-      {companiesLoading || (companies.length > 0 && selectedCompanyId && stageId !== "response" && !error && loading && !Object.keys(visibleData).length) ? <p className="empty-state">{stage.label} 데이터를 불러오는 중입니다.</p> : !companies.length ? <p className="empty-state">먼저 기업을 등록해 주세요.</p> : <>
-        {stageId === "collection" && <CollectionStage data={visibleData} date={collectionDate} page={page} onDateChange={(value) => { if (!value) return; setCollectionDate(value); setPage(1); }} onPageChange={setPage} onOpenWindow={setArticleWindow} />}
-        {stageId === "filtering" && <FilteringStage key={`${selectedCompanyId}:${periodKey}`} companyId={selectedCompanyId} data={visibleData} filterDecision={filterDecision} onDecisionChange={(value) => { setFilterDecision(value); setPage(1); }} page={page} onPageChange={setPage} onRefresh={() => load().catch(() => undefined)} />}
-        {stageId === "stories" && <StoryStage key={`${selectedCompanyId}:${periodKey}`} data={visibleData} />}
-        {stageId === "sentiment" && <SentimentStage key={`${selectedCompanyId}:${periodKey}`} data={visibleData} />}
-        {stageId === "risk" && <RiskStage key={`${selectedCompanyId}:${periodKey}`} data={visibleData} selectedRiskId={selectedRiskId} classification={riskClassification} onSelect={updateRiskSelection} onClassificationChange={updateRiskClassification} onOpenResponse={openRiskResponse} />}
-        {stageId === "response" && <RiskManagementPage dateRange={period} canReview initialCompanyId={selectedCompanyId} initialRiskEventId={rememberedRiskId} embedded />}
-      </>}
-    </main>
+  return <main className="workspace analysis-statistics-workspace analysis-pipeline-workspace signal-scope brief-dashboard">
+    <p className="brief-crumb">Pipeline <ChevronRightIcon /> <b>{selectedCompany ? `${selectedCompany.name} · ${selectedCompany.company_role === "main" ? "나의 기업" : "비교 기업"}` : "기업 미선택"}</b></p>
+
+    <div className="brief-head-row">
+      <h1>{selectedCompany ? `${selectedCompany.name} 분석 파이프라인` : "분석 파이프라인"}
+        {overview && <span className={`pipeline-live-pill${monitoringLive ? "" : " paused"}`}><i aria-hidden="true" />{monitoringLive ? "실시간 탐지중" : "탐지 중지"}{lastCollectedLabel && ` · 마지막 수집 ${lastCollectedLabel}`}</span>}
+      </h1>
+      <div className="brief-head-controls">
+        <CompanySearchField companies={companies} selectedCompany={selectedCompany} onSelect={selectCompany} />
+        <label className="brief-date-pill"><CalendarIconSmall /><input type="date" value={collectionDate} max={seoulDateValue()} onChange={(event) => { if (event.target.value) { setCollectionDate(event.target.value); setPage(1); } }} /></label>
+        <button type="button" className={`brief-cta ghost${manualCollecting ? " spin" : ""}`} onClick={triggerManualCollection} disabled={!selectedCompanyId || manualCollecting}><RefreshIcon />{manualCollecting ? "수집 중…" : "수동 수집"}</button>
+      </div>
+    </div>
+
+    {selectedCompanyId && <PipelineFlowOverview overview={overview} overviewError={overviewError} stageId={stageId} onSelectStage={moveStage} />}
+
+    {stageId !== "collection" && <div className="pipeline-step-head">
+      <div>
+        <div className="pipeline-step-kicker"><span className="step">STEP {stage.step}</span>{stage.kicker && <span className="kind">{stage.kicker}</span>}</div>
+        <h2>{stage.label}</h2>
+        <p>{stage.description}</p>
+      </div>
+      <AnalysisPeriodControl period={period} onChange={(field, value) => { setPage(1); changePeriod(field, value); }} />
+    </div>}
+    {error && <div className="notice error">{error}</div>}
+    {companiesLoading || (companies.length > 0 && selectedCompanyId && stageId !== "response" && !error && (loading || loadedKey !== viewKey) && !Object.keys(visibleData).length) ? <p className="empty-state">{stage.label} 데이터를 불러오는 중입니다.</p> : !companies.length ? <p className="empty-state">먼저 기업을 등록해 주세요.</p> : <>
+      {stageId === "collection" && <CollectionStage data={visibleData} range={windowRange} onRangeChange={setWindowRange} qualityFilter={qualityFilter} onQualityFilterChange={setQualityFilter} page={page} onPageChange={setPage} onOpenWindow={setArticleWindow} onOpenAllHistory={() => navigate(`/manage?section=collection${selectedCompanyId ? `&articleCompanyId=${selectedCompanyId}` : ""}`)} />}
+      {stageId === "filtering" && <FilteringStage key={`${selectedCompanyId}:${periodKey}`} companyId={selectedCompanyId} data={visibleData} filterDecision={filterDecision} onDecisionChange={(value) => { setFilterDecision(value); setPage(1); }} page={page} onPageChange={setPage} onRefresh={() => load({ silent: true })} />}
+      {stageId === "stories" && <StoryStage key={`${selectedCompanyId}:${periodKey}`} data={visibleData} />}
+      {stageId === "sentiment" && <SentimentStage key={`${selectedCompanyId}:${periodKey}`} data={visibleData} />}
+      {stageId === "risk" && <RiskStage key={`${selectedCompanyId}:${periodKey}`} data={visibleData} selectedRiskId={selectedRiskId} classification={riskClassification} onSelect={updateRiskSelection} onClassificationChange={updateRiskClassification} onOpenResponse={openRiskResponse} />}
+      {stageId === "response" && <RiskManagementPage dateRange={period} canReview initialCompanyId={selectedCompanyId} initialRiskEventId={rememberedRiskId} embedded />}
+    </>}
     {articleWindow && selectedCompany && <CollectedArticlesDialog company={selectedCompany} windowRange={{ start: articleWindow.window_start, end: articleWindow.window_end }} onClose={() => setArticleWindow(null)} />}
-  </section>;
+  </main>;
 }

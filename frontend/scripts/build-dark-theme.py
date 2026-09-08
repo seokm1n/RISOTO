@@ -270,8 +270,16 @@ def parse(text):
 
 def main():
     raw = io.open(CSS, encoding="utf-8").read()
+    # BEGIN 뒤에는 이전에 생성된 블록과, 그 뒤에 손으로 이어 붙인 내용(예:
+    # .signal-scope 레이어)이 있을 수 있다. 생성 블록만 들어내고 그 뒤 내용은
+    # 반드시 보존해야 한다 - 안 그러면 재실행할 때마다 뒤에 쓴 CSS가 사라진다.
+    tail = ""
     if BEGIN in raw:
-        raw = raw[: raw.index(BEGIN)].rstrip() + "\n"
+        before, _, rest = raw.partition(BEGIN)
+        if END in rest:
+            _, _, tail = rest.partition(END)
+            tail = tail.lstrip("\n")
+        raw = before.rstrip() + "\n"
 
     rules = parse(strip_comments(raw))
 
@@ -281,7 +289,9 @@ def main():
         head = selector.strip()
         # :root 토큰은 손으로 정의한다. 이미 다크 스코프가 붙은 규칙(손으로 쓴
         # 다크 토큰 블록)을 다시 변환하면 자기 자신을 덮어써서 테마가 깨진다.
-        if head.startswith(":root") or "[data-theme=" in head:
+        # .signal-scope(브리핑 홈·위험 상세)도 처음부터 새 팔레트로 지었고
+        # 다크 변형을 손으로 따로 써 뒀으므로 건너뛴다.
+        if head.startswith(":root") or "[data-theme=" in head or ".signal-scope" in head:
             continue
         out = []
         for prop, value, important in decls:
@@ -311,7 +321,8 @@ def main():
         "   ===== */\n"
     )
     block = "\n\n" + banner + "\n".join(generated) + "\n" + END + "\n"
-    io.open(CSS, "w", encoding="utf-8").write(raw + block)
+    suffix = ("\n" + tail) if tail else ""
+    io.open(CSS, "w", encoding="utf-8").write(raw + block + suffix)
     print("규칙 %d개 / 선언 %d개 생성" % (len(generated), count))
     print("추가된 용량: %.1f KB" % (len(block) / 1024))
 

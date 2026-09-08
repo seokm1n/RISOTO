@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { formatDate, formatRiskProbability } from "../../shared/presentation";
 
-const HOLD_STATUS = {
+export const HOLD_STATUS = {
   근거부족_보류: {
     kicker: "대응안 생성 보류",
     headline: "연결된 근거 기사가 없습니다",
@@ -27,13 +27,13 @@ const HOLD_STATUS = {
   },
 };
 
-const STANCE_LABELS = {
+export const STANCE_LABELS = {
   선제_공개: "선제 공개",
   사실확인_우선: "사실 확인 우선",
   피해구제_중심: "피해 구제 중심",
 };
 
-const STRATEGY_LABELS = {
+export const STRATEGY_LABELS = {
   사실관계_정정: "사실관계 정정",
   사과_시정: "사과·시정",
   보상: "보상",
@@ -44,7 +44,7 @@ const STRATEGY_LABELS = {
   부인_반박: "부인·반박",
 };
 
-const SEVERITY_LABELS = {
+export const SEVERITY_LABELS = {
   critical: "긴급",
   warning: "주의",
   normal: "일반",
@@ -57,18 +57,18 @@ const TIME_BANDS = [
   { label: "후속 조치", limit: Infinity },
 ];
 
-function humanize(value) {
+export function humanize(value) {
   return typeof value === "string" ? value.replaceAll("_", " ") : value ?? "";
 }
 
-function deadlineLabel(value) {
+export function deadlineLabel(value) {
   const hours = Number(value);
   if (!Number.isFinite(hours)) return "기한 확인";
   if (hours <= 1) return "1시간 이내";
   return `${hours}시간 이내`;
 }
 
-function bandsOf(checklist) {
+export function bandsOf(checklist) {
   const buckets = TIME_BANDS.map((band) => ({ ...band, items: [] }));
   const ordered = [...(checklist ?? [])].sort((left, right) => {
     const leftHours = Number.isFinite(Number(left.deadline_hours))
@@ -167,7 +167,7 @@ function ScenarioSelector({ scenarios, active, onChange, brief }) {
 
 // summary_points를 "라벨 - 문장"으로 읽게 한다. 모델이 라벨을 붙여 오면 그대로 쓰고,
 // 없으면 자리로 채운다(프롬프트가 첫 항목은 상황, 나머지는 그래서 왜 중요한지로 쓰게 한다).
-function summaryRows(points, fallbackLabel) {
+export function summaryRows(points, fallbackLabel) {
   return points.map((point, index) => {
     const labelled = /^\s*([^:：]{2,14})\s*[:：]\s*([\s\S]+)$/.exec(point);
     if (labelled) return { label: labelled[1].trim(), text: labelled[2].trim() };
@@ -177,8 +177,8 @@ function summaryRows(points, fallbackLabel) {
 }
 
 // tier.py의 3단계 등급 코드(TIER_ORDER)를 화면 표시용 라벨·색조로 옮긴다.
-const TIER_LABELS = { T1_관찰: "관찰", T2_주시: "주시", T3_긴급: "긴급" };
-const TIER_TONES = { T1_관찰: "watch", T2_주시: "caution", T3_긴급: "urgent" };
+export const TIER_LABELS = { T1_관찰: "관찰", T2_주시: "주시", T3_긴급: "긴급" };
+export const TIER_TONES = { T1_관찰: "watch", T2_주시: "caution", T3_긴급: "urgent" };
 
 // 동종 기업 화면(PeerRecommendationContent)의 위험 요약 박스와 같은 자리에,
 // 우리 기업 사건에서도 현재 위험 내용을 한눈에 보여준다.

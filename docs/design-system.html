@@ -1,32 +1,46 @@
-<title>RISOTO 디자인 시스템</title>
+<title>RISOTO 디자인 시스템 v2</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
 <style>
   /* RISOTO는 Pretendard를 씁니다. Pretendard가 설치돼 있지 않은 환경을 위해
      결이 가장 가까운 Noto Sans KR을 대체로 둡니다. */
   :root {
-    --cream: #fbf6ee;
-    --paper: #fffdf9;
-    --rice: #eee2d2;
-    --terracotta: #b85836;
-    --terracotta-deep: #8d3f29;
-    --sage: #597265;
-    --gold: #c88d30;
-    --ink-strong: #30251f;
-    --ink-soft: #75695f;
-    --divider: rgba(109, 82, 61, .14);
-    --divider-strong: rgba(109, 82, 61, .22);
-    --radius-panel: 1.7rem;
-    --radius-card: 1.1rem;
-    --radius-control: .8rem;
-    --shadow-soft: 0 16px 38px rgba(82, 54, 34, .08);
-    --shadow-lift: 0 20px 35px rgba(82, 54, 34, .12);
+    --bg: #eeeff2;
+    --paper: #ffffff;
+    --sunken: #f4f5f8;
+    --ink-strong: #171a23;
+    --ink-soft: #5c6373;
+    --ink-faint: #6b7280;
+    --divider: rgba(23, 26, 35, .09);
+    --divider-strong: rgba(23, 26, 35, .16);
+
+    --navy: #223059;
+    --crimson: #b3323f;
+    --crimson-soft: #fbe6e8;
+    --crimson-ink: #7d1f29;
+    --amber: #b0731a;
+    --amber-soft: #faf0da;
+    --amber-ink: #7a4f0f;
+    --green: #29715f;
+    --green-soft: #e2efe9;
+    --green-ink: #1c4d40;
+
+    --violet: #6d28d9;
+    --violet-soft: #ede9fe;
+    --violet-strong: #4c1d95;
+    --violet-2: #c4b5fd;
+
+    --radius-lg: 18px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(23, 26, 35, .04), 0 10px 28px rgba(23, 26, 35, .06);
+    --shadow-lift: 0 16px 40px rgba(23, 26, 35, .12);
     --font: "Pretendard Variable", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
 
   body {
     margin: 0;
-    background: var(--cream);
+    background: var(--bg);
     color: var(--ink-strong);
     font-family: var(--font);
     font-size: 15px;
@@ -34,198 +48,170 @@
     font-synthesis: none;
     -webkit-font-smoothing: antialiased;
   }
-  .page { max-width: 1000px; margin: 0 auto; padding: 56px 24px 96px; }
+  .page { max-width: 1040px; margin: 0 auto; padding: 56px 24px 96px; }
 
-  .eyebrow {
-    margin: 0;
-    color: var(--terracotta);
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: .16em;
-    text-transform: uppercase;
-  }
-  h1 {
-    margin: 14px 0 0;
-    font-size: clamp(1.9rem, 4vw, 2.6rem);
-    font-weight: 700;
-    letter-spacing: -.03em;
-    line-height: 1.15;
-    word-break: keep-all;
-    text-wrap: balance;
-  }
-  .lede {
-    max-width: 40rem;
-    margin: 14px 0 0;
-    color: var(--ink-soft);
-    font-size: 15px;
-    line-height: 1.75;
-    word-break: keep-all;
-  }
+  .eyebrow { margin: 0; color: var(--violet); font-size: 13px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+  h1 { margin: 14px 0 0; font-size: clamp(1.9rem, 4vw, 2.6rem); font-weight: 700; letter-spacing: -.03em; line-height: 1.15; word-break: keep-all; text-wrap: balance; }
+  .lede { max-width: 44rem; margin: 14px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.75; word-break: keep-all; }
   .masthead { padding-bottom: 40px; border-bottom: 1px solid var(--divider-strong); }
+
+  .layer-map { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 26px; }
+  .layer-card { border: 1px solid var(--divider); border-radius: var(--radius-md); background: var(--paper); padding: 16px 18px; box-shadow: var(--shadow); }
+  .layer-card .tag { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 700; }
+  .layer-card .tag.base { background: var(--sunken); color: var(--ink-soft); }
+  .layer-card .tag.trust { background: var(--crimson-soft); color: var(--crimson-ink); }
+  .layer-card .tag.brand { background: var(--violet-soft); color: var(--violet-strong); }
+  .layer-card p.name { margin: 10px 0 2px; font-size: 14.5px; font-weight: 700; }
+  .layer-card p.desc { margin: 0; color: var(--ink-soft); font-size: 12.5px; line-height: 1.55; word-break: keep-all; }
 
   section { padding: 44px 0; border-bottom: 1px solid var(--divider); }
   section:last-of-type { border-bottom: 0; }
-  h2 {
-    margin: 0 0 6px;
-    font-size: 1.45rem;
-    font-weight: 700;
-    letter-spacing: -.02em;
-  }
+  h2 { margin: 0 0 6px; font-size: 1.45rem; font-weight: 700; letter-spacing: -.02em; }
   .section-note { margin: 0 0 26px; color: var(--ink-soft); font-size: 14px; word-break: keep-all; }
-  h3 {
-    margin: 32px 0 14px;
-    color: var(--ink-soft);
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-  }
+  h3 { margin: 32px 0 14px; color: var(--ink-soft); font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   h3:first-of-type { margin-top: 0; }
-
   code, .mono { font-family: var(--mono); font-size: .88em; }
 
-  /* ── 색상 ─────────────────────────────────────────────── */
-  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-  .swatch {
-    overflow: hidden;
-    border: 1px solid var(--divider);
-    border-radius: var(--radius-card);
-    background: var(--paper);
-  }
-  .swatch .chip { height: 74px; border-bottom: 1px solid var(--divider); }
+  /* ── 색상 스와치 ─────────────────────────────────────── */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
+  .swatch { overflow: hidden; border: 1px solid var(--divider); border-radius: var(--radius-md); background: var(--paper); }
+  .swatch .chip { height: 64px; border-bottom: 1px solid var(--divider); }
   .swatch .meta { padding: 11px 13px 13px; }
   .swatch .name { font-size: 13px; font-weight: 600; }
   .swatch .role { margin: 2px 0 0; color: var(--ink-soft); font-size: 12px; }
-  .swatch .hex { margin: 7px 0 0; color: var(--ink-soft); font-family: var(--mono); font-size: 11.5px; }
+  .swatch .hexrow { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; font-family: var(--mono); font-size: 11px; }
+  .swatch .hexrow span:first-child { color: var(--ink-soft); }
+  .swatch .hexrow b { color: var(--ink-strong); font-weight: 600; }
+  .swatch .hexrow.dark span:first-child { color: #8a86a8; }
 
   /* ── 서체 ─────────────────────────────────────────────── */
-  .type-row {
-    display: flex;
-    align-items: baseline;
-    gap: 24px;
-    padding: 15px 0;
-    border-bottom: 1px solid var(--divider);
-  }
+  .type-row { display: flex; align-items: baseline; gap: 24px; padding: 15px 0; border-bottom: 1px solid var(--divider); }
   .type-row:last-child { border-bottom: 0; }
-  .type-spec {
-    flex: 0 0 190px;
-    color: var(--ink-soft);
-    font-family: var(--mono);
-    font-size: 11.5px;
-    line-height: 1.5;
-  }
+  .type-spec { flex: 0 0 190px; color: var(--ink-soft); font-family: var(--mono); font-size: 11.5px; line-height: 1.5; }
   .type-spec b { display: block; color: var(--ink-strong); font-family: var(--font); font-size: 12.5px; font-weight: 600; }
   .type-sample { min-width: 0; word-break: keep-all; }
-
   .weights { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-  .weight {
-    border: 1px solid var(--divider);
-    border-radius: var(--radius-card);
-    background: var(--paper);
-    padding: 16px 18px;
-  }
+  .weight { border: 1px solid var(--divider); border-radius: var(--radius-md); background: var(--paper); padding: 16px 18px; }
   .weight .n { font-size: 1.5rem; letter-spacing: -.02em; }
   .weight .k { margin-top: 6px; font-size: 15px; }
   .weight .use { margin: 8px 0 0; color: var(--ink-soft); font-size: 12px; }
 
   /* ── 형태 ─────────────────────────────────────────────── */
   .shapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
-  .shape-demo {
-    display: grid;
-    place-items: center;
-    height: 108px;
-    border: 1px solid var(--divider);
-    background: var(--paper);
-  }
-  .shape-demo.panel { border-radius: var(--radius-panel); box-shadow: var(--shadow-soft); }
-  .shape-demo.card { border-radius: var(--radius-card); }
-  .shape-demo.control { border-radius: var(--radius-control); }
-  .shape-demo.lift { border-radius: var(--radius-panel); box-shadow: var(--shadow-lift); }
+  .shape-demo { display: grid; place-items: center; height: 100px; border: 1px solid var(--divider); background: var(--paper); }
+  .shape-demo.lg { border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+  .shape-demo.md { border-radius: var(--radius-md); }
+  .shape-demo.sm { border-radius: var(--radius-sm); }
+  .shape-demo.lift { border-radius: var(--radius-lg); box-shadow: var(--shadow-lift); }
   .shape-demo span { color: var(--ink-soft); font-family: var(--mono); font-size: 11.5px; text-align: center; }
   .shape-demo span b { display: block; margin-bottom: 3px; color: var(--ink-strong); font-family: var(--font); font-size: 13px; }
 
+  /* ── 페이지 구성 와이어프레임 ───────────────────────────── */
+  .wf-page + .wf-page { margin-top: 20px; }
+  .wf-page-title { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .wf-page-title b { font-size: .9375rem; font-weight: 800; }
+  .wf-page-title span { color: var(--ink-faint); font-family: var(--mono); font-size: 11px; }
+  .wf { display: grid; gap: 6px; border: 1px solid var(--divider); border-radius: var(--radius-lg); background: var(--sunken); padding: 10px; }
+  .wf-band { border: 1px solid var(--divider); border-radius: var(--radius-sm); background: var(--paper); padding: 8px 12px; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
+  .wf-band b { display: block; color: var(--ink-strong); font-size: 11.5px; font-weight: 700; margin-bottom: 2px; }
+  .wf-band.accent { background: var(--violet-soft); border-color: rgba(109,40,217,.28); }
+  .wf-band.accent b { color: var(--violet-strong); }
+  .wf-band.nav { display: flex; align-items: center; gap: 14px; color: var(--ink-faint); font-size: 10.5px; font-weight: 700; }
+  .wf-band.nav .logo { color: var(--ink-strong); }
+  .wf-band.nav .cur { color: var(--violet-strong); }
+  .wf-band.nav .sp { margin-left: auto; }
+  .wf-cols { display: flex; gap: 6px; }
+  .wf-cols > .wf-band { flex: 1; }
+  .wf-note { margin: 8px 0 0; color: var(--ink-faint); font-size: 12px; word-break: keep-all; }
+
   /* ── 컴포넌트 실물 ────────────────────────────────────── */
-  .specimen {
-    border: 1px solid var(--divider);
-    border-radius: var(--radius-panel);
-    background: var(--paper);
-    padding: 26px;
-    box-shadow: var(--shadow-soft);
-  }
-  .specimen + .specimen { margin-top: 16px; }
+  .specimen { border: 1px solid var(--divider); border-radius: var(--radius-lg); background: var(--paper); padding: 24px; box-shadow: var(--shadow); }
+  .specimen + .specimen { margin-top: 14px; }
+  .specimen-label { margin: 0 0 14px; color: var(--ink-faint); font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 
-  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
-  .kpi {
-    display: grid;
-    align-content: start;
-    gap: 6px;
-    border: 1px solid var(--divider);
-    border-radius: var(--radius-card);
-    background: var(--paper);
-    padding: 20px 22px;
-    box-shadow: var(--shadow-soft);
-  }
-  .kpi.danger { border-left: 5px solid var(--terracotta); }
-  .kpi.danger strong { color: var(--terracotta-deep); }
-  .kpi.warning { border-left: 5px solid var(--gold); }
-  .kpi.warning strong { color: #89611b; }
-  .kpi.success { border-left: 5px solid var(--sage); }
-  .kpi.success strong { color: #3f6254; }
-  .kpi p { margin: 0; color: var(--ink-soft); font-size: 14px; font-weight: 600; }
-  .kpi strong { margin-top: 6px; font-size: 2.15rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
-  .kpi small { color: var(--ink-soft); font-size: 13px; }
+  /* 히어로: 도넛 + 통계 바 */
+  .hero-demo { display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); gap: 20px; align-items: center; }
+  .donut-wrap { position: relative; display: grid; place-items: center; width: 168px; height: 168px; margin: 0 auto; }
+  .donut-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .donut-wrap circle { fill: none; stroke-width: 20; }
+  .donut-label { position: absolute; text-align: center; }
+  .donut-label strong { display: block; font-size: 2.15rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .donut-label span { color: var(--ink-soft); font-size: .75rem; font-weight: 700; }
+  .stat-bars { display: grid; gap: 12px; }
+  .stat-row .head { display: flex; justify-content: space-between; font-size: .8125rem; font-weight: 700; }
+  .stat-track { overflow: hidden; height: 8px; margin-top: 6px; border-radius: 999px; background: var(--sunken); }
+  .stat-track i { display: block; height: 100%; border-radius: 999px; }
 
-  .sev-row + .sev-row { margin-top: 18px; }
-  .sev-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .sev-head span { font-size: 14px; font-weight: 700; }
-  .sev-head strong { color: var(--ink-soft); font-size: 13px; font-weight: 700; }
-  .sev-track { overflow: hidden; height: 12px; margin-top: 9px; border-radius: 999px; background: var(--rice); }
-  .sev-track i { display: block; height: 100%; border-radius: 999px; }
+  /* 우선순위 리스트 */
+  .list-row { display: grid; grid-template-columns: 56px 1fr auto; gap: 14px; align-items: center; padding: 13px 0; border-top: 1px solid var(--divider); }
+  .list-row:first-child { border-top: 0; }
+  .prob { display: grid; place-items: center; padding: 8px 4px; border-radius: var(--radius-sm); text-align: center; line-height: 1.15; }
+  .prob strong { display: block; font-size: 1rem; font-weight: 800; }
+  .prob span { font-size: .6875rem; font-weight: 700; }
+  .prob.critical { background: var(--violet); color: #fff; }
+  .prob.warning { background: var(--violet-soft); color: var(--violet-strong); }
+  .list-title { font-size: .9375rem; font-weight: 700; word-break: keep-all; }
+  .list-meta { margin-top: 4px; color: var(--ink-faint); font-size: .75rem; }
+  .list-meta span:not(:last-child)::after { content: "·"; margin: 0 6px; }
+  .badge { border-radius: 999px; padding: 2px 9px; font-size: .6875rem; font-weight: 700; }
+  .badge.critical { background: var(--crimson-soft); color: var(--crimson-ink); }
+  .badge.warning { background: var(--amber-soft); color: var(--amber-ink); }
+  .badge.safe { background: var(--green-soft); color: var(--green-ink); }
+  .chev { color: var(--ink-faint); }
 
-  .event-card {
-    display: grid;
-    gap: 8px;
-    border: 1px solid var(--divider);
-    border-radius: var(--radius-card);
-    background: var(--paper);
-    padding: 16px 18px;
-  }
-  .event-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
-  .level { border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; }
-  .level.critical { background: #f6ddd4; color: var(--terracotta-deep); }
-  .level.warning { background: #f9edcf; color: #89611b; }
-  .level.watch { background: #deebe4; color: #3f6254; }
-  .etype { border-radius: 999px; background: var(--rice); padding: 3px 9px; color: #776f59; font-size: 13px; font-weight: 600; }
-  .escore { margin-left: auto; color: var(--ink-soft); font-size: 13px; font-weight: 700; }
-  .etitle { font-size: 15px; font-weight: 700; line-height: 1.45; word-break: keep-all; }
-  .ebody { color: var(--ink-soft); font-size: 14px; line-height: 1.55; word-break: keep-all; }
+  /* 일별 막대 그래프 */
+  .bar-chart { display: flex; align-items: stretch; gap: 8px; height: 120px; }
+  .bar-axis { display: flex; flex-direction: column; justify-content: space-between; padding-bottom: 20px; color: var(--ink-faint); font-size: .6875rem; text-align: right; }
+  .bar-cols { display: flex; flex: 1 1 auto; gap: 5px; }
+  .bar-col { display: flex; flex-direction: column; flex: 1; justify-content: flex-end; min-width: 0; }
+  .bar-pair { display: flex; align-items: flex-end; justify-content: center; gap: 3px; flex: 1; }
+  .bar-pair i { display: block; width: 40%; min-height: 2px; border-radius: 3px 3px 0 0; }
+  .bar-pair i.negative { background: var(--violet-2); }
+  .bar-pair i.risk { background: var(--violet); }
+  .bar-date { margin-top: 5px; color: var(--ink-faint); font-size: .6875rem; text-align: center; }
+  .bar-date.peak { color: var(--violet-strong); font-weight: 800; }
 
+  /* 파이프라인 흐름 카드 */
+  .flow-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .flow-card { display: grid; gap: 6px; border: 1px solid var(--divider); border-radius: var(--radius-md); background: var(--paper); padding: 12px; }
+  .flow-card.active { border-color: var(--violet); background: var(--violet); }
+  .flow-card .fc-head { display: flex; justify-content: space-between; color: var(--ink-faint); font-size: .625rem; font-weight: 700; }
+  .flow-card.active .fc-head { color: rgba(255,255,255,.75); }
+  .flow-card strong { font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; }
+  .flow-card.active strong { color: #fff; }
+  .flow-card small { color: var(--ink-faint); font-size: .625rem; }
+  .flow-card.active small { color: rgba(255,255,255,.82); }
+
+  /* 4분할 통계 카드 */
+  .quad-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .quad-card { border: 1px solid var(--divider); border-radius: var(--radius-md); background: var(--paper); padding: 14px 16px; box-shadow: var(--shadow); }
+  .quad-card .qh { color: var(--ink-faint); font-size: .75rem; font-weight: 700; }
+  .quad-card .qv { margin-top: 8px; font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; }
+  .quad-card .qd { display: inline-flex; gap: 5px; margin-top: 6px; font-size: .6875rem; color: var(--ink-faint); }
+  .quad-card .qd b { border-radius: 999px; padding: 1px 7px; }
+  .qd b.up { background: var(--green-soft); color: var(--green-ink); }
+  .qd b.down { background: var(--crimson-soft); color: var(--crimson-ink); }
+
+  /* 실행 이력 */
+  .job-row { display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; align-items: baseline; padding: 11px 0; border-top: 1px solid var(--divider); }
+  .job-row:first-child { border-top: 0; }
+  .job-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; }
+  .job-dot.completed { background: var(--green); }
+  .job-dot.running { background: var(--violet); }
+  .job-title { font-size: .875rem; font-weight: 700; }
+  .job-badge { border-radius: 999px; padding: 2px 9px; margin-left: 8px; font-size: .6875rem; font-weight: 700; }
+  .job-badge.completed { background: var(--green-soft); color: var(--green-ink); }
+  .job-badge.running { background: var(--violet-soft); color: var(--violet-strong); }
+  .job-time { color: var(--ink-faint); font-size: .75rem; }
+
+  /* 탭 · 버튼 */
   .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-  .btn {
-    border: 1px solid transparent;
-    border-radius: var(--radius-control);
-    background: var(--terracotta);
-    padding: 12px 22px;
-    color: #fffaf2;
-    font-family: inherit;
-    font-size: 15px;
-    font-weight: 600;
-  }
-  .btn.secondary { border-color: rgba(109, 82, 61, .28); background: transparent; color: var(--ink-soft); }
-  .nav-pill { display: inline-flex; gap: 3px; border-radius: 1rem; background: rgba(238, 226, 210, .8); padding: 5px; }
-  .nav-pill span { border-radius: var(--radius-control); padding: 10px 16px; font-size: 14px; font-weight: 600; color: var(--ink-soft); }
-  .nav-pill span.active { background: #f6ddd4; color: var(--terracotta-deep); }
-  .field {
-    min-width: 190px;
-    border: 1px solid rgba(109, 82, 61, .22);
-    border-radius: var(--radius-control);
-    background: var(--paper);
-    padding: 11px 13px;
-    color: var(--ink-soft);
-    font-size: 14px;
-  }
+  .btn { border: 0; border-radius: 999px; background: var(--violet); padding: 11px 22px; color: #fff; font-family: inherit; font-size: 14px; font-weight: 700; box-shadow: 0 10px 24px rgba(109,40,217,.28); }
+  .btn.ghost { background: var(--paper); color: var(--ink-strong); border: 1px solid var(--divider-strong); box-shadow: none; }
+  .mode-group { display: inline-flex; gap: 3px; border-radius: 999px; background: var(--sunken); padding: 3px; }
+  .mode-group span { border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+  .mode-group span.active { background: var(--violet); color: #fff; }
 
-  /* ── 표 ──────────────────────────────────────────────── */
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { padding: 11px 14px 11px 0; border-bottom: 1px solid var(--divider); text-align: left; vertical-align: top; }
@@ -233,40 +219,18 @@
   td.k { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
   td.v { color: var(--ink-soft); word-break: keep-all; }
 
-  /* ── 복사용 토큰 ─────────────────────────────────────── */
   .code-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-  .copy-btn {
-    border: 1px solid rgba(109, 82, 61, .28);
-    border-radius: var(--radius-control);
-    background: var(--paper);
-    padding: 9px 16px;
-    color: var(--ink-soft);
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: border-color .15s ease, color .15s ease;
-  }
-  .copy-btn:hover { border-color: var(--terracotta); color: var(--terracotta-deep); }
-  pre {
-    overflow-x: auto;
-    margin: 0;
-    border: 1px solid var(--divider);
-    border-radius: var(--radius-card);
-    background: #fffdf9;
-    padding: 22px;
-    color: #4a3f38;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    line-height: 1.75;
-    tab-size: 2;
-  }
-  pre .c { color: #a4968a; }
-  pre .p { color: var(--terracotta-deep); }
+  .copy-btn { border: 1px solid var(--divider-strong); border-radius: var(--radius-sm); background: var(--paper); padding: 9px 16px; color: var(--ink-soft); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+  .copy-btn:hover { border-color: var(--violet); color: var(--violet-strong); }
+  pre { overflow-x: auto; margin: 0; border: 1px solid var(--divider); border-radius: var(--radius-md); background: #fafafc; padding: 22px; color: #2b2e38; font-family: var(--mono); font-size: 12.5px; line-height: 1.75; tab-size: 2; }
+  pre .c { color: #9a9daa; }
+  pre .p { color: var(--violet-strong); }
 
   footer { padding-top: 34px; color: var(--ink-soft); font-size: 13px; word-break: keep-all; }
-
-  :focus-visible { outline: 3px solid rgba(184, 88, 54, .35); outline-offset: 3px; }
+  :focus-visible { outline: 3px solid rgba(109, 40, 217, .35); outline-offset: 3px; }
+  @media (max-width: 760px) {
+    .hero-demo, .quad-grid, .flow-cards { grid-template-columns: repeat(2, 1fr); }
+  }
   @media (max-width: 620px) {
     .type-row { flex-direction: column; gap: 8px; }
     .type-spec { flex: none; }
@@ -276,14 +240,34 @@
 <div class="page">
 
   <header class="masthead">
-    <p class="eyebrow">RISOTO · Frontend Design System</p>
-    <h1>크림 바탕 위의 테라코타</h1>
+    <p class="eyebrow">RISOTO · Frontend Design System v2</p>
+    <h1>회색 바탕 위의 신뢰와 브랜드</h1>
     <p class="lede">
-      기업 리스크를 실시간으로 감시하는 화면은 하루 종일 켜져 있습니다.
-      그래서 바탕은 눈이 편한 크림 톤으로 두고, 색은 위험도를 말할 때만 씁니다.
-      서체는 한 벌, 굵기는 네 단계, 모서리는 세 단계 — 이 페이지의 모든 색과 글자는
-      실제 제품 CSS에서 그대로 가져온 값이며, 여기 보이는 그대로 렌더링돼 있습니다.
+      화면은 두 겹의 테마로 이루어져 있습니다. 바탕에는 어디서나 같은
+      <strong>신호(signal) 팔레트</strong> — 무채색 표면 위에 크림슨(위험)·앰버(주의)·그린(정상)만
+      의미를 갖는 남색 톤 — 가 깔리고, 화면에 따라 그 위에 <strong>보라 브랜드 강조</strong>
+      (<code>.brief-dashboard</code>)를 한 겹 더 씌웁니다. 위험도 색은 두 레이어 어디서든 절대
+      바뀌지 않고, 보라는 순수하게 "지금 무엇이 선택·활성 상태인가"만 말합니다.
+      이 페이지의 값은 실제 제품 CSS(<code>frontend/src/styles.css</code>)에서 그대로 가져왔습니다.
     </p>
+
+    <div class="layer-map">
+      <div class="layer-card">
+        <span class="tag base">기반</span>
+        <p class="name">전역 :root</p>
+        <p class="desc">서체·본문 색·바탕. 로그인 화면 등 테마 클래스가 없는 곳에서 적용.</p>
+      </div>
+      <div class="layer-card">
+        <span class="tag trust">신호</span>
+        <p class="name">.signal-scope</p>
+        <p class="desc">무채색 표면 + 남색 강조 + 위험도 3색(크림슨/앰버/그린). 위험 브리핑 상세, 파이프라인 본문.</p>
+      </div>
+      <div class="layer-card">
+        <span class="tag brand">브랜드</span>
+        <p class="name">.brief-dashboard</p>
+        <p class="desc">signal-scope 위에 얹는 보라 강조 한 겹. 메인 브리핑·파이프라인·관리 탭.</p>
+      </div>
+    </div>
   </header>
 
   <!-- ── 서체 ───────────────────────────────────────────── -->
@@ -297,272 +281,252 @@
 
     <h3>굵기 — 네 단계</h3>
     <div class="weights">
-      <div class="weight">
-        <div class="n" style="font-weight:400">400</div>
-        <div class="k" style="font-weight:400">본문과 설명 문장</div>
-        <p class="use">Regular</p>
-      </div>
-      <div class="weight">
-        <div class="n" style="font-weight:500">500</div>
-        <div class="k" style="font-weight:500">입력값, 보조 강조</div>
-        <p class="use">Medium</p>
-      </div>
-      <div class="weight">
-        <div class="n" style="font-weight:600">600</div>
-        <div class="k" style="font-weight:600">라벨, 버튼, 부제</div>
-        <p class="use">SemiBold</p>
-      </div>
-      <div class="weight">
-        <div class="n" style="font-weight:700">700</div>
-        <div class="k" style="font-weight:700">제목, 수치, 배지</div>
-        <p class="use">Bold — 상한</p>
-      </div>
+      <div class="weight"><div class="n" style="font-weight:400">400</div><div class="k" style="font-weight:400">본문·설명 문장</div><p class="use">Regular</p></div>
+      <div class="weight"><div class="n" style="font-weight:500">500</div><div class="k" style="font-weight:500">입력값·보조 강조</div><p class="use">Medium</p></div>
+      <div class="weight"><div class="n" style="font-weight:600">600</div><div class="k" style="font-weight:600">라벨·버튼·탭</div><p class="use">SemiBold</p></div>
+      <div class="weight"><div class="n" style="font-weight:700">700</div><div class="k" style="font-weight:700">제목·수치·배지</div><p class="use">Bold — 상한</p></div>
     </div>
     <p class="section-note" style="margin-top:16px">
-      800·900은 쓰지 않습니다. <code>font-synthesis: none</code>으로 가짜 굵기도 막아둡니다.
+      800·900은 CSS 컴포넌트 단계에서만 일부 카드 헤드라인에 쓰고(예: 히어로 수치), 본문 굵기는 700을 넘지 않습니다.
+      <code>font-synthesis: none</code>으로 가짜 굵기도 막아둡니다.
     </p>
 
     <h3>크기 사다리</h3>
-    <div class="type-row">
-      <div class="type-spec"><b>페이지 제목</b>clamp(1.7rem, 2.6vw, 2.5rem)<br>700 / -.03em / lh 1.15</div>
-      <div class="type-sample" style="font-size:2.5rem;font-weight:700;letter-spacing:-.03em;line-height:1.15">쿠팡에 지금 어떤 위험이 있나요?</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>섹션 제목</b>clamp(1.65rem, 2.5vw, 2.35rem)<br>700 / -.05em</div>
-      <div class="type-sample" style="font-size:2.35rem;font-weight:700;letter-spacing:-.05em;line-height:1.1">위험 수준 분포</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>수치</b>2.15rem · 700<br>-.03em / tabular</div>
-      <div class="type-sample" style="font-size:2.15rem;font-weight:700;letter-spacing:-.03em;line-height:1.05;color:var(--terracotta-deep)">25.9%</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>패널 제목</b>1.45rem · 700<br>-.04em</div>
-      <div class="type-sample" style="font-size:1.45rem;font-weight:700;letter-spacing:-.04em">최근 위험 이슈 및 대응 방안</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>--text-emphasis</b>1rem · 16px<br>600</div>
-      <div class="type-sample" style="font-size:1rem;font-weight:600">기간 요약 설명문</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>--text-body</b>.9375rem · 15px<br>400 / lh 1.5 — 기본값</div>
-      <div class="type-sample" style="font-size:.9375rem;line-height:1.5">실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>--text-small</b>.875rem · 14px<br>400~700</div>
-      <div class="type-sample" style="font-size:.875rem;color:var(--ink-soft)">대응 방안 생성 완료 14건</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>--text-caption</b>.8125rem · 13px<br>700 — 배지·각주</div>
-      <div class="type-sample" style="font-size:.8125rem;font-weight:700;color:var(--ink-soft)">관련 보도 2건 · 출처 2곳</div>
-    </div>
-    <div class="type-row">
-      <div class="type-spec"><b>키커(eyebrow)</b>.8125rem · 700<br>+.16em / 대문자</div>
-      <div class="type-sample" style="font-size:.8125rem;font-weight:700;letter-spacing:.16em;color:var(--terracotta)">AI RISK BRIEFING</div>
-    </div>
-
-    <h3>한글 조판 규칙</h3>
-    <div class="table-wrap">
-      <table>
-        <tr><td class="k">word-break: keep-all</td><td class="v">제목과 본문에 전부 적용. 낱말 중간에서 줄이 끊기는 것을 막습니다.</td></tr>
-        <tr><td class="k">letter-spacing</td><td class="v">큰 제목은 -.015em ~ -.05em로 조이고, 대문자 키커만 +.16em로 벌립니다.</td></tr>
-        <tr><td class="k">font-synthesis: none</td><td class="v">브라우저가 가짜 볼드·이탤릭을 합성하지 못하게 막습니다.</td></tr>
-      </table>
-    </div>
+    <div class="type-row"><div class="type-spec"><b>페이지 제목</b>clamp(1.4rem, 2.1vw, 1.7rem)<br>800 / -.02em</div><div class="type-sample" style="font-size:1.7rem;font-weight:800;letter-spacing:-.02em">이번 기간 리스크 브리핑</div></div>
+    <div class="type-row"><div class="type-spec"><b>히어로 수치</b>2.75rem · 800<br>-.03em / lh 1</div><div class="type-sample" style="font-size:2.75rem;font-weight:800;letter-spacing:-.03em;color:var(--violet-strong)">63</div></div>
+    <div class="type-row"><div class="type-spec"><b>섹션 제목</b>1.05~1.3rem · 800<br>-.02em</div><div class="type-sample" style="font-size:1.3rem;font-weight:800;letter-spacing:-.02em">위험 사건 및 대응방안</div></div>
+    <div class="type-row"><div class="type-spec"><b>--text-emphasis</b>1rem · 16px<br>600</div><div class="type-sample" style="font-size:1rem;font-weight:600">기간 요약 설명문</div></div>
+    <div class="type-row"><div class="type-spec"><b>--text-body</b>.9375rem · 15px<br>400 / lh 1.5 — 기본값</div><div class="type-sample" style="font-size:.9375rem;line-height:1.5">이슈 63건 중 15건이 위험 사건으로 확정됐습니다. 이전 기간보다 4건 줄었습니다.</div></div>
+    <div class="type-row"><div class="type-spec"><b>--text-small</b>.875rem · 14px<br>400~700</div><div class="type-sample" style="font-size:.875rem;color:var(--ink-soft)">확률이 높은 순서 · 카드를 열면 근거 기사를 봅니다</div></div>
+    <div class="type-row"><div class="type-spec"><b>--text-caption</b>.8125rem · 13px<br>700 — 배지·각주</div><div class="type-sample" style="font-size:.8125rem;font-weight:700;color:var(--ink-soft)">기사 21 · 언론사 1</div></div>
+    <div class="type-row"><div class="type-spec"><b>키커(eyebrow)</b>.6875~.75rem · 700<br>대문자</div><div class="type-sample" style="font-size:.75rem;font-weight:700;letter-spacing:.02em;color:var(--ink-faint)">WORKSPACE SETTINGS</div></div>
   </section>
 
   <!-- ── 색상 ───────────────────────────────────────────── -->
   <section>
     <h2>색상</h2>
     <p class="section-note">
-      바탕 계열 3개, 글자 2개, 의미 색 3개가 전부입니다.
-      테라코타는 강조와 위험에만 쓰고, 나머지 화면은 크림과 종이색으로 조용히 둡니다.
+      스와치마다 라이트 값과 다크모드 값을 함께 적었습니다. 다크모드는 자동 생성 스크립트(<code>build-dark-theme.py</code>)가
+      대부분 처리하지만, 보라 강조가 들어간 요소 일부는 대비 확보를 위해 수동으로 다시 지정했습니다.
     </p>
 
-    <h3>바탕</h3>
+    <h3>신호 표면 — .signal-scope</h3>
     <div class="swatches">
-      <div class="swatch">
-        <div class="chip" style="background:#fbf6ee"></div>
-        <div class="meta"><div class="name">Cream</div><p class="role">페이지 바탕</p><p class="hex">--cream · #fbf6ee</p></div>
-      </div>
-      <div class="swatch">
-        <div class="chip" style="background:#fffdf9"></div>
-        <div class="meta"><div class="name">Paper</div><p class="role">패널·카드 면</p><p class="hex">--paper · #fffdf9</p></div>
-      </div>
-      <div class="swatch">
-        <div class="chip" style="background:#eee2d2"></div>
-        <div class="meta"><div class="name">Rice</div><p class="role">트랙·칩 바탕</p><p class="hex">--rice · #eee2d2</p></div>
-      </div>
+      <div class="swatch"><div class="chip" style="background:#edeff3"></div><div class="meta"><div class="name">Bg</div><p class="role">화면 바탕</p>
+        <div class="hexrow"><span>--sig-bg</span><b>#edeff3</b></div><div class="hexrow dark"><span>dark</span><b>#0f121a</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#ffffff;border-bottom:1px solid #eee"></div><div class="meta"><div class="name">Surface</div><p class="role">패널·카드 면</p>
+        <div class="hexrow"><span>--sig-surface</span><b>#ffffff</b></div><div class="hexrow dark"><span>dark</span><b>#181c28</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#f4f5f8"></div><div class="meta"><div class="name">Surface Sunken</div><p class="role">트랙·탭 바탕</p>
+        <div class="hexrow"><span>--sig-surface-sunken</span><b>#f4f5f8</b></div><div class="hexrow dark"><span>dark</span><b>#12151f</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#171a23"></div><div class="meta"><div class="name">Ink</div><p class="role">제목·본문</p>
+        <div class="hexrow"><span>--sig-ink</span><b>#171a23</b></div><div class="hexrow dark"><span>dark</span><b>#eef0f6</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#5c6373"></div><div class="meta"><div class="name">Ink Soft</div><p class="role">설명·라벨</p>
+        <div class="hexrow"><span>--sig-ink-soft</span><b>#5c6373</b></div><div class="hexrow dark"><span>dark</span><b>#9aa2b6</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#223059"></div><div class="meta"><div class="name">Navy Accent</div><p class="role">신뢰 강조(비-보라 화면)</p>
+        <div class="hexrow"><span>--sig-accent</span><b>#223059</b></div><div class="hexrow dark"><span>dark</span><b>#7c95dd</b></div></div></div>
     </div>
 
-    <h3>글자</h3>
+    <h3>위험도 — 두 테마 공통, 절대 변하지 않음</h3>
     <div class="swatches">
-      <div class="swatch">
-        <div class="chip" style="background:#30251f"></div>
-        <div class="meta"><div class="name">Ink Strong</div><p class="role">제목·본문</p><p class="hex">--ink-strong · #30251f</p></div>
-      </div>
-      <div class="swatch">
-        <div class="chip" style="background:#75695f"></div>
-        <div class="meta"><div class="name">Ink Soft</div><p class="role">설명·라벨·각주</p><p class="hex">--ink-soft · #75695f</p></div>
-      </div>
+      <div class="swatch"><div class="chip" style="background:#b3323f"></div><div class="meta"><div class="name">Critical</div><p class="role">긴급</p>
+        <div class="hexrow"><span>--sig-critical</span><b>#b3323f</b></div><div class="hexrow dark"><span>dark</span><b>#e2727e</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#b0731a"></div><div class="meta"><div class="name">Warning</div><p class="role">주의</p>
+        <div class="hexrow"><span>--sig-warning</span><b>#b0731a</b></div><div class="hexrow dark"><span>dark</span><b>#dba64c</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#29715f"></div><div class="meta"><div class="name">Safe</div><p class="role">정상·완료</p>
+        <div class="hexrow"><span>--sig-safe</span><b>#29715f</b></div><div class="hexrow dark"><span>dark</span><b>#55b79b</b></div></div></div>
     </div>
 
-    <h3>의미 — 위험도</h3>
+    <h3>브랜드 강조 — .brief-dashboard (메인·파이프라인·관리)</h3>
     <div class="swatches">
-      <div class="swatch">
-        <div class="chip" style="background:#b85836"></div>
-        <div class="meta"><div class="name">Terracotta</div><p class="role">강조 · 긴급</p><p class="hex">--terracotta · #b85836</p></div>
-      </div>
-      <div class="swatch">
-        <div class="chip" style="background:#8d3f29"></div>
-        <div class="meta"><div class="name">Terracotta Deep</div><p class="role">눌림 상태 · 배지 글자</p><p class="hex">--terracotta-deep · #8d3f29</p></div>
-      </div>
-      <div class="swatch">
-        <div class="chip" style="background:#c88d30"></div>
-        <div class="meta"><div class="name">Gold</div><p class="role">주의</p><p class="hex">--gold · #c88d30</p></div>
-      </div>
-      <div class="swatch">
-        <div class="chip" style="background:#597265"></div>
-        <div class="meta"><div class="name">Sage</div><p class="role">관찰 · 정상</p><p class="hex">--sage · #597265</p></div>
-      </div>
+      <div class="swatch"><div class="chip" style="background:#6d28d9"></div><div class="meta"><div class="name">Accent</div><p class="role">CTA·활성 탭·핵심 수치</p>
+        <div class="hexrow"><span>--dv-accent</span><b>#6d28d9</b></div><div class="hexrow dark"><span>dark</span><b>#a78bfa</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#4c1d95"></div><div class="meta"><div class="name">Accent Strong</div><p class="role">hover·눌림 상태</p>
+        <div class="hexrow"><span>--dv-accent-strong</span><b>#4c1d95</b></div><div class="hexrow dark"><span>dark</span><b>#d8cbfb</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#ede9fe"></div><div class="meta"><div class="name">Accent Soft</div><p class="role">배지·칩 바탕</p>
+        <div class="hexrow"><span>--dv-accent-soft</span><b>#ede9fe</b></div><div class="hexrow dark"><span>dark</span><b>#2e2249</b></div></div></div>
+      <div class="swatch"><div class="chip" style="background:#c4b5fd"></div><div class="meta"><div class="name">Accent 2</div><p class="role">보조 계열(막대그래프 등)</p>
+        <div class="hexrow"><span>--dv-accent-2</span><b>#c4b5fd</b></div><div class="hexrow dark"><span>dark</span><b>#6d5a9e</b></div></div></div>
     </div>
-
-    <h3>선과 링</h3>
-    <div class="table-wrap">
-      <table>
-        <tr><td class="k">--divider</td><td class="v">rgba(109, 82, 61, .14) — 기본 구분선, 카드 테두리</td></tr>
-        <tr><td class="k">--divider-strong</td><td class="v">rgba(109, 82, 61, .22) — 섹션 구분</td></tr>
-        <tr><td class="k">--divider-accent</td><td class="v">rgba(184, 88, 54, .22) — 강조 구분</td></tr>
-        <tr><td class="k">--focus-ring</td><td class="v">rgba(184, 88, 54, .35) — 3px outline, offset 3px</td></tr>
-      </table>
-    </div>
+    <p class="section-note" style="margin-top:14px">
+      원칙: 보라는 "브랜드/선택됨"만 뜻합니다. 긴급·주의·정상 판정은 화면이 무슨 테마든 항상 크림슨·앰버·그린입니다.
+    </p>
   </section>
 
   <!-- ── 형태 ───────────────────────────────────────────── -->
   <section>
     <h2>형태</h2>
-    <p class="section-note">
-      모서리는 담는 그릇의 크기에 따라 세 단계로 갈립니다. 그림자는 두 종류뿐이고,
-      떠 있는 느낌은 큰 패널에만 씁니다.
-    </p>
+    <p class="section-note">모서리 세 단계, 그림자 두 종류. 큰 패널일수록 더 둥글고 더 뜬 그림자를 씁니다.</p>
     <div class="shapes">
-      <div>
-        <div class="shape-demo panel"><span><b>패널</b>--radius-panel<br>1.7rem</span></div>
-      </div>
-      <div>
-        <div class="shape-demo card"><span><b>카드</b>--radius-card<br>1.1rem</span></div>
-      </div>
-      <div>
-        <div class="shape-demo control"><span><b>컨트롤</b>--radius-control<br>.8rem</span></div>
-      </div>
-      <div>
-        <div class="shape-demo lift"><span><b>호버</b>--shadow-lift<br>0 20px 35px</span></div>
-      </div>
+      <div class="shape-demo lg"><span><b>대형</b>--sig-radius-lg<br>18px</span></div>
+      <div class="shape-demo md"><span><b>카드</b>--sig-radius-md<br>12px</span></div>
+      <div class="shape-demo sm"><span><b>컨트롤</b>--sig-radius-sm<br>8px</span></div>
+      <div class="shape-demo lift"><span><b>호버/리프트</b>--sig-shadow-lift<br>0 16px 40px</span></div>
     </div>
     <div class="table-wrap" style="margin-top:26px">
       <table>
-        <tr><td class="k">--shadow-soft</td><td class="v">0 16px 38px rgba(82, 54, 34, .08) — 모든 패널의 기본</td></tr>
-        <tr><td class="k">--shadow-lift</td><td class="v">0 20px 35px rgba(82, 54, 34, .12) — 누를 수 있는 카드에 호버할 때</td></tr>
-        <tr><td class="k">border</td><td class="v">1px solid rgba(109, 82, 61, .14) — 그림자만으로는 경계가 흐려서 항상 같이 씁니다</td></tr>
-        <tr><td class="k">배지 · 트랙</td><td class="v">border-radius: 999px — 알약 형태</td></tr>
+        <tr><td class="k">--sig-shadow</td><td class="v">0 1px 2px rgba(23,26,35,.04), 0 10px 28px rgba(23,26,35,.06) — 모든 패널 기본</td></tr>
+        <tr><td class="k">--sig-shadow-lift</td><td class="v">0 16px 40px rgba(23,26,35,.12) — 카드 호버, 브랜드 CTA</td></tr>
+        <tr><td class="k">border</td><td class="v">1px solid rgba(23,26,35,.09) — 그림자만으로는 경계가 흐려서 항상 같이 씁니다</td></tr>
       </table>
+    </div>
+  </section>
+
+  <!-- ── 페이지 구성 ────────────────────────────────────── -->
+  <section>
+    <h2>페이지 구성</h2>
+    <p class="section-note">
+      아래 컴포넌트는 조각이고, 실제 화면은 이 순서로 위에서 아래로 쌓입니다.
+      세 화면 모두 상단 네비게이션은 같고, 그 아래부터 화면마다 다릅니다.
+    </p>
+
+    <div class="wf-page">
+      <div class="wf-page-title"><b>① 메인 브리핑</b><span>/main · MainPage.jsx</span></div>
+      <div class="wf">
+        <div class="wf-band nav"><span class="logo">RISOTO</span><span class="cur">AI 리스크 브리핑</span><span>분석 파이프라인</span><span>관리</span><span class="sp">● 실시간 탐지 중 · 계정</span></div>
+        <div class="wf-band"><b>브레드크럼 + 헤드로우</b>Briefing › 기업명 · 나의 기업 — h1 "이번 기간 리스크 브리핑" + 기간 선택 + 3-way 토글(나의 기업 / 전체 평균 / 비교 기업)</div>
+        <div class="wf-cols" style="height:74px">
+          <div class="wf-band accent" style="flex:.85"><b>히어로 · 도넛</b>분석 완료 이슈 수 + 위험/부정/정상 링</div>
+          <div class="wf-band accent" style="flex:1.15"><b>히어로 · 요약</b>기간 비교 요약문 + 통계 바 3단 + "위험 사건 N건 확인" CTA</div>
+        </div>
+        <div class="wf-cols" style="height:74px">
+          <div class="wf-band" style="flex:1.5"><b>우선순위 위험 리스트</b>확률 배지 · 제목 · 유형/날짜/기사 수 — 확률 높은 순, 전체 보기 링크</div>
+          <div class="wf-band" style="flex:1"><b>날짜별 위험·부정 막대그래프</b>정점일 강조 + 팁 박스("위험은 부정의 부분집합")</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wf-page">
+      <div class="wf-page-title"><b>② 분석 파이프라인 · 수집 단계</b><span>/analysis/collection · AnalysisPipelinePage.jsx</span></div>
+      <div class="wf">
+        <div class="wf-band nav"><span class="logo">RISOTO</span><span>AI 리스크 브리핑</span><span class="cur">분석 파이프라인</span><span>관리</span><span class="sp">● 실시간 탐지 중</span></div>
+        <div class="wf-band"><b>브레드크럼 + 헤드로우</b>h1 + 실시간 표시 pill + 새로고침 / 수동 수집 버튼(ghost)</div>
+        <div class="wf-band accent"><b>오늘의 파이프라인 흐름</b>01~06단계 카드 6개(현재 단계 강조) + 흐름 진행 바 — 항상 "오늘" 기준, 30초 폴링</div>
+        <div class="wf-band"><b>STEP 1 상세 헤더</b>kicker("STEP 1 · 수집") + 제목/설명 + 기간 탭(오늘/7일/30일)</div>
+        <div class="wf-cols" style="height:48px">
+          <div class="wf-band"><b>4분할 통계 카드</b>수집 건수 · 처리 시간 · 실패율 · 완료 상태, 전 기간 대비 증감 배지</div>
+        </div>
+        <div class="wf-cols" style="height:74px">
+          <div class="wf-band" style="flex:1.5"><b>날짜별 수집 구간 표</b>기간/품질 필터 툴바 + 위험 비율 미니바</div>
+          <div class="wf-band" style="flex:1"><b>최근 수집 실행 이력</b>상태 점(완료/부분/실패/진행중) + 시각 + 더보기</div>
+        </div>
+      </div>
+      <p class="wf-note">나머지 5단계(정제·감성분석·이슈그룹핑·위험판정·대응)는 같은 STEP 헤더 스타일로 통일하되, 본문은 기존 신호(signal-scope) 레이아웃을 그대로 씁니다 — 아직 전용 목업이 없는 단계는 새로 구조를 만들지 않았습니다.</p>
+    </div>
+
+    <div class="wf-page">
+      <div class="wf-page-title"><b>③ 관리 탭</b><span>/manage · ManagementPage.jsx</span></div>
+      <div class="wf">
+        <div class="wf-band nav"><span class="logo">RISOTO</span><span>AI 리스크 브리핑</span><span>분석 파이프라인</span><span class="cur">관리</span></div>
+        <div class="wf-band"><b>브레드크럼</b>Management › 수집 현황 / 기업 관리</div>
+        <div class="wf-band accent"><b>헤드 + 섹션 탭</b>eyebrow "WORKSPACE SETTINGS" + h1 "관리" + 설명문 · 우측에 탭 2개(수집 현황 / 기업 관리)</div>
+        <div class="wf-band"><b>선택된 섹션 본문</b>탭에 따라 기존 CollectionPage 또는 CompanyAdministrationPage 화면을 그대로 삽입 — 이 안쪽은 손대지 않음</div>
+      </div>
     </div>
   </section>
 
   <!-- ── 컴포넌트 ───────────────────────────────────────── -->
   <section>
     <h2>컴포넌트</h2>
-    <p class="section-note">
-      제품에서 실제로 쓰는 조합입니다. 아래는 설명이 아니라 같은 CSS로 그린 실물입니다.
-    </p>
+    <p class="section-note">제품에서 실제로 쓰는 조합입니다. 아래는 설명이 아니라 같은 CSS 값으로 그린 실물입니다.</p>
 
-    <h3>수치 카드 — 왼쪽 5px 색 레일로 위험도를 말합니다</h3>
-    <div class="kpi-grid">
-      <article class="kpi danger">
-        <p>위험 판정률</p>
-        <strong>25.9%</strong>
-        <small>판정 대상 58건 중 15건</small>
-      </article>
-      <article class="kpi warning">
-        <p>위험 이슈</p>
-        <strong>15건</strong>
-        <small>대응 방안 생성 완료 14건</small>
-      </article>
-      <article class="kpi success">
-        <p>판정 대상 신호</p>
-        <strong>58건</strong>
-        <small>2026-09-02 ~ 2026-09-08</small>
-      </article>
-    </div>
-
-    <h3>분포 막대</h3>
+    <h3>메인 브리핑 히어로 — 도넛 + 통계 바</h3>
     <div class="specimen">
-      <div class="sev-row">
-        <div class="sev-head"><span>긴급</span><strong>2건 · 13.3%</strong></div>
-        <div class="sev-track"><i style="width:13.3%;background:var(--terracotta)"></i></div>
-      </div>
-      <div class="sev-row">
-        <div class="sev-head"><span>주의</span><strong>11건 · 73.4%</strong></div>
-        <div class="sev-track"><i style="width:73.4%;background:var(--gold)"></i></div>
-      </div>
-      <div class="sev-row">
-        <div class="sev-head"><span>관찰</span><strong>2건 · 13.3%</strong></div>
-        <div class="sev-track"><i style="width:13.3%;background:var(--sage)"></i></div>
+      <div class="hero-demo">
+        <div class="donut-wrap">
+          <svg viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="40" style="stroke:rgba(109,40,217,.12)"></circle>
+            <circle cx="50" cy="50" r="40" stroke="#6d28d9" stroke-dasharray="60 191" stroke-linecap="round"></circle>
+          </svg>
+          <div class="donut-label"><strong>63</strong><span>분석 완료 이슈</span></div>
+        </div>
+        <div class="stat-bars">
+          <div class="stat-row"><div class="head"><span>위험 판정 이슈</span><b>23.8% 15건</b></div><div class="stat-track"><i style="width:23.8%;background:#6d28d9"></i></div></div>
+          <div class="stat-row"><div class="head"><span>부정 감성 이슈(위험 제외)</span><b>0.0% 0건</b></div><div class="stat-track"><i style="width:0%;background:#c4b5fd"></i></div></div>
+          <div class="stat-row"><div class="head"><span>정상 이슈</span><b>76.2% 48건</b></div><div class="stat-track"><i style="width:76.2%;background:#d7d2e0"></i></div></div>
+        </div>
       </div>
     </div>
 
-    <h3>사건 카드 — 배지 · 유형 · 위험도 · 제목 · 요약</h3>
-    <div class="event-card">
-      <div class="event-meta">
-        <span class="level critical">긴급</span>
-        <span class="etype">보안·개인정보</span>
-        <span class="escore">위험도 93.4%</span>
+    <h3>우선순위 위험 리스트</h3>
+    <div class="specimen">
+      <div class="list-row">
+        <div class="prob critical"><strong>99%</strong><span>위험</span></div>
+        <div><div class="list-title">쿠팡의 편리한 이중국적‥법정만 들어가면 "쿠팡은 한국꺼"</div>
+          <div class="list-meta"><span class="badge critical">긴급</span><span>안전·사고</span><span>09.08</span><span>기사 21</span></div></div>
+        <span class="chev">›</span>
       </div>
-      <div class="etitle">쿠팡 6247억 '철퇴' 맞았는데…'3954만 계정' 정보유출 티빙은 100억대?</div>
-      <div class="ebody">첫 안내는 평판 방어보다 고객과 투자자가 지금 확인할 수 있는 공식 채널과 문의 창구를 제시하는 내용으로 구성합니다.</div>
-    </div>
-    <div class="event-card" style="margin-top:10px">
-      <div class="event-meta">
-        <span class="level warning">주의</span>
-        <span class="etype">재무·지배구조</span>
-        <span class="escore">위험도 80.7%</span>
+      <div class="list-row">
+        <div class="prob warning"><strong>98%</strong><span>위험</span></div>
+        <div><div class="list-title">쿠팡 사례로 본 플랫폼 규제…학계 "중복 조사 개선 필요"</div>
+          <div class="list-meta"><span class="badge warning">주의</span><span>법률·규제</span><span>09.04</span><span>기사 2</span></div></div>
+        <span class="chev">›</span>
       </div>
-      <div class="etitle">쿠팡, 공정위 현장조사 사상 첫 거부</div>
-      <div class="ebody">관련 보도 2건 · 출처 2곳</div>
     </div>
 
-    <h3>컨트롤</h3>
+    <h3>날짜별 위험·부정 비율</h3>
+    <div class="specimen">
+      <div class="bar-chart">
+        <div class="bar-axis"><span>50%</span><span>25%</span><span>0%</span></div>
+        <div class="bar-cols">
+          <div class="bar-col"><div class="bar-pair"><i class="negative" style="height:20%"></i><i class="risk" style="height:10%"></i></div><div class="bar-date">09.02</div></div>
+          <div class="bar-col"><div class="bar-pair"><i class="negative" style="height:35%"></i><i class="risk" style="height:15%"></i></div><div class="bar-date">09.04</div></div>
+          <div class="bar-col"><div class="bar-pair"><i class="negative" style="height:60%"></i><i class="risk" style="height:50%"></i></div><div class="bar-date peak">09.06</div></div>
+          <div class="bar-col"><div class="bar-pair"><i class="negative" style="height:30%"></i><i class="risk" style="height:12%"></i></div><div class="bar-date">09.08</div></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>파이프라인 흐름 카드 — 6단계 스트립</h3>
+    <div class="specimen">
+      <div class="flow-cards">
+        <div class="flow-card active"><div class="fc-head"><span>01 수집</span></div><strong>128</strong><small>오늘 수집 기사</small></div>
+        <div class="flow-card"><div class="fc-head"><span>02 정제</span></div><strong>96</strong><small>정제 완료</small></div>
+        <div class="flow-card"><div class="fc-head"><span>03 감성분석</span></div><strong>96</strong><small>분석 완료</small></div>
+        <div class="flow-card"><div class="fc-head"><span>04 이슈그룹핑</span></div><strong>12</strong><small>그룹 생성</small></div>
+        <div class="flow-card"><div class="fc-head"><span>05 위험판정</span></div><strong>4</strong><small>위험 확정</small></div>
+        <div class="flow-card"><div class="fc-head"><span>06 대응</span></div><strong>3</strong><small>대응 대기</small></div>
+      </div>
+    </div>
+
+    <h3>4분할 통계 카드 + 최근 실행 이력</h3>
+    <div class="specimen">
+      <div class="quad-grid">
+        <div class="quad-card"><div class="qh">오늘 수집</div><div class="qv">128건</div><div class="qd"><b class="up">▲ 12</b></div></div>
+        <div class="quad-card"><div class="qh">평균 처리 시간</div><div class="qv">41초</div><div class="qd"><b class="down">▼ 3초</b></div></div>
+        <div class="quad-card"><div class="qh">실패율</div><div class="qv">0.8%</div><div class="qd"><b class="up">▲ .2%</b></div></div>
+        <div class="quad-card"><div class="qh">수집 완료</div><div class="qv" style="color:#29715f;font-size:1.2rem">정상</div></div>
+      </div>
+      <div style="margin-top:18px">
+        <div class="job-row"><div class="job-dot running"></div><div><span class="job-title">15:40 수동 수집</span><span class="job-badge running">진행중</span></div><div class="job-time">방금 전</div></div>
+        <div class="job-row"><div class="job-dot completed"></div><div><span class="job-title">15:00 정기 수집</span><span class="job-badge completed">완료</span></div><div class="job-time">40분 전</div></div>
+      </div>
+    </div>
+
+    <h3>탭 · 버튼 · 배지</h3>
     <div class="controls">
-      <button class="btn" type="button">대응 방안 생성</button>
-      <button class="btn secondary" type="button">취소</button>
-      <span class="field">사건 제목·위험 유형 검색</span>
+      <button class="btn" type="button">위험 사건 15건 확인</button>
+      <button class="btn ghost" type="button">수동 수집</button>
+      <div class="mode-group"><span class="active">나의 기업</span><span>전체 평균</span><span>비교 기업</span></div>
     </div>
-    <div class="controls" style="margin-top:16px">
-      <div class="nav-pill">
-        <span class="active">AI 리스크 브리핑</span>
-        <span>분석 파이프라인</span>
-        <span>관리</span>
-      </div>
+    <div class="controls" style="margin-top:14px">
+      <span class="badge critical">긴급</span>
+      <span class="badge warning">주의</span>
+      <span class="badge safe">정상</span>
     </div>
   </section>
 
-  <!-- ── 레이아웃 · 모션 ────────────────────────────────── -->
+  <!-- ── 레이아웃 ───────────────────────────────────────── -->
   <section>
-    <h2>레이아웃과 움직임</h2>
-    <p class="section-note">
-      상단바 하나에 탭 세 개, 그 아래는 전부 한 줄로 흐르는 단일 컬럼입니다.
-      사이드바는 파이프라인 화면에만 있습니다.
-    </p>
+    <h2>레이아웃 규칙</h2>
     <div class="table-wrap">
       <table>
         <tr><th style="width:210px">항목</th><th>값</th></tr>
-        <tr><td class="k">.workspace</td><td class="v">max-width: calc(1320px + 10vw) · padding: 36px 5vw 100px · 가운데 정렬</td></tr>
-        <tr><td class="k">.panel</td><td class="v">padding: 24px · 제목 아래 1px 구분선(하단 여백 17px)</td></tr>
-        <tr><td class="k">상단바</td><td class="v">rgba(255, 253, 249, .96) 반투명 · 하단 1px 선 · 탭은 알약 컨테이너 안에</td></tr>
-        <tr><td class="k">배경 텍스처</td><td class="v">340px 원 두 개, 1px rgba(184,88,54,.15) 테두리만. <code>overflow-x: clip</code>으로 가둡니다</td></tr>
-        <tr><td class="k">반응형</td><td class="v">1080px에서 2열, 640px에서 1열로 접힘</td></tr>
-        <tr><td class="k">진입</td><td class="v">risoto-fade-up · .5s ease · 아래에서 14px 올라오며 나타남. 패널이 아니라 <em>화면 단위</em>로 한 번만</td></tr>
-        <tr><td class="k">호버</td><td class="v">카드 translateY(-3px) + shadow-lift · 목록 행 translateX(3px)</td></tr>
-        <tr><td class="k">접근성</td><td class="v">focus-visible 3px 링 · <code>prefers-reduced-motion</code>에서 모든 애니메이션·트랜지션 해제</td></tr>
+        <tr><td class="k">.workspace</td><td class="v">max-width: calc(1180px + 6vw) · padding: 32px 3vw 90px · 가운데 정렬</td></tr>
+        <tr><td class="k">브레드크럼</td><td class="v"><code>.brief-crumb</code> — 상위 메뉴 &gt; 현재 화면, 화살표 SVG 14px 고정</td></tr>
+        <tr><td class="k">클래스 결합</td><td class="v">보라 브랜드 화면은 루트에 <code>signal-scope brief-dashboard</code> 두 클래스를 함께 둠</td></tr>
+        <tr><td class="k">반응형</td><td class="v">1080px에서 3열, 640~760px에서 2열로 접힘(흐름 카드·통계 카드·히어로)</td></tr>
+        <tr><td class="k">숫자 정렬</td><td class="v"><code>font-variant-numeric: tabular-nums</code> — 표·통계 카드 전반</td></tr>
+        <tr><td class="k">접근성</td><td class="v">focus-visible 3px 링(보라 화면은 보라색 링) · <code>prefers-reduced-motion</code>에서 애니메이션 해제</td></tr>
       </table>
     </div>
   </section>
@@ -570,76 +534,56 @@
   <!-- ── 복사용 ─────────────────────────────────────────── -->
   <section>
     <h2>복사해서 쓰기</h2>
-    <p class="section-note">
-      이 블록 하나만 붙여 넣으면 톤이 그대로 따라옵니다.
-    </p>
+    <p class="section-note">라이트·다크 값을 포함한 전체 토큰입니다. pen.dev 등 외부 도구에 붙여 넣을 때 이 블록만 있으면 됩니다.</p>
     <div class="code-head">
-      <h3 style="margin:0">:root 토큰 전체</h3>
+      <h3 style="margin:0">CSS 커스텀 프로퍼티 전체</h3>
       <button class="copy-btn" type="button" id="copy">복사</button>
     </div>
-<pre id="tokens"><span class="c">/* 서체: 한글·라틴을 한 벌로 */</span>
+<pre id="tokens"><span class="c">/* 서체 */</span>
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+<span class="p">--font-soft</span>: "Pretendard Variable", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
 
-:root {
-  <span class="c">/* 서체 */</span>
-  <span class="p">--font-soft</span>: "Pretendard Variable", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+<span class="c">/* 신호 표면 — .signal-scope (라이트) */</span>
+<span class="p">--sig-bg</span>: #edeff3;              <span class="p">--sig-surface</span>: #ffffff;
+<span class="p">--sig-surface-sunken</span>: #f4f5f8;  <span class="p">--sig-ink</span>: #171a23;
+<span class="p">--sig-ink-soft</span>: #5c6373;        <span class="p">--sig-ink-faint</span>: #6b7280;
+<span class="p">--sig-border</span>: rgba(23,26,35,.09);        <span class="p">--sig-border-strong</span>: rgba(23,26,35,.16);
+<span class="p">--sig-accent</span>: #223059;          <span class="p">--sig-accent-soft</span>: #e7eaf3;
+<span class="p">--sig-critical</span>: #b3323f;   <span class="p">--sig-critical-soft</span>: #fbe6e8;  <span class="p">--sig-critical-ink</span>: #7d1f29;
+<span class="p">--sig-warning</span>: #b0731a;    <span class="p">--sig-warning-soft</span>: #faf0da;   <span class="p">--sig-warning-ink</span>: #7a4f0f;
+<span class="p">--sig-safe</span>: #29715f;       <span class="p">--sig-safe-soft</span>: #e2efe9;      <span class="p">--sig-safe-ink</span>: #1c4d40;
+<span class="p">--sig-radius-lg</span>: 18px; <span class="p">--sig-radius-md</span>: 12px; <span class="p">--sig-radius-sm</span>: 8px;
+<span class="p">--sig-shadow</span>: 0 1px 2px rgba(23,26,35,.04), 0 10px 28px rgba(23,26,35,.06);
+<span class="p">--sig-shadow-lift</span>: 0 16px 40px rgba(23,26,35,.12);
 
-  <span class="c">/* 글자 크기 */</span>
-  <span class="p">--text-caption</span>: .8125rem;   <span class="c">/* 13px */</span>
-  <span class="p">--text-small</span>: .875rem;      <span class="c">/* 14px */</span>
-  <span class="p">--text-body</span>: .9375rem;      <span class="c">/* 15px */</span>
-  <span class="p">--text-emphasis</span>: 1rem;      <span class="c">/* 16px */</span>
-  <span class="p">--section-title-size</span>: clamp(1.65rem, 2.5vw, 2.35rem);
+<span class="c">/* 신호 표면 — .signal-scope (다크, [data-theme="dark"]) */</span>
+<span class="p">--sig-bg</span>: #0f121a;  <span class="p">--sig-surface</span>: #181c28;  <span class="p">--sig-surface-sunken</span>: #12151f;
+<span class="p">--sig-ink</span>: #eef0f6;  <span class="p">--sig-ink-soft</span>: #9aa2b6;  <span class="p">--sig-ink-faint</span>: #6d7488;
+<span class="p">--sig-accent</span>: #7c95dd;
+<span class="p">--sig-critical</span>: #e2727e;  <span class="p">--sig-warning</span>: #dba64c;  <span class="p">--sig-safe</span>: #55b79b;
+<span class="p">--sig-shadow</span>: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.4);
+<span class="p">--sig-shadow-lift</span>: 0 16px 40px rgba(0,0,0,.55);
 
-  <span class="c">/* 팔레트 */</span>
-  <span class="p">--cream</span>: #fbf6ee;
-  <span class="p">--paper</span>: #fffdf9;
-  <span class="p">--rice</span>: #eee2d2;
-  <span class="p">--terracotta</span>: #b85836;
-  <span class="p">--terracotta-deep</span>: #8d3f29;
-  <span class="p">--sage</span>: #597265;
-  <span class="p">--gold</span>: #c88d30;
-  <span class="p">--ink-strong</span>: #30251f;
-  <span class="p">--ink-soft</span>: #75695f;
+<span class="c">/* 브랜드 강조 — .brief-dashboard (라이트) */</span>
+<span class="p">--dv-accent</span>: #6d28d9;       <span class="p">--dv-accent-soft</span>: #ede9fe;
+<span class="p">--dv-accent-strong</span>: #4c1d95;  <span class="p">--dv-accent-2</span>: #c4b5fd;
+<span class="p">--dv-hero-bg</span>: linear-gradient(135deg, #f3effc, #ede7fb);
 
-  <span class="c">/* 선 · 면 */</span>
-  <span class="p">--divider</span>: rgba(109, 82, 61, .14);
-  <span class="p">--divider-strong</span>: rgba(109, 82, 61, .22);
-  <span class="p">--divider-accent</span>: rgba(184, 88, 54, .22);
-  <span class="p">--focus-ring</span>: rgba(184, 88, 54, .35);
-  <span class="p">--panel-surface</span>: rgba(255, 253, 249, .88);
-
-  <span class="c">/* 상태 */</span>
-  <span class="p">--success-strong</span>: #3f6254;
-  <span class="p">--success</span>: var(--sage);
-  <span class="p">--success-soft</span>: #deebe4;
-  <span class="p">--success-border</span>: #9db6a7;
-
-  <span class="c">/* 형태 */</span>
-  <span class="p">--radius-panel</span>: 1.7rem;
-  <span class="p">--radius-card</span>: 1.1rem;
-  <span class="p">--radius-control</span>: .8rem;
-  <span class="p">--shadow-soft</span>: 0 16px 38px rgba(82, 54, 34, .08);
-  <span class="p">--shadow-lift</span>: 0 20px 35px rgba(82, 54, 34, .12);
-
-  font-family: var(--font-soft);
-  color: var(--ink-strong);
-  background: var(--cream);
-  font-synthesis: none;
-}
+<span class="c">/* 브랜드 강조 — .brief-dashboard (다크) */</span>
+<span class="p">--dv-accent</span>: #a78bfa;       <span class="p">--dv-accent-soft</span>: #2e2249;
+<span class="p">--dv-accent-strong</span>: #d8cbfb;  <span class="p">--dv-accent-2</span>: #6d5a9e;
+<span class="p">--dv-hero-bg</span>: linear-gradient(135deg, #201a35, #1c1830);
 
 <span class="c">/* 굵기 상한을 700으로 묶는다 (기본 bolder는 900까지 올라감) */</span>
-b, strong { font-weight: 700; }
-
-<span class="c">/* 위험도 배지 */</span>
-.level.critical { background: #f6ddd4; color: #8d3f29; }
-.level.warning  { background: #f9edcf; color: #89611b; }
-.level.watch    { background: #deebe4; color: #3f6254; }</pre>
+b, strong { font-weight: 700; }</pre>
   </section>
 
   <footer>
-    값은 <code>frontend/src/styles.css</code>에서 추출했습니다.
-    팔레트와 형태 토큰은 파일 끝의 “캔바 시안 테마 레이어” 블록에, 서체와 크기 토큰은 파일 맨 위 <code>:root</code>에 있습니다.
+    값은 <code>frontend/src/styles.css</code>에서 그대로 추출했습니다.
+    신호 팔레트는 <code>.signal-scope</code> 블록(라이트 3228행대 · 다크 3257행대)에,
+    브랜드 강조는 <code>.brief-dashboard</code> 블록(4349행대)에 있습니다.
+    다크 값 대부분은 <code>scripts/build-dark-theme.py</code>가 자동 생성하고,
+    보라 강조가 들어간 요소 일부만 대비 확보를 위해 수동으로 다시 지정돼 있습니다.
     이 페이지의 Pretendard는 설치된 환경에서만 정확히 보이며, 없을 경우 결이 가장 가까운 Noto Sans KR로 대체됩니다.
   </footer>
 
@@ -649,17 +593,11 @@ b, strong { font-weight: 700; }
   document.getElementById("copy").addEventListener("click", (event) => {
     const button = event.currentTarget;
     const text = document.getElementById("tokens").innerText;
-    const done = () => {
-      button.textContent = "복사됨";
-      setTimeout(() => { button.textContent = "복사"; }, 1600);
-    };
+    const done = () => { button.textContent = "복사됨"; setTimeout(() => { button.textContent = "복사"; }, 1600); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(done, selectInstead);
-    } else {
-      selectInstead();
-    }
+    } else { selectInstead(); }
     function selectInstead() {
-      // 클립보드 접근이 막힌 환경에서는 대신 전체를 선택해 준다.
       const range = document.createRange();
       range.selectNodeContents(document.getElementById("tokens"));
       const selection = window.getSelection();

@@ -25,7 +25,8 @@ export default function ManagementPage({ collectionProps = {}, companyProps = {}
     });
   };
 
-  return <div className="management-page">
+  return <div className="management-page signal-scope brief-dashboard">
+    <p className="brief-crumb">Management <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg> <b>{current.label}</b></p>
     <div className="management-page-head">
       <div>
         <p className="eyebrow">WORKSPACE SETTINGS</p>
