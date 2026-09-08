@@ -1180,6 +1180,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .risk-event-list-panel .risk-list { max-height: 780px; overflow-y: auto; }
 
 /* AI 리스크 브리핑: 상단 통합 그래프와 하단 전체 폭 위험 사건 패널. */
+.briefing-workspace { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
 .briefing-page-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 14px; }
 .briefing-page-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
 .briefing-page-head .briefing-description { flex: 1; margin-bottom: 0; }
