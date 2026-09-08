@@ -325,7 +325,9 @@ class RiskEventPageDatabaseTests(unittest.TestCase):
             db=self.db,
             auth=self.auth,
         )
-        self.assertEqual(recent_non_risk.summary.non_risk, 1)
+        # summary와 실제 목록(total)은 항상 같은 days 필터를 써야 한다 -- summary만
+        # 전체 기간으로 세면 요약 숫자와 목록 건수가 어긋난다(이전 버그).
+        self.assertEqual(recent_non_risk.summary.non_risk, 0)
         self.assertEqual(recent_non_risk.total, 0)
 
         event = self.event(

@@ -30,6 +30,8 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [listOpen, setListOpen] = useState(false);
+  // 지금 그리는 초안이 메인 경로인지 동종 경로인지. 제목을 가르는 데만 쓴다.
+  const [draftKind, setDraftKind] = useState(null);
   const loadSequence = useRef(0);
   const dropdownRef = useRef(null);
 
@@ -188,7 +190,7 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   }, [loadRisks, selectedRisk]);
 
   const riskCount = (pageData.summary.active ?? 0) + (pageData.summary.history ?? 0);
-  const listTitle = eventView === "needs_response" ? "검토 필요 이슈 선택" : "위험 이슈 선택";
+  const listTitle = eventView === "needs_response" ? "검토 필요 목록" : "위험 목록";
   const emptyMessage = eventView === "needs_response"
     ? "선택한 기간에 검토가 필요한 위험 이슈가 없습니다."
     : "선택한 기간에 마지막 관련 기사가 추가된 위험 이슈가 없습니다.";
@@ -215,7 +217,7 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
         <div className="pipeline-panel-heading pipeline-risk-list-heading"><PanelTitle title={listTitle} />{!hasDateRange && <div className="pipeline-risk-list-controls"><select aria-label="조회 기간" value={period} onChange={(event) => updateQuery({ days: event.target.value }, { resetPage: true, clearSelection: true })}>{PERIOD_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></div>}</div>
         {selectedRisk ? <div className={`pipeline-risk-dropdown${listOpen ? " open" : ""}`} ref={dropdownRef}>
           <button className="pipeline-risk-dropdown-trigger risk-event-list-item selected" type="button" aria-expanded={listOpen} aria-controls="response-risk-event-list" onClick={() => setListOpen((open) => !open)}>
-            <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact /></div>
+            <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact plain /></div>
             <span className="pipeline-risk-dropdown-action">{listOpen ? "목록 접기" : "목록 펼치기"}<i aria-hidden="true" /></span>
           </button>
           {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 이슈 목록" : "위험 이슈 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><RiskEventListContent risk={risk} judgmentCompact /></button>)}</div>}
@@ -223,10 +225,10 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
       </section>
       <section className="panel pipeline-panel pipeline-risk-evidence">
         <div className="pipeline-panel-heading pipeline-risk-detail-heading">
-          <PanelTitle kicker="RESPONSE PLAN" title="대응 방안" />
+          <PanelTitle kicker="RESPONSE PLAN" title={draftKind === "peer_recommendation" ? "나의 기업에 미칠 영향" : "대응 방안"} />
           {selectedRisk && <button className="secondary-button" type="button" onClick={openEvidence}>근거 보기</button>}
         </div>
-        <RiskDetail key={`${queryKey}:${selectedRisk?.id ?? "none"}`} risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} />
+        <RiskDetail key={`${queryKey}:${selectedRisk?.id ?? "none"}`} risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} onDraftLoaded={setDraftKind} />
       </section>
     </>}
   </section>;

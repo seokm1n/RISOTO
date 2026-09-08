@@ -1268,7 +1268,10 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .briefing-risk-list > .briefing-risk-card:last-child { border-bottom: 0; }
 .briefing-risk-list > .briefing-risk-card:hover { background: rgba(180,96,42,.055); }
 .briefing-risk-list > .briefing-risk-card:focus-visible { outline: 3px solid rgba(168,79,50,.2); outline-offset: -3px; }
+.briefing-risk-issue { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
 .briefing-risk-story-title { overflow: hidden; color: #2e1f14; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }
+.briefing-risk-type-row { gap: 4px; }
+.briefing-risk-type-row span { padding: 2px 6px; font-size: 11px; }
 .briefing-response-summary { overflow: hidden; color: #6f625a; font-size: var(--text-small); line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-statistics-workspace .risk-detail-head h3 {
   color: #2e1f14;
@@ -2255,9 +2258,17 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   box-shadow: 0 7px 16px rgba(112, 67, 44, .09);
   color: #47352b;
 }
+.response-option-tab { gap: 5px; }
 .response-option-tab > strong { font-size: .86rem; font-weight: 900; line-height: 1.45; }
+/* 세 안을 비교할 수 있게 제목 밑에 갈림길 한 줄을 둔다. */
+.response-option-tab > small { color: #81746b; font-size: .72rem; font-weight: 700; line-height: 1.45; }
+.response-option-tab.active > small { color: #6b5647; }
 
 .response-plan-content { display: grid; gap: 18px; }
+/* 대응전략 생성이 메인, 실행 계획 타임라인은 옆에 붙는 2분할 레이아웃. */
+.response-plan-columns { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(260px,1fr); align-items: start; gap: 18px; margin-top: 18px; }
+.response-plan-main, .response-plan-side { display: grid; min-width: 0; gap: 18px; }
+.response-strategy-main .response-section-heading { border-bottom-color: rgba(178,113,76,.28); }
 .response-operations-view :is(.response-overview-panel, .response-workboard, .response-strategy-panel, .response-followup-panel) {
   display: grid;
   gap: 14px;
@@ -2398,6 +2409,27 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-task-flags em.muted { background: #e4ded2; color: #756c66; }
 .response-channel-empty { padding: 12px !important; color: #81766f !important; }
 
+/* 실행 계획 타임라인: 시간대(즉시/24시간/72시간/후속)를 세로선으로 잇는다. */
+.response-timeline { position: relative; display: grid; margin: 0; padding: 0; list-style: none; }
+.response-timeline-band { position: relative; padding-left: 22px; }
+.response-timeline-band:not(:last-child) { padding-bottom: 16px; }
+.response-timeline-band:not(:last-child)::before {
+  content: ""; position: absolute; top: 20px; left: 5px; bottom: -4px; width: 2px;
+  background: rgba(178, 113, 76, .28);
+}
+.response-timeline-marker { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.response-timeline-dot {
+  position: absolute; top: 4px; left: 0; width: 11px; height: 11px; border-radius: 50%;
+  background: #bc7454; box-shadow: 0 0 0 3px #f3e7d9;
+}
+.response-timeline-marker strong { color: #5b4a40; font-size: .82rem; font-weight: 900; }
+.response-timeline-marker span { color: #85776d; font-size: .68rem; font-weight: 800; }
+.response-timeline-tasks { display: grid; gap: 8px; }
+.response-timeline-task {
+  display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 11px;
+  border: 1px solid rgba(112, 91, 76, .17); border-radius: 11px; background: #f4ede1; padding: 11px 12px;
+}
+
 /* 전략과 후속 관리 */
 .response-strategy-grid {
   display: grid !important;
@@ -2530,7 +2562,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-appendix-articles > li { gap: 3px !important; }
 
 /* 동종 기업 영향 요약 */
-.response-operations-view .response-peer-brief {
+.response-operations-view :is(.response-peer-brief, .response-brief) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
@@ -2538,7 +2570,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   border: 0;
   background: transparent;
 }
-.response-peer-brief > article {
+:is(.response-peer-brief, .response-brief) > article {
   display: grid;
   align-content: start;
   gap: 8px;
@@ -2547,8 +2579,8 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   border-radius: 12px;
   background: #eee7d9;
 }
-.response-peer-brief > article.recommended { border-left: 4px solid #6d9279; background: #e4e9dc; }
-.response-peer-brief > article.recommended p { color: #425546; font-size: .9rem; font-weight: 900; }
+:is(.response-peer-brief, .response-brief) > article.recommended { border-left: 4px solid #6d9279; background: #e4e9dc; }
+:is(.response-peer-brief, .response-brief) > article.recommended p { color: #425546; font-size: .9rem; font-weight: 900; }
 .response-operations-view .response-no-action-card {
   display: grid;
   gap: 6px;
@@ -2559,6 +2591,49 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   background: #e4ece1;
 }
 .response-no-action-card > strong { color: #47644f; font-size: .88rem; font-weight: 900; }
+
+.response-operations-view .response-empty-note { margin: 0; color: #8a7d74; font-size: .8rem; }
+
+/* 왼쪽 대응안 목록 / 오른쪽 선택한 안의 방향 */
+.response-option-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .78fr); align-items: start; gap: 12px; }
+.response-option-split > .response-option-tabs { grid-template-columns: 1fr !important; }
+.response-option-split > article.recommended {
+  display: grid;
+  gap: 6px;
+  padding: 13px 15px;
+  border: 1px solid var(--divider-strong);
+  border-left: 4px solid #6d9279;
+  border-radius: 12px;
+  background: #e4e9dc;
+}
+.response-option-split > article.recommended p { margin: 0; color: #425546; font-size: .9rem; font-weight: 900; line-height: 1.5; }
+
+/* 한계 고지 - 접지 않는다 */
+.response-limitations {
+  display: grid;
+  gap: 5px;
+  padding: 13px 15px;
+  border: 1px solid rgba(170, 121, 50, .26);
+  border-left: 4px solid #b7883b;
+  border-radius: 12px;
+  background: #efe6d2;
+}
+.response-limitations > strong { color: #7c5f24; font-size: .8rem; font-weight: 900; }
+.response-limitations > p { margin: 0; color: #5d5041; font-size: .82rem; line-height: 1.65; }
+
+.response-minor-rows { margin-top: 2px; padding-top: 9px; border-top: 1px solid rgba(112, 91, 76, .15); }
+.response-minor-rows dt { color: #9a8b80 !important; }
+.response-minor-rows dd { color: #6b615b !important; font-size: .81rem !important; }
+
+/* 판단 근거 - 지표별 번호 항목 */
+.response-operations-view .response-basis-list { display: grid; gap: 9px; margin: 0; padding-left: 20px; }
+.response-operations-view .response-basis-list > li { color: #514843; font-size: .83rem; line-height: 1.6; }
+.response-basis-list > li > strong { display: block; color: #765343; font-size: .78rem; font-weight: 900; }
+
+/* 대응 화면 목록: 제목과 지표를 한 줄로 */
+.risk-event-plain-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+.risk-event-plain-head > strong { min-width: 0; }
+.risk-event-plain-head > small { flex: 0 0 auto; color: #857a72; font-size: var(--text-caption); white-space: nowrap; }
 
 /* 자동 검증과 이전 형식 */
 .response-quality-alert {
@@ -2619,7 +2694,8 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 @media (max-width: 980px) {
   .response-operations-view .response-command-card { grid-template-columns: 1fr; }
   .response-option-tabs { grid-template-columns: 1fr; }
-  .response-overview-grid, .response-peer-brief { grid-template-columns: 1fr !important; }
+  .response-overview-grid, .response-peer-brief, .response-brief { grid-template-columns: 1fr !important; }
+  .response-plan-columns { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
@@ -2638,6 +2714,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   }
   .response-task-due { grid-column: 2; justify-self: start; }
   .response-summary-rows > div { grid-template-columns: 1fr; }
+  .response-option-split { grid-template-columns: 1fr; }
   .response-section-heading { align-items: flex-start !important; }
 }
 

@@ -123,12 +123,28 @@ export function RiskJudgmentModelInfo({ risk, showVersion = false }) {
 }
 
 // 위험 이벤트 목록에서 스토리 제목, 다중 유형, 근거와 대응 상태를 보여준다.
-export function RiskEventListContent({ risk, judgmentCompact = false }) {
+// plain: 대응 화면의 목록용. 탐지 8유형 배지와 판정 모델 문구를 빼고, 위험도·관련 보도를
+// 제목 옆 한 줄로 줄인다. 대응 화면에서는 그 사건을 "고르는" 것이 목적이라 탐지 내부
+// 정보가 오히려 초안의 유형과 어긋나 보인다.
+export function RiskEventListContent({ risk, judgmentCompact = false, plain = false }) {
   const title = riskEventTitle(risk);
   const isNonRisk = risk.classification === "non_risk";
   const types = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
   const primaryType = types.find((item) => item.is_primary) ?? types.find((item) => item.risk_type === risk.primary_type) ?? types[0];
   const secondaryTypes = types.filter((item) => item !== primaryType);
+  if (plain) {
+    return <>
+      <div className="risk-event-plain-head">
+        <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
+        <small>
+          위험도 {formatRiskProbability(risk.risk_probability)}
+          {" · 관련 보도 "}
+          {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건
+        </small>
+      </div>
+    </>;
+  }
+
   return <>
     <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
     <div className="risk-event-type-row">{isNonRisk ? <span className="non-risk">비위험</span> : <>{primaryType ? <span className="primary">{RISK_TYPE_LABELS[primaryType.risk_type] ?? primaryType.risk_type}</span> : <span>분류 중</span>}{secondaryTypes.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}</>}</div>
@@ -178,10 +194,10 @@ function LegacyResponseContent({ content, riskTitle, isCompetitorImpact }) {
   </div>;
 }
 
-function ResponseDraftContent({ draft, riskTitle }) {
+function ResponseDraftContent({ draft, riskTitle, risk }) {
   const content = draft.content ?? {};
   if (draft.schema_version === 3 && draft.generation_kind !== "competitor_impact") {
-    return <MainResponseContent key={draft.id} content={content} />;
+    return <MainResponseContent key={draft.id} content={content} risk={risk} />;
   }
   if (draft.schema_version === 3 && draft.generation_kind === "competitor_impact") {
     return <PeerRecommendationContent key={draft.id} content={content} />;
@@ -190,7 +206,11 @@ function ResponseDraftContent({ draft, riskTitle }) {
 }
 
 // 위험 이벤트의 유형과 관리 승인이 필요한 대응 초안을 표시한다.
-export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
+// onDraftLoaded는 지금 그리는 초안이 어느 경로의 산출물인지(content_kind) 부모에게 올린다.
+// 화면 제목이 "대응 방안"과 "동종 기업 · 대응 방안"으로 갈리는데, 그 판단 근거를 선택한
+// 기업의 역할이 아니라 **실제로 생성된 초안**에서 가져오기 위해서다. 초안이 아직 없거나
+// 근거부족으로 보류된 상태에서 제목만 먼저 바뀌면 화면이 내용보다 앞서 말하게 된다.
+export function RiskDetail({ risk, canReview = false, onGenerationStarted, onDraftLoaded }) {
   const riskId = risk?.id ?? null;
   const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
@@ -205,6 +225,13 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   }, [riskId]);
   useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
   useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
+  // 초안을 다시 불러올 때마다 부모에게 종류를 알린다. loadDrafts가 아니라 drafts를 보고
+  // 도는 이유는, 콜백이 매 렌더 새로 만들어져도 재조회로 번지지 않게 하기 위해서다
+  // (같은 값을 다시 넣으면 React가 렌더를 건너뛰므로 여기서 멈춘다).
+  useEffect(() => {
+    const shown = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0];
+    onDraftLoaded?.(shown?.content?.content_kind ?? null);
+  }, [drafts, onDraftLoaded]);
   useEffect(() => {
     if (!riskId || !["pending", "generating"].includes(generationStatus)) return undefined;
     const timer = window.setInterval(loadDrafts, 5000);
@@ -252,7 +279,7 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
     </div>
     {generationStatus === "failed" && risk.response_generation_error && <div className="notice error">{risk.response_generation_error}</div>}
     {error && <div className="notice error">{error}</div>}
-    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} />{reviewFooter}</>}
+    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} risk={risk} />{reviewFooter}</>}
   </div>;
 }
 
