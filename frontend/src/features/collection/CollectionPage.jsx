@@ -50,6 +50,17 @@ function incidentReasonText(incident) {
   return incident.error_summary || `${sources} 수집 과정에서 오류가 발생했습니다.`;
 }
 
+function CollectionIncidentItem({ title, status, statusLabel, children }) {
+  return <details className="collection-incident-item">
+    <summary className="collection-incident-heading">
+      <strong>{title}</strong>
+      <span className={`collection-incident-status ${status}`}>{statusLabel}</span>
+      <span className="collection-incident-toggle" aria-hidden="true"><span className="when-closed">상세 보기</span><span className="when-open">접기</span></span>
+    </summary>
+    <div className="collection-incident-body">{children}</div>
+  </details>;
+}
+
 function CollectionIncidentSummary({ companies, health, incidents }) {
   const companyNames = useMemo(() => new Map(companies.map((company) => [company.id, company.name])), [companies]);
   const failingSources = (health?.sources ?? []).filter((source) => ["partial", "down"].includes(source.status));
@@ -66,12 +77,28 @@ function CollectionIncidentSummary({ companies, health, incidents }) {
             ? `영향 기업 ${formatNumber(affectedCompanyIds.length)}곳`
             : "전체 수집 시스템";
         const sourceText = (incident.sources ?? []).map((source) => SOURCE_LABELS[source] ?? source).join(", ") || "수집기";
-        return <article className="collection-incident-item" key={incident.id}>
-          <div><strong>{incidentReasonText(incident)}</strong><span className={`collection-incident-status ${incident.status}`}>{INCIDENT_STATUS_LABELS[incident.status] ?? incident.status}</span></div>
-          <p>{sourceText} · {affectedText} · 감지 {formatDate(incident.detected_at)}</p>
-          {incident.next_retry_at && <small>다음 재시도 {formatDate(incident.next_retry_at)} · 현재까지 {formatNumber(incident.retry_count)}회 재시도</small>}
-        </article>;
-      }) : failingSources.length ? failingSources.map((source) => <article className="collection-incident-item" key={source.source}><div><strong>{incidentReasonText({ error_summary: source.last_error_message, sources: [source.source] })}</strong><span className={`collection-incident-status ${source.status === "down" ? "open" : "retrying"}`}>{HEALTH_STATUS_LABELS[source.status] ?? source.status}</span></div><p>{source.consecutive_failures > 0 ? `연속 실패 ${formatNumber(source.consecutive_failures)}회` : "최근 수집 구간 일부 요청 실패"} · 마지막 시도 {formatDate(source.last_attempt_at)}</p></article>) : <article><strong>현재 확인된 수집 장애가 없습니다.</strong><p>모든 수집기가 정상적으로 응답하고 있습니다.</p></article>}
+        return <CollectionIncidentItem key={incident.id} title={incidentReasonText(incident)} status={incident.status} statusLabel={INCIDENT_STATUS_LABELS[incident.status] ?? incident.status}>
+          <dl className="collection-incident-fields">
+            <div><dt>수집기</dt><dd>{sourceText}</dd></div>
+            <div><dt>영향 기업</dt><dd>{affectedText}</dd></div>
+            <div><dt>수집 구간</dt><dd>{formatDate(incident.scheduled_for)}</dd></div>
+            <div><dt>감지 시각</dt><dd>{formatDate(incident.detected_at)}</dd></div>
+            <div><dt>마지막 확인</dt><dd>{formatDate(incident.last_seen_at)}</dd></div>
+            <div><dt>재시도 횟수</dt><dd>{formatNumber(incident.retry_count)}회</dd></div>
+            <div><dt>다음 재시도</dt><dd>{incident.next_retry_at ? formatDate(incident.next_retry_at) : "예약 없음"}</dd></div>
+          </dl>
+          <div className="collection-incident-error"><strong>저장된 오류 내용</strong><p>{incident.error_summary || "추가 오류 내용이 없습니다."}</p></div>
+        </CollectionIncidentItem>;
+      }) : failingSources.length ? failingSources.map((source) => <CollectionIncidentItem key={source.source} title={incidentReasonText({ error_summary: source.last_error_message, sources: [source.source] })} status={source.status === "down" ? "open" : "retrying"} statusLabel={HEALTH_STATUS_LABELS[source.status] ?? source.status}>
+        <dl className="collection-incident-fields">
+          <div><dt>수집기</dt><dd>{SOURCE_LABELS[source.source] ?? source.source}</dd></div>
+          <div><dt>연속 실패</dt><dd>{formatNumber(source.consecutive_failures)}회</dd></div>
+          <div><dt>마지막 시도</dt><dd>{formatDate(source.last_attempt_at)}</dd></div>
+          <div><dt>마지막 성공</dt><dd>{formatDate(source.last_success_at)}</dd></div>
+          {source.last_error_code && <div><dt>오류 코드</dt><dd>{source.last_error_code}</dd></div>}
+        </dl>
+        <div className="collection-incident-error"><strong>저장된 오류 내용</strong><p>{source.last_error_message || "추가 오류 내용이 없습니다."}</p></div>
+      </CollectionIncidentItem>) : <article><strong>현재 확인된 수집 장애가 없습니다.</strong><p>모든 수집기가 정상적으로 응답하고 있습니다.</p></article>}
     </div>
   </section>;
 }
@@ -226,8 +253,8 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
       setArticleCompany(company);
     }} key={company.id}>
       <div><span className={`status-dot ${company.monitoring_status}`} /><div><button className="collection-company-name" type="button" onClick={() => setArticleCompany(company)}>{company.name}</button><small>{company.industry_name} · {MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</small></div></div>
-      <dl><div><dt>정제 기사</dt><dd>{formatNumber(summary?.article_count)}</dd></div><div><dt>분석 완료</dt><dd>{formatNumber(summary?.analyzed_count)}</dd></div><div><dt>마지막 수집</dt><dd>{formatDate(summary?.last_collected_at)}</dd></div></dl>
-      <div className="collection-row-actions"><button type="button" onClick={() => onOpenCompany(company.id)}>분석 통계 보기</button>{canToggle && <button className={`collection-toggle ${company.monitoring_status === "paused" ? "start" : "stop"}`} type="button" onClick={() => changeCompany(company)} disabled={Boolean(busy)}>{busy === company.id ? "처리 중..." : company.monitoring_status === "paused" ? "수집 재개" : "수집 중지"}</button>}</div>
+      <dl><div><dt>마지막 수집</dt><dd>{formatDate(summary?.last_collected_at)}</dd></div></dl>
+      <div className="collection-row-actions"><button type="button" aria-label={`${company.name} 수집 이력 보기`} onClick={() => onOpenCompany(company.id)}>수집 이력 보기</button>{canToggle && <button className={`collection-toggle ${company.monitoring_status === "paused" ? "start" : "stop"}`} type="button" onClick={() => changeCompany(company)} disabled={Boolean(busy)}>{busy === company.id ? "처리 중..." : company.monitoring_status === "paused" ? "수집 재개" : "수집 중지"}</button>}</div>
     </article>;
   };
 

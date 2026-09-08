@@ -5,12 +5,14 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import engine
+from app.config import Settings
 from app.models import (
     Company,
     CompanyFeatureWindow,
@@ -104,6 +106,16 @@ class NotificationDatabaseTests(unittest.TestCase):
         if self.company_id is None:
             self.skipTest("알림 테스트에 기업이 필요합니다.")
         self.auth = auth_for_company(self.db, self.company_id)
+        # This fixture exercises legacy event/read-state behavior. Current-model
+        # and calendar boundaries are covered separately in notification-period tests.
+        settings_patch = patch("app.routers.notifications.get_settings", return_value=Settings(story_risk_model_enabled=False))
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
+        period_patch = patch("app.routers.notifications._notification_period", return_value=(
+            datetime(2092, 12, 30, tzinfo=timezone.utc), datetime(2093, 1, 2, tzinfo=timezone.utc),
+        ))
+        period_patch.start()
+        self.addCleanup(period_patch.stop)
 
     def tearDown(self):
         if hasattr(self, "db"):
@@ -164,9 +176,15 @@ class NotificationDatabaseTests(unittest.TestCase):
             opened_at=start + timedelta(minutes=2),
             last_seen_at=start + timedelta(minutes=2),
         )
+        monitoring_cluster = StoryCluster(
+            fingerprint=uuid4().hex, representative_title="계속 감시 중인 이슈",
+            first_published_at=start, last_published_at=start,
+        )
+        self.db.add(monitoring_cluster)
+        self.db.flush()
         monitoring_event = RiskEvent(
             company_id=self.company_id,
-            story_cluster_id=cluster.id,
+            story_cluster_id=monitoring_cluster.id,
             event_source="story_v2",
             anomaly_score=0.65,
             risk_probability=0.75,

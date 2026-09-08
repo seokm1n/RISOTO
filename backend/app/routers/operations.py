@@ -106,57 +106,86 @@ def collection_health(
     # `pipeline` is a synthetic orchestration-failure source, not a collector.
     # Its historical attempts remain auditable through incidents, but must not
     # permanently poison the per-collector health list after recovery.
-    sources = list(
-        db.scalars(
-            select(CollectionAttempt.source)
-            .where(
-                CollectionAttempt.user_id == auth.user_id,
-                CollectionAttempt.source != "pipeline",
-            )
-            .distinct()
-            .order_by(CollectionAttempt.source)
+    # A retry can finish after a newer scheduled slot, so actual completion
+    # order determines each company's current source state. Keep every company
+    # represented even when another company has a long history of attempts.
+    partition = [CollectionAttempt.company_id, CollectionAttempt.source]
+    attempt_order = [
+        CollectionAttempt.completed_at.desc(),
+        CollectionAttempt.started_at.desc(),
+        CollectionAttempt.id.desc(),
+    ]
+    ranked = (
+        select(
+            CollectionAttempt.id,
+            CollectionAttempt.company_id,
+            CollectionAttempt.source,
+            CollectionAttempt.scheduled_for,
+            CollectionAttempt.status,
+            CollectionAttempt.completed_at,
+            func.row_number().over(
+                partition_by=partition, order_by=attempt_order
+            ).label("latest_rank"),
+            func.sum(case((CollectionAttempt.status == "succeeded", 1), else_=0))
+            .over(partition_by=partition, order_by=attempt_order, rows=(None, 0))
+            .label("successes_since"),
         )
+        .where(
+            CollectionAttempt.user_id == auth.user_id,
+            CollectionAttempt.source != "pipeline",
+        )
+        .cte("ranked_collection_attempts")
     )
-    source_items: list[CollectionSourceHealthRead] = []
-    for source in sources:
-        attempts = list(
-            db.scalars(
-                select(CollectionAttempt)
-                .where(
-                    CollectionAttempt.user_id == auth.user_id,
-                    CollectionAttempt.source == source,
-                    CollectionAttempt.attempt_number == 0,
-                )
-                .order_by(CollectionAttempt.scheduled_for.desc(), CollectionAttempt.id.desc())
-                .limit(200)
-            )
+    company_health = (
+        select(
+            ranked.c.company_id,
+            ranked.c.source,
+            # Repeated failed retries for the same scheduled window count once.
+            func.count(func.distinct(case(
+                (ranked.c.successes_since == 0, ranked.c.scheduled_for)
+            ))).label("consecutive_failures"),
+            func.max(case(
+                (ranked.c.status == "succeeded", ranked.c.completed_at)
+            )).label("last_success_at"),
         )
-        by_window: dict[datetime, list[CollectionAttempt]] = {}
-        for attempt in attempts:
-            by_window.setdefault(attempt.scheduled_for, []).append(attempt)
-        window_groups = [by_window[key] for key in sorted(by_window, reverse=True)]
-        consecutive = 0
-        for group in window_groups:
-            if any(attempt.status == "succeeded" for attempt in group):
-                break
-            consecutive += 1
-        latest = attempts[0] if attempts else None
-        latest_success = next((item for item in attempts if item.status == "succeeded"), None)
-        latest_group = window_groups[0] if window_groups else []
-        latest_failure = next((item for item in latest_group if item.status == "failed"), None)
-        latest_failed = any(item.status == "failed" for item in latest_group)
-        latest_succeeded = any(item.status == "succeeded" for item in latest_group)
+        .group_by(ranked.c.company_id, ranked.c.source)
+        .subquery()
+    )
+    current_rows = db.execute(
+        select(
+            CollectionAttempt,
+            company_health.c.consecutive_failures,
+            company_health.c.last_success_at,
+        )
+        .join(ranked, ranked.c.id == CollectionAttempt.id)
+        .join(
+            company_health,
+            (company_health.c.company_id == CollectionAttempt.company_id)
+            & (company_health.c.source == CollectionAttempt.source),
+        )
+        .where(ranked.c.latest_rank == 1)
+        .order_by(CollectionAttempt.source, *attempt_order)
+    ).all()
+    by_source: dict[str, list] = {}
+    for row in current_rows:
+        by_source.setdefault(row[0].source, []).append(row)
+    source_items: list[CollectionSourceHealthRead] = []
+    for source, rows in by_source.items():
+        latest = rows[0][0]
+        latest_failure = next((row[0] for row in rows if row[0].status == "failed"), None)
+        latest_succeeded = any(row[0].status == "succeeded" for row in rows)
+        consecutive = max(row[1] for row in rows)
+        last_success_at = max((row[2] for row in rows if row[2] is not None), default=None)
         source_items.append(
             CollectionSourceHealthRead(
                 source=source,
                 status=(
-                    "unknown" if latest is None else
-                    "partial" if latest_failed and latest_succeeded else
-                    "healthy" if latest_succeeded else
+                    "healthy" if latest_failure is None else
+                    "partial" if latest_succeeded else
                     "partial" if consecutive == 1 else "down"
                 ),
-                last_attempt_at=latest.completed_at if latest else None,
-                last_success_at=latest_success.completed_at if latest_success else None,
+                last_attempt_at=latest.completed_at,
+                last_success_at=last_success_at,
                 consecutive_failures=consecutive,
                 last_error_code=latest_failure.error_code if latest_failure else None,
                 last_error_message=sanitize_error(latest_failure.error_message) if latest_failure else None,
