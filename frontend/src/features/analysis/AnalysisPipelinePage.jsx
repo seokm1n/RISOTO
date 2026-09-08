@@ -26,7 +26,7 @@ import {
   sentimentKind,
   sentimentText,
 } from "../../shared/presentation";
-import { RiskEventListContent, RiskJudgmentModelInfo } from "./AnalysisStatisticsPage";
+import { RecentCollectionDate, RiskEventListContent, RiskJudgmentModelInfo } from "./AnalysisStatisticsPage";
 
 const STAGES = [
   { id: "collection", step: "01", label: "실시간 수집 (15분)", kicker: "COLLECTION WINDOWS", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다." },
@@ -237,14 +237,6 @@ function SentimentStage({ data }) {
   </div>;
 }
 
-function RecentCollectionDate({ risk }) {
-  const latest = (risk.evidence_articles ?? []).reduce((current, article) => {
-    const value = article.collected_at;
-    return value && (!current || new Date(value) > new Date(current)) ? value : current;
-  }, null);
-  return <small className="pipeline-risk-collected-date">최근 수집 {formatDate(latest)}</small>;
-}
-
 function RiskStage({ data, selectedRiskId, classification, onSelect, onClassificationChange, onOpenResponse }) {
   const events = data.risks?.items ?? [];
   const selected = events.find((risk) => risk.id === selectedRiskId) ?? events[0] ?? null;
@@ -294,7 +286,7 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
     if (!isRisk || !selected || selected.id === selectedRiskId) return;
     onSelect(selected.id);
   }, [isRisk, onSelect, selected, selectedRiskId]);
-  const listTitle = `${classificationLabel} 이슈 선택`;
+  const listTitle = `${classificationLabel} 목록`;
   const emptyMessage = `선택 기간의 판정 대상 중 ${classificationLabel} 이슈가 없습니다.`;
   return <div className="pipeline-stage-content">
     <div className="pipeline-stat-grid risk-stage-stat-grid">

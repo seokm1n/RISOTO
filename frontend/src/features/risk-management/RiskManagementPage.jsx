@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { api, getErrorMessage } from "../../api";
 import { PanelTitle } from "../../shared/components";
 import { formatNumber } from "../../shared/presentation";
-import { RiskDetail, RiskEventListContent } from "../analysis/AnalysisStatisticsPage";
+import { RecentCollectionDate, RiskDetail, RiskEventListContent } from "../analysis/AnalysisStatisticsPage";
 
 const PERIOD_OPTIONS = [
   { value: "all", label: "전체" },
@@ -216,10 +216,10 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
         <div className="pipeline-panel-heading pipeline-risk-list-heading"><PanelTitle title={listTitle} />{!hasDateRange && <div className="pipeline-risk-list-controls"><select aria-label="조회 기간" value={period} onChange={(event) => updateQuery({ days: event.target.value }, { resetPage: true, clearSelection: true })}>{PERIOD_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></div>}</div>
         {selectedRisk ? <div className={`pipeline-risk-dropdown${listOpen ? " open" : ""}`} ref={dropdownRef}>
           <button className="pipeline-risk-dropdown-trigger risk-event-list-item selected" type="button" aria-expanded={listOpen} aria-controls="response-risk-event-list" onClick={() => setListOpen((open) => !open)}>
-            <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact plain /></div>
-            <span className="pipeline-risk-dropdown-action">{listOpen ? "목록 접기" : "목록 펼치기"}<i aria-hidden="true" /></span>
+            <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact /></div>
+            <div className="pipeline-risk-dropdown-meta"><RecentCollectionDate risk={selectedRisk} /><span className="pipeline-risk-dropdown-action">{listOpen ? "목록 접기" : "목록 펼치기"}<i aria-hidden="true" /></span></div>
           </button>
-          {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 이슈 목록" : "위험 이슈 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><RiskEventListContent risk={risk} judgmentCompact /></button>)}</div>}
+          {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 이슈 목록" : "위험 이슈 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={risk} judgmentCompact /></div><RecentCollectionDate risk={risk} /></button>)}</div>}
         </div> : <p className="panel-empty">{loading || !hasCurrentData ? "이슈를 불러오는 중입니다." : emptyMessage}</p>}
       </section>
       <section className="panel pipeline-panel pipeline-risk-evidence">
