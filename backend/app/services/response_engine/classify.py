@@ -45,6 +45,12 @@ _REFINE_PROMPT = """당신은 기업 리스크 모니터링 시스템의 대응 
 [대응 유형 - 이 중에서만 고르세요]
 {catalog}
 
+[이 사건의 제목]
+{event_title}
+스토리 군집의 대표 제목입니다. 아래 원문이 댓글·반응처럼 단편적일 때는 **이 제목이
+사안을 규정합니다.** 원문 몇 줄이 다른 주제를 말하더라도 제목이 가리키는 사안으로
+판정하세요.
+
 [탐지 단계가 넘긴 상위 유형]
 {upstream}
 이 값은 **참고 신호일 뿐 정답이 아닙니다.** 탐지 단계는 키워드로 유형을 정하기 때문에
@@ -243,11 +249,13 @@ def _refine_llm(
     upstream = (
         ", ".join(parents) if parents else "(없음 - 탐지 단계가 유형을 내지 못했습니다)"
     )
+    title = payload.event_title or "(제목 없음 - 원문만으로 판정하세요)"
     parsed, call_usage = structured_call(
         system=_REFINE_PROMPT.format(
             company=payload.company_name,
             catalog=risk_types.catalog_for_prompt(candidates),
             upstream=upstream,
+            event_title=title,
         ),
         user=user_content,
         schema=schema,

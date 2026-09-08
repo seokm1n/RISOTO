@@ -105,3 +105,29 @@ Brier 0.0229   AUC 0.9956   재현율 0.837
 - 라벨러 간 일치도는 아직 측정하지 않았습니다(단일 작성자). 20% 교차 라벨이 다음 과제입니다
 - 위기 라벨의 양성은 36건입니다. 재학습 하한(양성 20 / 음성 60)에 가까우므로
   라벨을 재분류할 때 양성이 줄지 않는지 확인하세요
+
+## 다음 라운드 필요: story_v2 사건 자체의 라벨 (2026-09-07 확인)
+
+위 82건은 **전부 `event_source='window_v1'`**입니다. 지금 실제로 사용자에게 보이는
+사건(story_v2)은 6,071건인데, story_v2의 `risk_probability`가 사람 기준으로 얼마나
+맞는지는 **한 번도 검증된 적이 없습니다** (`RiskEventLabel` 커버리지 0건, 2026-09-07
+DB 조회로 확인). window_v1 82건으로 window_v1↔story_v2 블렌드 가중치(w=0.2)를
+잠정 확정했지만, story_v2 자체의 정확도를 모르는 채로 튜닝한 것이라 다음 라운드가
+필요합니다.
+
+**후보 파일**: `backend/scripts/build_story_v2_label_candidates.py`를 실행하면
+`story_v2_label_candidates.csv`가 나옵니다(현재 117건, band × 위험유형 8종 교차
+층화, 셀당 최대 6건). 컬럼은 위 `human_risk_event_labels.csv`와 동일하고
+`is_risk`/`실제유형`/`note`만 비워져 있어 그대로 채우면 됩니다.
+
+```bash
+docker compose exec backend python -m training_data.build_story_v2_label_candidates
+```
+
+라벨링 시 참고:
+
+- `기사수`가 1건인 행은 사건이 열릴 때는 최소 2건이었지만 이후 근거 기사가
+  재필터링으로 빠졌을 가능성이 있습니다. `note`의 제목 샘플로 실제 내용을 판단하세요.
+- `band`가 `C_below_0.70`인 행은 표본이 32건뿐이라 이번 후보에 전부 포함했습니다.
+- 이 라운드가 끝나면 `story_risk.WINDOW_SIGNAL_BLEND_WEIGHT`(현재 0.2, 하드코딩)를
+  story_v2 자체 라벨 기준으로 다시 검증하고 확정하세요.

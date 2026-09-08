@@ -12,6 +12,8 @@ response_generation._filter_citations가 마지막 방어선으로 남는다.
 """
 from __future__ import annotations
 
+import re
+
 from datetime import date, datetime, timedelta, timezone
 
 from app.config import get_settings
@@ -100,6 +102,19 @@ def _norm_url(url: str) -> str:
     return u.rstrip("/")
 
 
+_HANGUL = re.compile(r"[가-힣]")
+
+
+def _is_korean(*parts: str) -> bool:
+    """한글이 한 글자도 없으면 국내 사례가 아니다.
+
+    검색 질의는 한국어인데도 수집기가 영문 매체를 물어 온다(실측: lightreading,
+    koreaherald). 국내 법령·관행을 전제로 쓰는 보고서에 영문 사례가 섞이면 담당자가
+    적용 범위를 오해한다. 제목·요약에 한글이 있는 것만 남긴다.
+    """
+    return any(_HANGUL.search(part or "") for part in parts)
+
+
 def _search_articles(company: str, risk_type: str, query: str) -> list[dict]:
     """수집기를 돌려 기사 목록을 만든다. URL 중복은 제거한다."""
     rt = get_type(risk_type)
@@ -117,6 +132,8 @@ def _search_articles(company: str, risk_type: str, query: str) -> list[dict]:
         for item in items:
             url = (item.url or "").strip()
             if not url.lower().startswith(("http://", "https://")) or url in seen:
+                continue
+            if not _is_korean(item.title, item.summary):
                 continue
             seen.add(url)
             articles.append({

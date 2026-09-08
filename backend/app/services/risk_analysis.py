@@ -41,12 +41,17 @@ from app.services.story_clustering import backfill_story_clusters
 SEOUL = ZoneInfo("Asia/Seoul")
 
 RISK_TYPE_PATTERNS: dict[str, tuple[str, ...]] = {
-    "product_quality": ("리콜", "불량", "결함", "품질", "하자", "오작동", "recall", "defect"),
+    # "품질" 단독은 "배달 품질"/"서비스 품질"(reputation_consumer 소관)까지 다 잡아서 뺐다
+    # (2026-09-07, story_v2_label_candidates.csv 라벨로 확인: 리콜·불량·결함·하자·오작동은
+    # 실제 제품 결함에서만 쓰이는 반면 "품질"은 배달·서비스 맥락에 훨씬 흔했다).
+    "product_quality": ("리콜", "불량", "결함", "하자", "오작동", "recall", "defect"),
     "safety_accident": ("사고", "화재", "부상", "사망", "안전", "폭발", "중독"),
     "security_privacy": ("해킹", "유출", "개인정보", "랜섬웨어", "보안", "침해"),
     "legal_regulatory": ("소송", "규제", "공정위", "검찰", "기소", "과징금", "법원", "위반"),
     "labor_hr": ("파업", "노조", "해고", "괴롭힘", "산재", "임금", "인사"),
-    "financial_governance": ("횡령", "배임", "부도", "적자", "감사", "분식", "지배구조"),
+    # "감사" 단독은 "국정감사"/"국감"(국회 청문, financial_governance와 무관)까지 다
+    # 잡아서 "회계감사"로 좁혔다 (같은 라벨 확인, 사건 2256/1442).
+    "financial_governance": ("횡령", "배임", "부도", "적자", "회계감사", "분식", "지배구조"),
     "supply_operations": ("공급망", "배송", "물류", "중단", "품절", "장애", "생산 차질"),
     "reputation_consumer": ("불매", "논란", "항의", "민원", "비판", "갑질", "소비자 피해"),
 }
@@ -447,16 +452,22 @@ def import_exported_models(db: Session, settings: Settings) -> None:
         label_schema: dict,
         thresholds: dict | None = None,
         dependencies: dict | None = None,
-    ) -> ModelVersion:
-        for current in db.scalars(
+    ) -> ModelVersion | None:
+        # This exists to bootstrap a fresh environment that has nothing registered
+        # for the task yet -- not to keep re-asserting itself. Running on every
+        # startup/reload used to unconditionally retire whatever was production
+        # and re-promote this hardcoded exported version, silently reverting any
+        # later manual promotion within one reload cycle (confirmed 2026-09-07:
+        # a promotion was reverted ~40s later). Only act when nothing else is
+        # already production for this task, or when this exact version already is.
+        current_production = db.scalar(
             select(ModelVersion).where(
                 ModelVersion.task == task,
                 ModelVersion.status == "production",
-                ModelVersion.version != version,
             )
-        ):
-            current.status = "retired"
-            current.retired_at = now
+        )
+        if current_production is not None and current_production.version != version:
+            return None
         model = existing.get((task, version))
         if model is None:
             model = ModelVersion(
@@ -672,6 +683,28 @@ def resolve_production_risk_detector(db: Session) -> RiskDetectorRuntime:
         isolation_payload=isolation_payload,
         isolation_artifact_hash=isolation_hash,
     )
+
+
+def risk_detector_percentile(payload: dict | None, probability: float) -> float | None:
+    """Map a raw LightGBM probability onto its rank against the training population.
+
+    Human-labeled events (2026-09) are all drawn from windows the detector already
+    flagged, so their raw probabilities cluster near 1.0 (p25=0.86) -- comparing raw
+    values against a per-article score on a totally different scale barely helps.
+    Ranked against the full ~8500-window population (which is heavily right-skewed
+    toward 0, since most windows are quiet) the same signal becomes usable. Returns
+    None when the artifact predates this field so callers can skip the blend rather
+    than silently mis-scale against a missing reference.
+    """
+    if not isinstance(payload, dict):
+        return None
+    reference = payload.get("reference_probabilities")
+    if not reference:
+        return None
+    array = np.asarray(reference, dtype=float)
+    if array.size == 0:
+        return None
+    return float(np.mean(array <= probability))
 
 
 def _mark_risk_detection_unavailable(window: CompanyFeatureWindow) -> None:
