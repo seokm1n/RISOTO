@@ -781,6 +781,7 @@ class NotificationItemRead(BaseModel):
     title: str
     message: str
     created_at: datetime
+    latest_article_at: datetime | None = None
     company_id: int | None = None
     risk_event_id: int | None = None
     model_id: int | None = None

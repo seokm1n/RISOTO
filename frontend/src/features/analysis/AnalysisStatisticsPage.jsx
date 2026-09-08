@@ -186,7 +186,7 @@ function LegacyResponseContent({ content, riskTitle, isCompetitorImpact }) {
   ].filter(([, value]) => value) : [];
 
   return <div className="response-draft response-draft-v3 response-operations-view response-legacy-view">
-    <section className="response-command-card standard"><div className="response-command-copy"><span className="response-ui-kicker">AI 대응 가이드</span><div className="response-command-title"><span className="response-priority-pill standard">대응안</span><h4>{riskTitle || content.risk_summary || "위험 사건 대응"}</h4></div><p>{isCompetitorImpact ? "동종 기업 이슈가 우리 기업에 미칠 영향과 준비 항목입니다." : "위험 확산을 줄이기 위한 우선 대응 항목입니다."}</p></div><dl className="response-command-facts"><div><dt>대응 대상</dt><dd>{isCompetitorImpact ? "동종 기업 영향" : "우리 기업 사건"}</dd></div></dl></section>
+    <section className="response-command-card standard"><div className="response-command-copy"><span className="response-ui-kicker">AI 대응 가이드</span><div className="response-command-title"><span className="response-priority-pill standard">대응안</span><h4>{riskTitle || content.risk_summary || "위험 이슈 대응"}</h4></div><p>{isCompetitorImpact ? "동종 기업 이슈가 우리 기업에 미칠 영향과 준비 항목입니다." : "위험 확산을 줄이기 위한 우선 대응 항목입니다."}</p></div><dl className="response-command-facts"><div><dt>대응 대상</dt><dd>{isCompetitorImpact ? "동종 기업 영향" : "우리 기업 이슈"}</dd></div></dl></section>
     {scenarios.length > 1 && <section className="response-option-panel" aria-label="대응안 선택"><header className="response-section-heading compact"><div><span>대응 방향 선택</span><h4>확인할 대응안을 선택하세요</h4></div><strong>{scenarios.length}개 안</strong></header><div className="response-option-tabs" role="tablist">{scenarios.map((scenario, index) => <button type="button" role="tab" className={`response-option-tab${active === index ? " active" : ""}`} aria-selected={active === index} onClick={() => setActive(index)} key={`${scenario.title ?? "scenario"}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{scenario.title || `${index + 1}번째 대응안`}</strong></button>)}</div></section>}
     {current && <div className="response-plan-content"><section className="response-overview-panel"><header className="response-section-heading"><div><span>상황 요약</span><h4>{current.title || "선택한 대응안"}</h4></div></header>{overviewItems.length > 0 && <div className="response-legacy-overview">{overviewItems.map(([label, value]) => <article key={label}><h5>{label}</h5><p>{value}</p></article>)}</div>}{current.early_indicators?.length > 0 && <article className="response-legacy-indicators"><h5>조기 관찰 지표</h5><div className="response-metric-chips">{current.early_indicators.map((indicator, index) => <span key={`${indicator}-${index}`}>{indicator}</span>)}</div></article>}</section><ActionGroups actions={current.recommended_actions} /></div>}
     {!current && <ActionGroups actions={content.recommended_actions} />}
@@ -206,11 +206,7 @@ function ResponseDraftContent({ draft, riskTitle, risk }) {
 }
 
 // 위험 이벤트의 유형과 관리 승인이 필요한 대응 초안을 표시한다.
-// onDraftLoaded는 지금 그리는 초안이 어느 경로의 산출물인지(content_kind) 부모에게 올린다.
-// 화면 제목이 "대응 방안"과 "동종 기업 · 대응 방안"으로 갈리는데, 그 판단 근거를 선택한
-// 기업의 역할이 아니라 **실제로 생성된 초안**에서 가져오기 위해서다. 초안이 아직 없거나
-// 근거부족으로 보류된 상태에서 제목만 먼저 바뀌면 화면이 내용보다 앞서 말하게 된다.
-export function RiskDetail({ risk, canReview = false, onGenerationStarted, onDraftLoaded }) {
+export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const riskId = risk?.id ?? null;
   const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
@@ -225,13 +221,6 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted, onDra
   }, [riskId]);
   useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
   useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
-  // 초안을 다시 불러올 때마다 부모에게 종류를 알린다. loadDrafts가 아니라 drafts를 보고
-  // 도는 이유는, 콜백이 매 렌더 새로 만들어져도 재조회로 번지지 않게 하기 위해서다
-  // (같은 값을 다시 넣으면 React가 렌더를 건너뛰므로 여기서 멈춘다).
-  useEffect(() => {
-    const shown = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0];
-    onDraftLoaded?.(shown?.content?.content_kind ?? null);
-  }, [drafts, onDraftLoaded]);
   useEffect(() => {
     if (!riskId || !["pending", "generating"].includes(generationStatus)) return undefined;
     const timer = window.setInterval(loadDrafts, 5000);
