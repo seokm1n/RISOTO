@@ -13,7 +13,7 @@ export default function CompetitorsPage({ onOpenCompany, onRegister, onEditCompa
 
   return <section className="workspace">
     <div className="workspace-head">
-      <div><span className="eyebrow">COMPETITOR TRACKING / 03</span><h1>비교 기업</h1><p>등록한 비교 기업의 수집 상태와 모니터링 현황을 확인합니다.</p></div>
+      <div><h1>비교 기업</h1><p>등록한 비교 기업의 수집 상태와 모니터링 현황을 확인합니다.</p></div>
       <button className="primary-action" type="button" onClick={onRegister}><span>비교 기업 등록</span><b aria-hidden="true">＋</b></button>
     </div>
     {error && <div className="notice error">{error}</div>}

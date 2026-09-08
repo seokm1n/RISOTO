@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
+import { useSharedResource } from "../../shared/useSharedResource";
 import { PanelTitle } from "../../shared/components";
 import { formatNumber } from "../../shared/presentation";
-import { RiskDetail, RiskEventListContent } from "../analysis/AnalysisStatisticsPage";
+import { RecentCollectionDate, RiskDetail, RiskEventListContent } from "../analysis/AnalysisStatisticsPage";
 
 const PERIOD_OPTIONS = [
   { value: "all", label: "전체" },
@@ -25,12 +26,10 @@ const positiveInteger = (value, fallback = 1) => {
 export default function RiskManagementPage({ canReview = false, initialCompanyId = null, initialRiskEventId = null, initialPeriodDays = "all", embedded = false, dateRange = null }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [companies, setCompanies] = useState([]);
-  const [loadedPageData, setPageData] = useState(EMPTY_PAGE_DATA);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data: companies = [], error: companiesError } = useSharedResource(
+    "/companies", () => api.get("/companies").then((response) => response.data),
+  );
   const [listOpen, setListOpen] = useState(false);
-  const loadSequence = useRef(0);
   const dropdownRef = useRef(null);
 
   const selectedCompanyId = searchParams.get("companyId") || (initialCompanyId ? String(initialCompanyId) : "");
@@ -42,10 +41,6 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   const endDate = dateRange?.end ?? "";
   const hasDateRange = Boolean(startDate && endDate);
   const queryKey = JSON.stringify([selectedCompanyId, eventView, hasDateRange ? [startDate, endDate] : period]);
-  const currentQueryKey = useRef(queryKey);
-  currentQueryKey.current = queryKey;
-  const hasCurrentData = loadedPageData.queryKey === queryKey;
-  const pageData = hasCurrentData ? loadedPageData : EMPTY_PAGE_DATA;
   const hasRiskSelectionQuery = searchParams.has("eventId") || searchParams.has("riskEventId");
   const selectedRiskId = positiveInteger(
     searchParams.get("eventId") ?? searchParams.get("riskEventId") ?? initialRiskEventId,
@@ -69,33 +64,13 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   }, [setSearchParams]);
 
   useEffect(() => {
-    let active = true;
-    api.get("/companies")
-      .then((response) => {
-        if (!active) return;
-        const nextCompanies = response.data ?? [];
-        setCompanies(nextCompanies);
-        const requested = nextCompanies.find((company) => String(company.id) === selectedCompanyId);
-        const fallback = nextCompanies.find((company) => company.company_role === "main") ?? nextCompanies[0];
-        if (!requested && fallback) updateQuery({ companyId: fallback.id }, { resetPage: true, clearSelection: true });
-      })
-      .catch((requestError) => active && setError(getErrorMessage(requestError)));
-    return () => { active = false; };
-  }, [selectedCompanyId, updateQuery]);
+    const requested = companies.find((company) => String(company.id) === selectedCompanyId);
+    const fallback = companies.find((company) => company.company_role === "main") ?? companies[0];
+    if (!requested && fallback) updateQuery({ companyId: fallback.id }, { resetPage: true, clearSelection: true });
+  }, [companies, selectedCompanyId, updateQuery]);
 
-  const loadRisks = useCallback(async ({ silent = false } = {}) => {
-    if (queryKey !== currentQueryKey.current) return;
-    if (!selectedCompanyId) {
-      setPageData({ ...EMPTY_PAGE_DATA, queryKey });
-      setLoading(false);
-      return;
-    }
-    const requestId = ++loadSequence.current;
-    if (!silent) {
-      setLoading(true);
-      setError(null);
-      setPageData((current) => current.queryKey === queryKey ? current : { ...EMPTY_PAGE_DATA, queryKey });
-    }
+  const { data: loadedPageData, loading, error: risksError, refresh } = useSharedResource(`risk-management:${queryKey}`, async () => {
+    if (!selectedCompanyId) return { ...EMPTY_PAGE_DATA, queryKey };
     const params = new URLSearchParams({
       view: eventView === "needs_response" ? "active" : "all",
       page: "1",
@@ -106,45 +81,31 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
       params.set("start_date", startDate);
       params.set("end_date", endDate);
     } else if (period !== "all") params.set("days", period);
-    try {
-      const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
-      if (requestId !== loadSequence.current || queryKey !== currentQueryKey.current) return;
-      const data = response.data ?? {};
-      const total = Number(data.total) || 0;
-      const items = [...(data.items ?? [])];
-      if (hasDateRange) {
-        const totalPages = Math.ceil(total / PAGE_SIZE);
-        for (let page = 2; page <= totalPages; page += 1) {
-          params.set("page", String(page));
-          const nextResponse = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
-          if (requestId !== loadSequence.current || queryKey !== currentQueryKey.current) return;
-          const nextItems = nextResponse.data?.items ?? [];
-          items.push(...nextItems);
-          if (!nextItems.length) break;
-        }
+    const response = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
+    const data = response.data ?? {};
+    const total = Number(data.total) || 0;
+    const items = [...(data.items ?? [])];
+    if (hasDateRange) {
+      const totalPages = Math.ceil(total / PAGE_SIZE);
+      for (let page = 2; page <= totalPages; page += 1) {
+        params.set("page", String(page));
+        const nextResponse = await api.get(`/companies/${selectedCompanyId}/risk-events/page?${params}`);
+        const nextItems = nextResponse.data?.items ?? [];
+        items.push(...nextItems);
+        if (!nextItems.length) break;
       }
-      setPageData({
-        queryKey,
-        items: [...new Map(items.map((risk) => [risk.id, risk])).values()],
-        total,
-        summary: data.summary ?? EMPTY_PAGE_DATA.summary,
-      });
-      setError(null);
-    } catch (requestError) {
-      if (requestId === loadSequence.current && queryKey === currentQueryKey.current) setError(getErrorMessage(requestError));
-    } finally {
-      if (requestId === loadSequence.current && queryKey === currentQueryKey.current) setLoading(false);
     }
-  }, [endDate, eventView, hasDateRange, period, queryKey, selectedCompanyId, startDate]);
-
-  useEffect(() => {
-    loadRisks();
-    const timer = window.setInterval(() => loadRisks({ silent: true }), 30000);
-    return () => {
-      window.clearInterval(timer);
-      loadSequence.current += 1;
+    return {
+      queryKey,
+      items: [...new Map(items.map((risk) => [risk.id, risk])).values()],
+      total,
+      summary: data.summary ?? EMPTY_PAGE_DATA.summary,
     };
-  }, [loadRisks]);
+  });
+  const error = companiesError || risksError ? getErrorMessage(companiesError || risksError) : null;
+  const hasCurrentData = loadedPageData?.queryKey === queryKey;
+  const pageData = hasCurrentData ? loadedPageData : EMPTY_PAGE_DATA;
+  const loadRisks = useCallback(() => refresh().catch(() => undefined), [refresh]);
 
   useEffect(() => {
     setListOpen(false);
@@ -216,15 +177,15 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
         <div className="pipeline-panel-heading pipeline-risk-list-heading"><PanelTitle title={listTitle} />{!hasDateRange && <div className="pipeline-risk-list-controls"><select aria-label="조회 기간" value={period} onChange={(event) => updateQuery({ days: event.target.value }, { resetPage: true, clearSelection: true })}>{PERIOD_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></div>}</div>
         {selectedRisk ? <div className={`pipeline-risk-dropdown${listOpen ? " open" : ""}`} ref={dropdownRef}>
           <button className="pipeline-risk-dropdown-trigger risk-event-list-item selected" type="button" aria-expanded={listOpen} aria-controls="response-risk-event-list" onClick={() => setListOpen((open) => !open)}>
-            <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact plain /></div>
-            <span className="pipeline-risk-dropdown-action">{listOpen ? "목록 접기" : "목록 펼치기"}<i aria-hidden="true" /></span>
+            <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact /></div>
+            <div className="pipeline-risk-dropdown-meta"><RecentCollectionDate risk={selectedRisk} /><span className="pipeline-risk-dropdown-action">{listOpen ? "목록 접기" : "목록 펼치기"}<i aria-hidden="true" /></span></div>
           </button>
-          {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 이슈 목록" : "위험 이슈 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><RiskEventListContent risk={risk} judgmentCompact /></button>)}</div>}
+          {listOpen && <div className="pipeline-risk-dropdown-menu risk-list selectable" id="response-risk-event-list" aria-label={eventView === "needs_response" ? "검토 필요 이슈 목록" : "위험 이슈 목록"}>{pageData.items.map((risk) => <button className={`risk-event-list-item ${selectedRisk.id === risk.id ? "selected" : ""}`} type="button" aria-pressed={selectedRisk.id === risk.id} onClick={() => { setListOpen(false); updateQuery({ eventId: risk.id, riskEventId: null }); }} key={risk.id}><div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={risk} judgmentCompact /></div><RecentCollectionDate risk={risk} /></button>)}</div>}
         </div> : <p className="panel-empty">{loading || !hasCurrentData ? "이슈를 불러오는 중입니다." : emptyMessage}</p>}
       </section>
       <section className="panel pipeline-panel pipeline-risk-evidence">
         <div className="pipeline-panel-heading pipeline-risk-detail-heading">
-          <PanelTitle kicker="RESPONSE PLAN" title={isCompetitor ? "나의 기업에 미칠 영향" : "대응 방안"} />
+          <PanelTitle title={isCompetitor ? "나의 기업에 미칠 영향" : "대응 방안"} />
           {selectedRisk && <button className="secondary-button" type="button" onClick={openEvidence}>근거 보기</button>}
         </div>
         <RiskDetail key={`${queryKey}:${selectedRisk?.id ?? "none"}`} risk={selectedRisk} canReview={canReview} onGenerationStarted={() => loadRisks({ silent: true })} />

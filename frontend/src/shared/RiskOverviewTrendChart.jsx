@@ -56,7 +56,8 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
   </div>;
 
   const width = measuredWidth || 700, height = measuredHeight || 210;
-  const left = 42, right = 18, top = 18, bottom = 28;
+  // Reserve room for the 14px axis labels, including "100%" at narrow widths.
+  const left = 56, right = 18, top = 28, bottom = 32;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const x = (index) => left + (points.length === 1 ? plotWidth / 2 : index / (points.length - 1) * plotWidth);
   const yRatio = (value) => top + plotHeight - Math.min(Math.max(value, 0), 1) * plotHeight;
@@ -105,7 +106,7 @@ export default function RiskOverviewTrendChart({ days = [], ariaLabel = null, di
           <line className="main-trend-grid-line" x1={left} x2={width - right} y1={yRatio(level)} y2={yRatio(level)} />
           <text className="main-trend-axis-label" x={left - 8} y={yRatio(level) + 4} textAnchor="end">{formatNumber(level * 100)}%</text>
         </g>)}
-        <text className="main-trend-axis-unit" x={left - 8} y={10} textAnchor="end">비율</text>
+        <text className="main-trend-axis-unit" x={left - 8} y={12} textAnchor="end">비율</text>
         {points.map((day, index) => (index % labelEvery === 0 || index === points.length - 1) && <text className="main-trend-axis-label" key={`date-${day.summary_date}`} x={x(index)} y={height - 6} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{formatDay(day.summary_date)}</text>)}
         {segments("risk_ratio", yRatio).map((line, index) => <polyline className="main-overview-line risk" points={line} key={`risk-${index}`} />)}
         {segments("negative_ratio", yRatio).map((line, index) => <polyline className="main-overview-line negative" points={line} key={`negative-${index}`} />)}

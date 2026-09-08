@@ -88,13 +88,13 @@ export default function ArticleReviewPage() {
   return <section className="workspace review-workspace">
     <div className="workspace-head">
       <div>
-        <span className="eyebrow">{auditMode ? "LLM LABEL AUDIT SAMPLE" : "BLIND ARTICLE REVIEW"}</span>
+
         <h1>{auditMode ? "LLM 라벨 표본 검수" : "기사 검수"}</h1>
         {auditMode
           ? <p>LLM이 이미 확정 라벨을 매긴 기사 중 이달 무작위 표본입니다. AI 판정값을 보지 않은 채 직접 라벨링하면, 이 값과 LLM 라벨을 비교해 매달 일치율을 계산합니다.</p>
           : <p>AI 판정값을 보지 않은 채 기사 원문만 보고 관련성·광고·감성을 직접 라벨링합니다. 여기서 쌓인 확정 라벨은 모델 재학습·평가의 정답 데이터로 쓰입니다.</p>}
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      <div className="review-toolbar">
         {!auditMode && <select value={companyId} onChange={(event) => setCompanyId(event.target.value)}>
           <option value="">전체 기업</option>
           {companies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
@@ -114,7 +114,7 @@ export default function ArticleReviewPage() {
       <div><span>남은 검수 후보(불러온 배치 기준)</span><strong>{remaining}건</strong></div>
     </div>
     <section className="panel">
-      <PanelTitle kicker="REVIEW QUEUE" title="검수 대상 기사" />
+      <PanelTitle title="검수 대상 기사" />
       {loading
         ? <p className="panel-empty">후보를 불러오는 중입니다.</p>
         : !current

@@ -1,3 +1,4 @@
+import Icon from "../../shared/Icon";
 import { useCallback, useEffect, useState } from "react";
 import {
   Navigate,
@@ -28,22 +29,21 @@ import { clearSelectedCompanyId } from "../../shared/selectedCompanySession";
 import { clearAnalysisPipelineRiskEventId } from "../../shared/analysisPipelineSession";
 
 const GENERAL_NAV_ITEMS = [
-  { id: "main", label: "AI 리스크 브리핑", path: "/main" },
-  { id: "statistics", label: "분석 파이프라인", path: "/analysis/collection" },
-  { id: "collection", label: "수집 관리", path: "/collection" },
-  { id: "companies", label: "기업 관리", path: "/companies" },
+  { id: "main", icon: "briefing", label: "기업 리스크 브리핑", path: "/main" },
+  { id: "statistics", icon: "analysis", label: "분석 파이프라인", path: "/analysis/collection" },
+  { id: "management", icon: "companies", label: "관리", path: "/collection" },
 ];
 
 const ADMIN_NAV_ITEMS = [
-  { id: "admin-members", label: "회원 관리", path: "/admin/members" },
-  { id: "admin-collection", label: "수집 관리", path: "/admin/collection" },
-  { id: "admin-operations", label: "운영 관리", path: "/admin/operations" },
-  { id: "admin-review", label: "기사 검수", path: "/admin/reviews" },
-  { id: "admin-risk-review", label: "위험 사건 검수", path: "/admin/risk-review" },
+  { id: "admin-members", icon: "members", label: "회원 관리", path: "/admin/members" },
+  { id: "admin-collection", icon: "collection", label: "수집 관리", path: "/admin/collection" },
+  { id: "admin-operations", icon: "operations", label: "운영 관리", path: "/admin/operations" },
+  { id: "admin-review", icon: "response", label: "기사 검수", path: "/admin/reviews" },
+  { id: "admin-risk-review", icon: "risk", label: "위험 사건 검수", path: "/admin/risk-review" },
 ];
 
 const PAGE_TITLES = {
-  main: "AI 리스크 브리핑",
+  main: "기업 리스크 브리핑",
   collection: "수집 현황",
   statistics: "분석 파이프라인",
   "risk-management": "위험 관리",
@@ -116,6 +116,8 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
   const navItems = isAdmin ? ADMIN_NAV_ITEMS : GENERAL_NAV_ITEMS;
   const homePath = isAdmin ? "/admin/members" : "/main";
   const page = pageFromPath(location.pathname);
+  const isManagementPage = !isAdmin && ["collection", "companies"].includes(page);
+  const activeNavId = isManagementPage ? "management" : page;
   const { data: userCompanies = [], refresh: refreshUserCompanies } = useSharedResource(
     isAdmin ? "skip:topbar-main-company" : "/companies",
     isAdmin
@@ -287,15 +289,22 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
 
   return <main className={`min-h-screen ${isAdmin ? "admin-app" : "general-app"}`}>
     <header className="topbar">
-      <button className="brand" onClick={() => goTo(homePath)}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></button>
-      <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined} onClick={() => goTo(item.path)} key={item.id}>{item.label}</button>)}</nav>
+      <button className="brand" onClick={() => goTo(homePath)}><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" /><span className="brand-copy"><strong>RISOTO</strong><small>기업 위험 탐지와 대응</small></span></button>
+      <nav className="main-nav" aria-label="주요 화면">{navItems.map((item) => <button className={activeNavId === item.id ? "active" : ""} aria-current={activeNavId === item.id ? "page" : undefined} onClick={() => { if (item.id !== "management" || !isManagementPage) goTo(item.path); }} key={item.id}><Icon name={item.icon} tone="neutral" /><span>{item.label}</span></button>)}</nav>
       <div className="topbar-actions">
         {!isAdmin && mainCompany && <button className={`topbar-live-collecting ${mainCollectionRunning ? "running" : "stopped"}`} type="button" onClick={openCollectionAtTop} aria-live="polite" aria-label={`${mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"} · 수집관리로 이동`} aria-current={page === "collection" ? "page" : undefined} title="수집관리로 이동"><i className="topbar-live-spinner" aria-hidden="true" /><span className="topbar-live-label">{mainCollectionRunning ? "실시간 탐지중" : "탐지 중지"}</span></button>}
-        <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`읽지 않은 위험 알림 ${notificationUnreadTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15h12l-1-6a5 5 0 0 0-10 0l-1 6Z" /><path d="M4 15h16v3H4z" /><path d="M8 21h8" /><path d="M12 3V1" /><path d="m5 5-1.5-1.5M19 5l1.5-1.5M2 11H0M22 11h2" /></svg>{notificationUnreadTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationUnreadTotal > 99 ? "99+" : notificationUnreadTotal}</span>}</button>
+        <button className="notification-siren" type="button" onClick={() => { loadNotifications(); setNotificationOpen(true); }} aria-label={`읽지 않은 위험 알림 ${notificationUnreadTotal}건`} aria-expanded={notificationOpen} aria-controls="notification-drawer" title="위험 알림 보기"><Icon name="bell" />{notificationUnreadTotal > 0 && <span className="notification-badge" aria-hidden="true">{notificationUnreadTotal > 99 ? "99+" : notificationUnreadTotal}</span>}</button>
         <button className={`account-button ${page === "account" ? "active" : ""}`} type="button" onClick={() => goTo("/account")} title={`${session.user.email} · 마이페이지`} aria-current={page === "account" ? "page" : undefined}><span>{session.user.email}</span><strong>마이페이지</strong></button>
         <button className="logout-button" type="button" onClick={requestLogout}>로그아웃</button>
       </div>
     </header>
+
+    {isManagementPage && <div className="management-page-toolbar">
+      <nav className="management-view-toggle" aria-label="관리 화면 선택">
+        <button type="button" className={page === "collection" ? "active" : ""} aria-current={page === "collection" ? "page" : undefined} onClick={() => goTo("/collection")}>수집 관리</button>
+        <button type="button" className={page === "companies" ? "active" : ""} aria-current={page === "companies" ? "page" : undefined} onClick={() => goTo("/companies")}>기업 관리</button>
+      </nav>
+    </div>}
 
     <Routes>{isAdmin ? <>
       <Route path="/" element={<Navigate to="/admin/members" replace />} />
@@ -330,7 +339,7 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
 
     <NotificationDrawer open={notificationOpen} onClose={() => setNotificationOpen(false)} notifications={{ ...notifications, items: allowedNotificationItems }} error={notificationError} readIds={readNotificationIds} markingAllRead={markingAllNotificationsRead} onMarkAllRead={markAllNotificationsRead} onRiskOpen={openRiskNotification} />
     {confirmationDialog}
-    {logoutNoticeOpen && <AppNoticeDialog kicker="COLLECTION NOTICE" title="로그아웃 후에도 수집은 계속됩니다" confirmLabel="로그아웃" cancelLabel="취소" onClose={() => setLogoutNoticeOpen(false)} onConfirm={confirmLogout} busy={loggingOut}>
+    {logoutNoticeOpen && <AppNoticeDialog title="로그아웃 후에도 수집은 계속됩니다" confirmLabel="로그아웃" cancelLabel="취소" onClose={() => setLogoutNoticeOpen(false)} onConfirm={confirmLogout} busy={loggingOut}>
       <p>로그아웃하거나 브라우저를 닫아도 백엔드가 실행 중이면 등록한 기업의 실시간 수집은 계속됩니다.</p>
       <p className="app-notice-detail">수집을 멈추려면 로그아웃하기 전에 수집 현황에서 수집을 정지해 주세요.</p>
     </AppNoticeDialog>}

@@ -133,12 +133,12 @@ export default function ModelManagementPage() {
     : "-";
 
   return <section className="workspace model-workspace">
-    <div className="workspace-head"><div><span className="eyebrow">MODEL OPERATIONS</span><h1>운영 관리</h1><p>현재 사용 중인 모델과 수집·분석 상태를 확인합니다.</p></div></div>
+    <div className="workspace-head"><div><h1>운영 관리</h1><p>현재 사용 중인 모델과 수집·분석 상태를 확인합니다.</p></div></div>
     {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
     <div className="metric-grid dashboard-metrics model-metrics"><Metric label="사용 중인 모델" value={activeModelCount} /><Metric label="월간 검수량" value={monthlyReviewCount} small /><Metric label="검수 대기" value={llmLabeling?.pending_backlog ?? 0} /><Metric label="최종 위험 판정" value={riskModelStateLabel(riskStatus)} tone={riskStatus?.model_state === "production" ? "" : "pending"} small /></div>
     <section className="panel analysis-status">
       <div className="model-quality-head">
-        <PanelTitle kicker="ANALYSIS RUNTIME" title="운영 분석 상태" />
+        <PanelTitle title="운영 분석 상태" />
       </div>
       <div className="analysis-status-grid">
         <article className={runtimeStatus?.advertising_model_available ? "active" : "pending"}>
@@ -164,17 +164,17 @@ export default function ModelManagementPage() {
       </div>
     </section>
     <div className="model-layout model-layout-single">
-      <section className="panel model-versions-panel"><PanelTitle kicker="ACTIVE MODEL RUNTIME" title="사용 중인 모델" /><div className="model-version-list">{displayedModels.length ? displayedModels.map((model) => <article className="model-version-row" key={model.id}><div><span className={`model-status ${model.status}`}>{MODEL_STATUS_LABELS[model.status] ?? model.status}</span><div><strong>{MODEL_TASK_LABELS[model.task] ?? model.task}</strong><small>{model.version} · {model.base_model || "사용자 정의 모델"}</small><small>{model.note ?? MODEL_TASK_DESCRIPTIONS[model.task]}</small></div></div><div><small>{model.runtime ? "로컬 런타임" : `등록 ${formatDate(model.created_at)}`}</small></div></article>) : <p className="panel-empty">현재 사용 중인 모델이 없습니다.</p>}</div></section>
+      <section className="panel model-versions-panel"><PanelTitle title="사용 중인 모델" /><div className="model-version-list">{displayedModels.length ? displayedModels.map((model) => <article className="model-version-row" key={model.id}><div><span className={`model-status ${model.status}`}>{MODEL_STATUS_LABELS[model.status] ?? model.status}</span><div><strong>{MODEL_TASK_LABELS[model.task] ?? model.task}</strong><small>{model.version} · {model.base_model || "사용자 정의 모델"}</small><small>{model.note ?? MODEL_TASK_DESCRIPTIONS[model.task]}</small></div></div><div><small>{model.runtime ? "로컬 런타임" : `등록 ${formatDate(model.created_at)}`}</small></div></article>) : <p className="panel-empty">현재 사용 중인 모델이 없습니다.</p>}</div></section>
     </div>
     <section className="panel collection-incidents-panel">
-      <PanelTitle kicker="COLLECTION INCIDENTS" title="최근 수집 장애" />
+      <PanelTitle title="최근 수집 장애" />
       <IncidentList incidents={incidents} companies={companies} onAcknowledge={acknowledgeIncident} />
     </section>
-    <section className="panel quality-operations model-quality"><div className="model-quality-head"><PanelTitle kicker="DAILY QUALITY CHECK" title="수집·분석 품질 점검" /><button className="secondary-button" type="button" onClick={rerunCheck} disabled={Boolean(busy)}>{busy === "check" ? "점검 중..." : "지금 다시 점검"}</button></div>{modelCheck ? <div className="daily-check-summary"><div><span>점검 상태</span><strong className={modelCheck.status}>{modelCheck.status === "stable" ? "안정" : modelCheck.status === "warning" ? "확인 필요" : "비교 자료 부족"}</strong></div><div><span>최근 특징 구간</span><strong>{formatNumber(modelCheck.report?.recent_window_count)}</strong></div><div><span>수집 커버리지</span><strong>{formatPercent(modelCheck.report?.collection_coverage)}</strong></div><div><span>분포 변화 경고</span><strong>{formatNumber(modelCheck.report?.drift_flags?.length)}</strong></div><small>마지막 점검 {formatDate(modelCheck.checked_at)}</small></div> : <p className="panel-empty">품질 점검 결과를 불러오는 중입니다.</p>}</section>
+    <section className="panel quality-operations model-quality"><div className="model-quality-head"><PanelTitle title="수집·분석 품질 점검" /><button className="secondary-button" type="button" onClick={rerunCheck} disabled={Boolean(busy)}>{busy === "check" ? "점검 중..." : "지금 다시 점검"}</button></div>{modelCheck ? <div className="daily-check-summary"><div><span>점검 상태</span><strong className={modelCheck.status}>{modelCheck.status === "stable" ? "안정" : modelCheck.status === "warning" ? "확인 필요" : "비교 자료 부족"}</strong></div><div><span>최근 특징 구간</span><strong>{formatNumber(modelCheck.report?.recent_window_count)}</strong></div><div><span>수집 커버리지</span><strong>{formatPercent(modelCheck.report?.collection_coverage)}</strong></div><div><span>분포 변화 경고</span><strong>{formatNumber(modelCheck.report?.drift_flags?.length)}</strong></div><small>마지막 점검 {formatDate(modelCheck.checked_at)}</small></div> : <p className="panel-empty">품질 점검 결과를 불러오는 중입니다.</p>}</section>
     <section className="panel quality-operations model-quality">
       <div className="model-quality-head">
-        <PanelTitle kicker="LLM AUTO LABELING" title="LLM 자동 라벨링" />
-        <div style={{ display: "flex", gap: 10 }}>
+        <PanelTitle title="LLM 자동 라벨링" />
+        <div className="review-toolbar">
           <button className="secondary-button" type="button" onClick={() => navigate("/admin/reviews?mode=audit")}>월간 검수하러 가기</button>
           <button className="secondary-button" type="button" onClick={runLlmLabelingBacklog} disabled={Boolean(busy) || !llmLabeling?.enabled}>{busy === "llm-labeling" ? "실행 중..." : "밀린 기사 지금 처리"}</button>
         </div>

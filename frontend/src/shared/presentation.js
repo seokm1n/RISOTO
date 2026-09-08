@@ -67,7 +67,7 @@ export const MODEL_TASK_DESCRIPTIONS = {
   window_isolation_forest: "기업별 15분 구간의 이상 징후를 분석하는 별도 모델입니다.",
   isolation_forest: "평소와 다른 이상 징후를 탐지합니다.",
 };
-export const MODEL_STATUS_LABELS = { production: "운영 중", provisional: "적용 중 · 사람 검증 전", candidate: "후보", retired: "보관", failed: "실패", unavailable: "연결 대기" };
+export const MODEL_STATUS_LABELS = { production: "운영 중", provisional: "적용 중 · 승인 대기", candidate: "후보", retired: "보관", failed: "실패", unavailable: "연결 대기" };
 export const EMPTY_NOTIFICATIONS = { items: [], total: 0, risk_count: 0, model_promotion_count: 0 };
 
 // 블라인드 기사 라벨링 화면의 선택지 표시 문구다.
@@ -123,4 +123,4 @@ export const riskModelLabel = (status) => !status ? "Isolation Forest + LightGBM
   : status.scoring_scope === "story" ? "스토리 Isolation Forest + LightGBM" : "15분 구간 Isolation Forest + LightGBM";
 export const riskModelStateLabel = (status) => !isRiskDetectionAvailable(status)
   ? "판정 대기"
-  : status?.model_state === "provisional" ? "적용 중 · 사람 검증 전" : "운영 중";
+  : status?.model_state === "provisional" ? "적용 중 · 승인 대기" : "운영 중";
