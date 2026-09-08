@@ -3,16 +3,18 @@
 from datetime import datetime, timedelta, timezone
 import unittest
 
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.database import SessionLocal
+from app.database import Base, SessionLocal
 from app.models import (
     CollectionAttempt,
     CollectionIncident,
     CollectionJob,
     Company,
     NotificationDelivery,
+    User,
 )
 from app.routers.operations import collection_health
 from app.services.collection_health import evaluate_attempts
@@ -162,19 +164,15 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
             incident.next_retry_at = None
 
         future_slot = datetime(2100, 1, 1, tzinfo=timezone.utc)
-        real_sources = set(
-            self.db.scalars(
-                select(CollectionAttempt.source)
-                .where(
-                    CollectionAttempt.user_id == self.user_id,
-                    CollectionAttempt.source != "pipeline",
-                )
-                .distinct()
-            )
-        )
-        real_sources.add("naver_api_hub")
-        for source in sorted(real_sources):
-            self.attempt(self.company_ids[0], source, future_slot, "succeeded")
+        current_pairs = set(self.db.execute(
+            select(CollectionAttempt.company_id, CollectionAttempt.source).where(
+                CollectionAttempt.user_id == self.user_id,
+                CollectionAttempt.source != "pipeline",
+            ).distinct()
+        ).all())
+        current_pairs.add((self.company_ids[0], "naver_api_hub"))
+        for company_id, source in sorted(current_pairs):
+            self.attempt(company_id, source, future_slot, "succeeded")
         self.attempt(
             self.company_ids[0],
             "pipeline",
@@ -234,19 +232,14 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
             incident.next_retry_at = None
 
         future_slot = datetime(2101, 1, 1, tzinfo=timezone.utc)
-        real_sources = set(
-            self.db.scalars(
-                select(CollectionAttempt.source)
-                .where(
-                    CollectionAttempt.user_id == self.user_id,
-                    CollectionAttempt.source != "pipeline",
-                )
-                .distinct()
-            )
-        )
-        real_sources.add("youtube_comment")
-        for source in sorted(real_sources - {"youtube_comment"}):
-            self.attempt(self.company_ids[0], source, future_slot, "succeeded")
+        current_pairs = set(self.db.execute(
+            select(CollectionAttempt.company_id, CollectionAttempt.source).where(
+                CollectionAttempt.user_id == self.user_id,
+                CollectionAttempt.source != "pipeline",
+            ).distinct()
+        ).all())
+        for company_id, source in sorted(current_pairs):
+            self.attempt(company_id, source, future_slot, "succeeded")
         self.attempt(self.company_ids[0], "youtube_comment", future_slot, "failed")
         self.attempt(self.company_ids[1], "youtube_comment", future_slot, "succeeded")
 
@@ -275,10 +268,134 @@ class CollectionIncidentDatabaseTests(unittest.TestCase):
         self.assertEqual(health.open_incident_count, 0)
         self.assertEqual(health.status, "degraded")
         self.assertEqual(youtube.status, "partial")
-        self.assertEqual(youtube.consecutive_failures, 0)
+        self.assertEqual(youtube.consecutive_failures, 1)
         self.assertEqual(youtube.last_error_code, "timeout")
         self.assertIn("[REDACTED]", youtube.last_error_message)
         self.assertNotIn("must-not-leak", youtube.last_error_message)
+
+
+class CollectionSourceHealthTests(unittest.TestCase):
+    """Exercise source-state recovery in an isolated in-memory database."""
+
+    def setUp(self):
+        self.engine = create_engine("sqlite://")
+        Base.metadata.create_all(self.engine)
+        # SQLite ignores this PostgreSQL-only partial-index predicate, making
+        # it incorrectly reject two competitor companies for the same user.
+        next(index for index in Company.__table__.indexes
+             if index.name == "uq_companies_one_main_per_user").drop(self.engine)
+        self.db = Session(self.engine)
+        self.db.add(User(id=1, email="source-health@example.test", password_hash="test-only"))
+        self.db.add_all([
+            Company(id=company_id, user_id=1, name=f"Health {company_id}",
+                    normalized_name=f"health{company_id}", company_role="competitor",
+                    annual_revenue_krw=1_000_000_000, company_size_class="small_medium",
+                    monitoring_status="active", analysis_status="ready")
+            for company_id in (1, 2)
+        ])
+        self.db.flush()
+        self.auth = auth_for_user(self.db, 1)
+        self.slot = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        self.next_id = 1
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    def attempt(self, company_id, status, *, slot=None, delay=0, attempt_number=0):
+        slot = slot or self.slot
+        started_at = slot + timedelta(seconds=delay)
+        job_id = self.next_id
+        self.next_id += 1
+        self.db.add(CollectionJob(
+            id=job_id, user_id=1, company_id=company_id,
+            status="failed" if status == "failed" else "completed",
+            job_type="realtime", sources=["naver_api_hub"],
+            requested_from=slot - timedelta(minutes=15), requested_to=slot,
+            started_at=started_at, completed_at=started_at + timedelta(seconds=1),
+        ))
+        self.db.add(CollectionAttempt(
+            id=job_id, user_id=1, job_id=job_id, company_id=company_id,
+            source="naver_api_hub", scheduled_for=slot, attempt_number=attempt_number,
+            status=status, query_count=1, successful_query_count=int(status == "succeeded"),
+            fetched_count=0, error_code="timeout" if status == "failed" else None,
+            error_message="timeout api_key=must-not-leak" if status == "failed" else None,
+            started_at=started_at, completed_at=started_at + timedelta(seconds=1),
+        ))
+        self.db.flush()
+
+    def source_health(self):
+        return collection_health(self.db, self.auth).sources[0]
+
+    def test_same_window_retry_success_clears_source_failure(self):
+        self.attempt(1, "failed")
+        self.attempt(1, "succeeded", delay=60, attempt_number=1)
+
+        health = collection_health(self.db, self.auth)
+        source = health.sources[0]
+
+        self.assertEqual(health.status, "healthy")
+        self.assertEqual(source.status, "healthy")
+        self.assertEqual(source.consecutive_failures, 0)
+        self.assertIsNone(source.last_error_code)
+        self.assertIsNone(source.last_error_message)
+        self.assertEqual(source.last_success_at, source.last_attempt_at)
+
+    def test_retry_recovery_does_not_hide_other_company_failure(self):
+        self.attempt(1, "failed")
+        self.attempt(2, "failed")
+        self.attempt(1, "succeeded", delay=60, attempt_number=1)
+
+        health = collection_health(self.db, self.auth)
+        source = health.sources[0]
+
+        self.assertEqual(health.status, "degraded")
+        self.assertEqual(source.status, "partial")
+        self.assertEqual(source.consecutive_failures, 1)
+        self.assertEqual(source.last_error_code, "timeout")
+        self.assertIn("[REDACTED]", source.last_error_message)
+        self.assertNotIn("must-not-leak", source.last_error_message)
+
+    def test_newer_failure_after_recovery_counts_distinct_windows(self):
+        self.attempt(1, "succeeded")
+        failed_slot = self.slot + timedelta(minutes=15)
+        self.attempt(1, "failed", slot=failed_slot)
+        self.attempt(1, "failed", slot=failed_slot, delay=60, attempt_number=1)
+
+        source = self.source_health()
+        self.assertEqual(source.status, "partial")
+        self.assertEqual(source.consecutive_failures, 1)
+        self.assertEqual(source.last_error_code, "timeout")
+
+        self.attempt(1, "failed", slot=failed_slot + timedelta(minutes=15))
+        source = self.source_health()
+        self.assertEqual(source.status, "down")
+        self.assertEqual(source.consecutive_failures, 2)
+
+    def test_late_retry_of_older_slot_uses_actual_completion_time(self):
+        self.attempt(1, "failed", slot=self.slot + timedelta(minutes=15))
+        self.attempt(1, "succeeded", delay=20 * 60, attempt_number=1)
+
+        self.assertEqual(self.source_health().status, "healthy")
+
+    def test_later_inserted_old_success_does_not_clear_newer_failure(self):
+        self.attempt(1, "failed", delay=120)
+        self.attempt(1, "succeeded", delay=60, attempt_number=1)
+
+        source = self.source_health()
+        self.assertEqual(source.status, "partial")
+        self.assertEqual(source.consecutive_failures, 1)
+        self.assertEqual(source.last_error_code, "timeout")
+
+    def test_busy_company_does_not_hide_another_company_failure(self):
+        self.attempt(2, "failed")
+        for index in range(201):
+            self.attempt(1, "succeeded", delay=index + 1, attempt_number=1)
+
+        source = self.source_health()
+        self.assertEqual(source.status, "partial")
+        self.assertEqual(source.consecutive_failures, 1)
+        self.assertEqual(source.last_error_code, "timeout")
 
 
 if __name__ == "__main__":

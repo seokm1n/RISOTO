@@ -19,6 +19,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "alert_id": ("alert_id", "id", "event_id"),
     "company_id": ("company_id", "companyId"),
     "company_name": ("company_name", "company", "companyName", "brand"),
+    "event_title": ("event_title", "summary", "headline", "story_title"),
     "industry": ("industry", "sector"),
     "main_services": ("main_services", "services"),
     "company_role": ("company_role", "role", "monitor_role"),
@@ -137,6 +138,11 @@ class AlertPayload:
     company_id: str | None = None
     industry: str | None = None
     main_services: str | None = None
+    # 스토리 군집의 대표 제목. 이 사건이 무엇인지 가장 짧고 정확하게 말하는 한 줄인데
+    # 예전에는 페이로드에 담기지 않아 분류기가 원문 댓글만 보고 유형을 정했다.
+    # (실측: 배터리 화재 사건의 근거 10건이 전부 영상 댓글이었고, 그중 계정 해킹을
+    #  말하는 댓글이 근거 점수 1위여서 개인정보·보안으로 분류됐다.)
+    event_title: str | None = None
     # 이 알림의 대상 기업이 사용자에게 메인인지 동종인지. company.py 참고 - 역할은 기업이
     # 아니라 (사용자, 기업) 관계의 속성이라 페이로드로 실어 온다.
     company_role: str | None = None
@@ -188,6 +194,7 @@ class AlertPayload:
             alert_id=_as_str(_pick(raw, "alert_id")),
             company_id=_as_str(_pick(raw, "company_id")),
             industry=_as_str(_pick(raw, "industry")),
+            event_title=_as_str(_pick(raw, "event_title")),
             main_services=_as_str(_pick(raw, "main_services")),
             company_role=_as_str(_pick(raw, "company_role")),
             main_company_name=_as_str(_pick(raw, "main_company_name")),

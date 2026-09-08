@@ -186,6 +186,41 @@ class DailyStorySummaryDatabaseTests(unittest.TestCase):
         self.assertEqual(by_date[now.date()].eligible_negative_story_count, 0)
         self.assertEqual(by_date[now.date()].eligible_risk_story_count, 1)
 
+    def test_explicit_historical_range_includes_both_calendar_boundaries(self):
+        start = (datetime.now(SEOUL) - timedelta(days=40)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        cluster = StoryCluster(
+            fingerprint=uuid4().hex,
+            representative_title="Historical range boundary",
+            first_published_at=start - timedelta(seconds=1),
+            last_published_at=end + timedelta(days=1),
+        )
+        self.db.add(cluster)
+        self.db.flush()
+        for index, published_at in enumerate([
+            start - timedelta(seconds=1), start,
+            end + timedelta(days=1, seconds=-1), end + timedelta(days=1),
+        ]):
+            self._article(cluster, published_at, index + 1, (0.05, 0.10, 0.85))
+        self.db.flush()
+        summaries = list_daily_summaries(
+            self.company.id, start_date=start.date(), end_date=end.date(),
+            db=self.db, auth=self.auth,
+        )
+        by_date = {item.summary_date: item for item in summaries}
+        self.assertEqual(set(by_date), {start.date(), end.date()})
+        self.assertEqual(by_date[start.date()].article_count, 1)
+        self.assertEqual(by_date[end.date()].article_count, 1)
+        self.assertEqual(by_date[start.date()].eligible_story_count, 0)
+        self.assertEqual(by_date[end.date()].eligible_story_count, 0)
+        single_day = list_daily_summaries(
+            self.company.id, start_date=end.date(), end_date=end.date(),
+            db=self.db, auth=self.auth,
+        )
+        self.assertEqual(len(single_day), 1)
+        self.assertEqual(single_day[0].article_count, 1)
+        self.assertEqual(single_day[0].eligible_story_count, 0)
+
     def test_negative_story_enters_comparison_cohort_on_second_article_day(self):
         now = datetime.now(SEOUL)
         yesterday = now - timedelta(days=1)

@@ -100,6 +100,10 @@ function DailySentimentCompositionChart({ days }) {
   </div>;
 }
 
+const HELD_STATUSES = new Set([
+  "근거부족_보류", "유형불명_보류", "유형불일치_보류", "대응불필요_종료",
+]);
+
 const RESPONSE_STATUS_LABELS = {
   pending: "생성 중",
   generating: "생성 중",
@@ -119,17 +123,34 @@ export function RiskJudgmentModelInfo({ risk, showVersion = false }) {
 }
 
 // 위험 이벤트 목록에서 스토리 제목, 다중 유형, 근거와 대응 상태를 보여준다.
-export function RiskEventListContent({ risk, judgmentCompact = false }) {
+// plain: 대응 화면의 목록용. 탐지 8유형 배지와 판정 모델 문구를 빼고, 위험도·관련 보도를
+// 제목 옆 한 줄로 줄인다. 대응 화면에서는 그 사건을 "고르는" 것이 목적이라 탐지 내부
+// 정보가 오히려 초안의 유형과 어긋나 보인다.
+export function RiskEventListContent({ risk, judgmentCompact = false, plain = false }) {
   const title = riskEventTitle(risk);
   const isNonRisk = risk.classification === "non_risk";
   const types = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
   const primaryType = types.find((item) => item.is_primary) ?? types.find((item) => item.risk_type === risk.primary_type) ?? types[0];
   const secondaryTypes = types.filter((item) => item !== primaryType);
+  if (plain) {
+    return <>
+      <div className="risk-event-plain-head">
+        <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
+        <small>
+          위험도 {formatRiskProbability(risk.risk_probability)}
+          {" · 관련 보도 "}
+          {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건
+        </small>
+      </div>
+    </>;
+  }
+
   return <>
     <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
     <div className="risk-event-type-row">{isNonRisk ? <span className="non-risk">비위험</span> : <>{primaryType ? <span className="primary">{RISK_TYPE_LABELS[primaryType.risk_type] ?? primaryType.risk_type}</span> : <span>분류 중</span>}{secondaryTypes.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}</>}</div>
     <small className="risk-event-context">위험도 {formatRiskProbability(risk.risk_probability)}{judgmentCompact ? <> · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건</> : <> · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? 0)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳</>}</small>
     <RiskJudgmentModelInfo risk={risk} />
+    {judgmentCompact && risk.issue_latest_at && <small className="risk-event-context">최근 기사 {formatDate(risk.issue_latest_at)}</small>}
     {!judgmentCompact && <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>}
   </>;
 }
@@ -165,7 +186,7 @@ function LegacyResponseContent({ content, riskTitle, isCompetitorImpact }) {
   ].filter(([, value]) => value) : [];
 
   return <div className="response-draft response-draft-v3 response-operations-view response-legacy-view">
-    <section className="response-command-card standard"><div className="response-command-copy"><span className="response-ui-kicker">AI 대응 가이드</span><div className="response-command-title"><span className="response-priority-pill standard">대응안</span><h4>{riskTitle || content.risk_summary || "위험 사건 대응"}</h4></div><p>{isCompetitorImpact ? "동종 기업 이슈가 우리 기업에 미칠 영향과 준비 항목입니다." : "위험 확산을 줄이기 위한 우선 대응 항목입니다."}</p></div><dl className="response-command-facts"><div><dt>대응 대상</dt><dd>{isCompetitorImpact ? "동종 기업 영향" : "우리 기업 사건"}</dd></div></dl></section>
+    <section className="response-command-card standard"><div className="response-command-copy"><span className="response-ui-kicker">AI 대응 가이드</span><div className="response-command-title"><span className="response-priority-pill standard">대응안</span><h4>{riskTitle || content.risk_summary || "위험 이슈 대응"}</h4></div><p>{isCompetitorImpact ? "동종 기업 이슈가 우리 기업에 미칠 영향과 준비 항목입니다." : "위험 확산을 줄이기 위한 우선 대응 항목입니다."}</p></div><dl className="response-command-facts"><div><dt>대응 대상</dt><dd>{isCompetitorImpact ? "동종 기업 영향" : "우리 기업 이슈"}</dd></div></dl></section>
     {scenarios.length > 1 && <section className="response-option-panel" aria-label="대응안 선택"><header className="response-section-heading compact"><div><span>대응 방향 선택</span><h4>확인할 대응안을 선택하세요</h4></div><strong>{scenarios.length}개 안</strong></header><div className="response-option-tabs" role="tablist">{scenarios.map((scenario, index) => <button type="button" role="tab" className={`response-option-tab${active === index ? " active" : ""}`} aria-selected={active === index} onClick={() => setActive(index)} key={`${scenario.title ?? "scenario"}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{scenario.title || `${index + 1}번째 대응안`}</strong></button>)}</div></section>}
     {current && <div className="response-plan-content"><section className="response-overview-panel"><header className="response-section-heading"><div><span>상황 요약</span><h4>{current.title || "선택한 대응안"}</h4></div></header>{overviewItems.length > 0 && <div className="response-legacy-overview">{overviewItems.map(([label, value]) => <article key={label}><h5>{label}</h5><BulletText text={value} /></article>)}</div>}{current.early_indicators?.length > 0 && <article className="response-legacy-indicators"><h5>조기 관찰 지표</h5><div className="response-metric-chips">{current.early_indicators.map((indicator, index) => <span key={`${indicator}-${index}`}>{indicator}</span>)}</div></article>}</section><ActionGroups actions={current.recommended_actions} /></div>}
     {!current && <ActionGroups actions={content.recommended_actions} />}
@@ -185,7 +206,11 @@ function ResponseDraftContent({ draft, riskTitle, risk }) {
 }
 
 // 위험 이벤트의 유형과 관리 승인이 필요한 대응 초안을 표시한다.
-export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
+// onDraftLoaded는 지금 그리는 초안이 어느 경로의 산출물인지(content_kind) 부모에게 올린다.
+// 화면 제목이 "대응 방안"과 "동종 기업 · 대응 방안"으로 갈리는데, 그 판단 근거를 선택한
+// 기업의 역할이 아니라 **실제로 생성된 초안**에서 가져오기 위해서다. 초안이 아직 없거나
+// 근거부족으로 보류된 상태에서 제목만 먼저 바뀌면 화면이 내용보다 앞서 말하게 된다.
+export function RiskDetail({ risk, canReview = false, onGenerationStarted, onDraftLoaded }) {
   const riskId = risk?.id ?? null;
   const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
@@ -200,6 +225,13 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   }, [riskId]);
   useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
   useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
+  // 초안을 다시 불러올 때마다 부모에게 종류를 알린다. loadDrafts가 아니라 drafts를 보고
+  // 도는 이유는, 콜백이 매 렌더 새로 만들어져도 재조회로 번지지 않게 하기 위해서다
+  // (같은 값을 다시 넣으면 React가 렌더를 건너뛰므로 여기서 멈춘다).
+  useEffect(() => {
+    const shown = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0];
+    onDraftLoaded?.(shown?.content?.content_kind ?? null);
+  }, [drafts, onDraftLoaded]);
   useEffect(() => {
     if (!riskId || !["pending", "generating"].includes(generationStatus)) return undefined;
     const timer = window.setInterval(loadDrafts, 5000);
@@ -229,8 +261,8 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   // 검토가 끝난 초안은 결과만 남긴다. 되돌릴 수 없는 판정이라 버튼을 남겨 둘 이유가 없다.
   const reviewed = latest && latest.approval_state !== "draft";
   const reviewFooter = !content ? null
-    : content.status === "근거부족_보류"
-      ? <div className="draft-review readonly"><span>근거 연결 후 다시 생성해 주세요.</span></div>
+    : HELD_STATUSES.has(content.status)
+      ? <div className="draft-review readonly"><span>{content.review_reason || "확인 후 다시 생성해 주세요."}</span></div>
       : reviewed
         ? <div className="draft-review readonly"><span className={`review-result ${latest.approval_state}`}>{latest.approval_state === "approved" ? "승인 완료" : "반려 완료"}</span></div>
         : canReview

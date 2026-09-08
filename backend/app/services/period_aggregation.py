@@ -9,6 +9,15 @@ from sqlalchemy import func
 SEOUL = ZoneInfo("Asia/Seoul")
 
 
+def seoul_date_range(start_date: date, end_date: date) -> tuple[datetime, datetime]:
+    """양 끝 날짜를 포함하는 서울 달력 기간을 UTC 반개구간으로 반환한다."""
+    if start_date > end_date:
+        raise ValueError("종료일은 시작일 이후여야 합니다.")
+    start = datetime.combine(start_date, datetime.min.time(), tzinfo=SEOUL)
+    end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=SEOUL)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
 def seoul_period_start(days: int, *, now: datetime | None = None) -> tuple[date, datetime]:
     """오늘을 포함한 최근 ``days``개 서울 달력 날짜의 시작을 반환한다."""
     current = now or datetime.now(SEOUL)

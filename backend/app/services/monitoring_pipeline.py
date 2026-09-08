@@ -41,6 +41,7 @@ from app.services.collection_health import (
     floor_window,
     record_pipeline_failure,
     record_attempts,
+    recover_company_incidents,
 )
 from app.services.news_collectors import (
     KakaoDaumSearchCollector,
@@ -882,6 +883,14 @@ def run_collection(
         )
         if settings.story_risk_engine_enabled:
             close_stale_story_events(company_id)
+        if job.status == "completed":
+            # Provider success alone does not establish pipeline recovery: all
+            # downstream analysis and window processing must finish first.
+            with SessionLocal() as recovery_db:
+                recover_company_incidents(
+                    recovery_db, company_id, [], settings, pipeline_succeeded=True,
+                )
+                recovery_db.commit()
     if dispatch_notifications_after:
         dispatch_pending_notifications(settings)
     return job

@@ -9,7 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -146,21 +146,23 @@ def data_quality_for(attempts: list[CollectionAttempt]) -> str:
 
 
 def _consecutive_failures(db: Session, company_id: int, source: str, limit: int) -> int:
-    rows = list(
-        db.scalars(
-            select(CollectionAttempt)
-            .where(CollectionAttempt.company_id == company_id, CollectionAttempt.source == source)
-            .where(CollectionAttempt.attempt_number == 0)
-            .order_by(CollectionAttempt.started_at.desc(), CollectionAttempt.id.desc())
-            .limit(limit)
-        )
+    rows = db.scalars(
+        select(CollectionAttempt)
+        .where(CollectionAttempt.company_id == company_id, CollectionAttempt.source == source)
+        .order_by(CollectionAttempt.completed_at.desc(), CollectionAttempt.started_at.desc(), CollectionAttempt.id.desc())
+        .execution_options(yield_per=50)
     )
-    count = 0
-    for row in rows:
-        if row.status != "failed":
-            break
-        count += 1
-    return count
+    failed_windows = set()
+    try:
+        for row in rows:
+            if row.status != "failed":
+                break
+            failed_windows.add(row.scheduled_for)
+            if len(failed_windows) >= limit:
+                break
+    finally:
+        rows.close()
+    return len(failed_windows)
 
 
 def _queue_notification(
@@ -283,13 +285,38 @@ def recover_company_incidents(
     company_id: int,
     successful_sources: list[str],
     settings: Settings,
+    *,
+    pipeline_succeeded: bool = False,
 ) -> list[int]:
-    """Remove a recovered company from matching incidents and close fully recovered incidents."""
-    if not successful_sources:
+    """Recover each company's old incidents from the latest successful attempts.
+
+    Retry successes count too. Different failed sources may recover in separate
+    runs; a later failure of any of those sources must still keep the issue open.
+    Pipeline failures require an explicit signal after the whole run succeeds.
+    """
+    if not successful_sources and not pipeline_succeeded:
         return []
     company = db.get(Company, company_id)
     if company is None:
         return []
+    latest_ids = select(
+        CollectionAttempt.id,
+        func.row_number().over(
+            partition_by=CollectionAttempt.source,
+            order_by=(CollectionAttempt.completed_at.desc(), CollectionAttempt.started_at.desc(), CollectionAttempt.id.desc()),
+        ).label("position"),
+    ).where(CollectionAttempt.company_id == company_id, CollectionAttempt.user_id == company.user_id).subquery()
+    successful_attempts = {
+        attempt.source: attempt for attempt in db.scalars(
+            select(CollectionAttempt)
+            .join(latest_ids, latest_ids.c.id == CollectionAttempt.id)
+            .where(latest_ids.c.position == 1, CollectionAttempt.status == "succeeded")
+        )
+    }
+    recovered_at = datetime.now(timezone.utc)
+    success_times = {source: attempt.completed_at for source, attempt in successful_attempts.items()}
+    if pipeline_succeeded:
+        success_times["pipeline"] = recovered_at
     incidents = list(
         db.scalars(
             select(CollectionIncident).where(
@@ -299,17 +326,19 @@ def recover_company_incidents(
         )
     )
     recovered: list[int] = []
-    successful_set = set(successful_sources)
     for incident in incidents:
         affected = list(incident.affected_company_ids or [])
-        if company_id not in affected or not set(incident.sources).issubset(successful_set):
+        if company_id not in affected or not incident.sources:
+            continue
+        if any(source not in success_times or success_times[source] < incident.scheduled_for
+               for source in incident.sources):
             continue
         affected.remove(company_id)
         incident.affected_company_ids = affected
         if affected:
             continue
         incident.status = "recovered"
-        incident.recovered_at = datetime.now(timezone.utc)
+        incident.recovered_at = recovered_at
         incident.next_retry_at = None
         _queue_notification(db, incident, "recovered", settings)
         recovered.append(incident.id)
@@ -324,16 +353,16 @@ def evaluate_attempts(
     *,
     manage_incidents: bool = True,
 ) -> tuple[str, int | None]:
-    """Return window quality and optionally create/recover alert incidents."""
+    """Recover successful sources, and optionally create incidents for failures."""
     settings = settings or get_settings()
     quality = data_quality_for(attempts)
-    if not attempts or not manage_incidents:
+    if not attempts:
         return quality, None
     company_id = attempts[0].company_id
     failed = [item for item in attempts if item.status == "failed"]
     succeeded = [item.source for item in attempts if item.status == "succeeded"]
     recover_company_incidents(db, company_id, succeeded, settings)
-    if quality == "complete":
+    if quality == "complete" or not manage_incidents:
         return quality, None
     if quality == "unavailable":
         incident = _upsert_incident(

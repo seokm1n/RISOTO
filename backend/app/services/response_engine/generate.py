@@ -71,18 +71,34 @@ _SYSTEM_PROMPT = """당신은 기업 리스크 대응 보고서를 작성하는 
 
 [작성 규칙]
 - 아래 [근거] 섹션에 주어진 내용만 사용하세요. 주어지지 않은 사실을 지어내지 마세요.
-- scenario_headline은 이 관점을 가리키는 **짧은 이름**입니다. 12자 안팎으로, 담당자가
-  탭에서 보고 무엇이 다른지 바로 알 수 있게 쓰세요. 예: "사실 확인 먼저", "선제적으로 알리기",
-  "피해 구제 우선". 내부 용어나 영어를 쓰지 마세요.
+- scenario_headline은 이 안을 가리키는 **짧은 이름**입니다. 12자 안팎의 **명사형**으로,
+  "~하기", "~한다" 같은 서술형을 쓰지 마세요. 이번 사안의 구체적인 조치를 담되 담당자가
+  한눈에 알아볼 말로 쓰세요. 예: "즉시 회수와 보상", "사실관계 확인 우선", "피해 구제 선지급".
+  내부 용어나 영어를 쓰지 마세요.
+- scenario_contrast는 **이 안이 다른 안과 무엇이 다른지** 한 줄로 적습니다. 20자 안팎으로,
+  담당자가 세 안을 나란히 놓고 고를 수 있게 **선택의 갈림길**을 쓰세요.
+  예: "확인 전에 먼저 알림", "확인 끝난 뒤 한 번에", "책임 규명보다 보상 먼저".
+  이 안의 장점을 자랑하지 말고, 무엇을 먼저 하는지로 구분하세요.
 - summary_points는 **요점 2~4개**입니다. 숫자를 쓰지 말고, 지금 무슨 일이 벌어지고 있으며
-  왜 대응이 필요한지를 **쉬운 말로 설명**하세요. 수치는 judgment_basis에만 씁니다.
-  예: "확인되지 않은 정보가 퍼지면서 사실관계보다 부정적 인식이 먼저 자리 잡을 수 있습니다."
-  첫 항목은 상황을 한 문장으로 짚고, 나머지는 그래서 무엇이 중요한지로 이어 가세요.
-  각 항목은 `짧은 라벨: 문장` 형태로 씁니다. 라벨은 6자 이내로 그 항목이 무엇인지 가리키게
-  하세요(예: "핵심 이슈: ...", "확산 경로: ...", "우려: ..."). 화면이 라벨과 문장을 나눠 보여 줍니다.
-- judgment_basis는 왜 이 사안을 리스크로 판단했는지 **수치를 들어** 서술합니다. 언급량·
-  부정 비율·채널 수 같은 근거를 여기에 모으세요. 위 [읽는 사람] 규칙을 지키세요.
+  왜 대응이 필요한지를 쉬운 말로 적으세요. 수치는 judgment_basis에만 씁니다.
+  각 항목은 `짧은 라벨: 내용` 형태로 씁니다. 라벨은 6자 이내로 그 항목이 무엇인지 가리키게
+  하세요(예: "핵심 이슈: ...", "확산 경로: ...", "우려: ..."). 화면이 라벨과 내용을 나눠 보여 줍니다.
+  **내용은 보고서 문체로 씁니다.** "~입니다", "~합니다" 같은 설명체를 쓰지 말고
+  명사형이나 "~함", "~됨"으로 끝맺으세요. 한 항목은 한 줄로 끝냅니다.
+  좋은 예: "핵심 이슈: 충전 중 화재 신고가 접수돼 제품 안전성 논란 확산"
+  나쁜 예: "핵심 이슈: 충전 중 화재가 발생했다는 신고가 접수되어 제품 안전성 논란이 확산되고 있습니다."
+  첫 항목은 사안 자체를 짚고, 나머지는 그래서 무엇이 문제인지로 이어 가세요.
+- judgment_basis는 왜 이 사안을 리스크로 판단했는지 **수치를 들어** 적습니다.
+  **지표마다 한 문장으로 끊고, 각 문장을 `지표명: 내용` 형태로 씁니다.** 지표명은 10자
+  이내입니다. 화면이 번호를 붙여 항목으로 보여 줍니다.
+  예: "사건 관련 언급: 관측 기간 29건으로 회사 전체 평균 186.7건보다 적음"
+      "부정 반응 비율: 96.5%로 직전 7일 평균 35.9%를 크게 상회"
+      "확산 채널: 서로 다른 채널 1곳에 100% 집중돼 확산 범위는 제한적"
+  줄글로 이어 쓰지 마세요. 위 [읽는 사람] 규칙을 지키세요.
 - 대응 전략은 최대 {max_strategies}개, 주 리스크는 최대 {max_primary}개입니다.
+- risk_assessment의 primary_risks와 secondary_risks도 `짧은 라벨: 내용` 형태로 씁니다.
+  라벨은 8자 이내로 그 위험이 무엇인지 가리키게 하고(예: "규제 제재: ...", "소비자 이탈: ..."),
+  내용은 보고서 문체로 한 줄로 끝냅니다.
 - 체크리스트 항목의 deadline_hours는 1 이상 {max_hours} 이하의 정수입니다.
 - responsibility(책임 서사)를 '예방가능'으로 판단했다면 전략에 '부인_반박'을 쓰지 마세요.
 - 전략의 target_stakeholder는 위에 명시된 1차 커뮤니케이션 대상과 일치시키세요.
@@ -286,11 +302,16 @@ def build_user_prompt(payload: AlertPayload, ev: Evidence) -> str:
     quant = []
     bw = payload.baseline_window_days
     if payload.mention_count is not None:
-        base = f" (직전 {bw}일 평균 {_fmt_num(payload.baseline_mean)}건)" if payload.baseline_mean else ""
-        quant.append(f"기간 내 언급량 {payload.mention_count}건{base}")
+        # 기준선은 이 사건이 아니라 회사 전체 언급량이다(service._baseline). 범위를
+        # 밝히지 않으면 "이 사건이 평소보다 조용하다"로 잘못 읽힌다.
+        base = (
+            f" (같은 기간 길이 기준 회사 전체 평균 {_fmt_num(payload.baseline_mean)}건)"
+            if payload.baseline_mean else ""
+        )
+        quant.append(f"이 사건 언급량 {payload.mention_count}건{base}")
     if payload.negative_ratio is not None:
         base = (
-            f" (직전 {bw}일 평균 {_fmt_num(payload.negative_ratio_baseline, pct=True)})"
+            f" (직전 {bw}일 회사 전체 평균 {_fmt_num(payload.negative_ratio_baseline, pct=True)})"
             if payload.negative_ratio_baseline is not None
             else ""
         )
@@ -320,7 +341,17 @@ def build_user_prompt(payload: AlertPayload, ev: Evidence) -> str:
             # 상류(service._payload_from_event)에서 이미 600자로 자른다. 여기서 300으로
             # 또 줄이면 사건 경위 뒷부분이 한 번 더 잘린다. 상류 상한에 맞춘다.
             lines.append(f"- [{m.mention_id}] ({' / '.join(meta)}) {m.text[:600]}")
-        parts.append("[원문 - 인용 시 대괄호 안 id를 cited_mention_ids에 넣을 것]\n" + "\n".join(lines))
+        # 원문은 근거 점수 상위 몇 건만 실린다(이벤트당 최대 661건 실측). 전체 건수를
+        # 밝히지 않으면 모델이 여기 있는 것이 전부라고 보고 규모를 축소해 쓴다.
+        shown = len(lines)
+        scope = (
+            f" - 전체 {payload.mention_count}건 중 근거 점수 상위 {shown}건"
+            if payload.mention_count and payload.mention_count > shown else ""
+        )
+        parts.append(
+            f"[원문{scope} - 인용 시 대괄호 안 id를 cited_mention_ids에 넣을 것]\n"
+            + "\n".join(lines)
+        )
     else:
         parts.append("[원문]\n- (선별된 원문 없음. 원문 인용 없이 정량 근거만으로 작성할 것)")
 
