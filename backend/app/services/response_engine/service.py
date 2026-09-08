@@ -1,6 +1,6 @@
 """RiskEvent -> 대응 시나리오 생성 -> ResponseDraft 저장.
 
-기존 response_generation.generate_response_draft를 대체하는 진입점이다. 라우터
+response_generation.generate_response_draft를 대체한 진입점이다(옛 모듈은 삭제됨). 라우터
 (`routers/governance.py`)는 이 모듈의 generate_response_draft를 호출하면 되고,
 반환 타입(ResponseDraft)과 저장 형식은 기존과 같게 맞췄다.
 
@@ -380,7 +380,7 @@ def _industry_name(db, company: Company) -> str | None:
 
 
 def _resolve_context(db, source_company: Company) -> tuple[Company, str]:
-    """메인/동종 경로를 가른다. 기존 response_generation._generation_context와 같은 규칙."""
+    """메인/동종 경로를 가른다. 옛 response_generation._generation_context와 같은 규칙."""
     if getattr(source_company, "company_role", "main") != "competitor":
         return source_company, MAIN_RESPONSE
     target = db.scalar(

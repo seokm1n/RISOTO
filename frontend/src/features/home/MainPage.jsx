@@ -90,6 +90,31 @@ function firstGroupedAction(groups) {
   return null;
 }
 
+// summary_points는 "핵심 이슈: ..." 형태로 온다. 브리핑 한 줄에는 라벨이 군더더기다.
+function stripLabel(point) {
+  if (typeof point !== "string") return point;
+  const matched = /^\s*[^:：]{2,14}\s*[:：]\s*([\s\S]+)$/.exec(point);
+  return matched ? matched[1].trim() : point;
+}
+
+// 브리핑에서 가로로 늘어놓을 대응 요점. 전략 제목이 가장 짧고 행동으로 읽힌다.
+function responseDraftPoints(draft) {
+  const content = draft?.content ?? {};
+  if (draft?.schema_version !== 3) return [];
+  if (draft.generation_kind === "competitor_impact") {
+    return (content.recommendation?.recommendations ?? [])
+      .map((item) => item.action)
+      .filter(Boolean)
+      .slice(0, 4);
+  }
+  const scenarios = Array.isArray(content.scenarios) ? content.scenarios : [];
+  const scenario = scenarios.find((item) => item.stance === content.selected_stance) ?? scenarios[0];
+  const report = scenario?.report ?? {};
+  const titles = (report.strategies ?? []).map((item) => item.title).filter(Boolean);
+  if (titles.length) return titles.slice(0, 4);
+  return (report.checklist ?? []).map((item) => item.task).filter(Boolean).slice(0, 3);
+}
+
 function responseDraftSummary(risk, draft) {
   const content = draft?.content ?? {};
   if (content.status === "근거부족_보류") {
@@ -111,12 +136,14 @@ function responseDraftSummary(risk, draft) {
     const report = scenario?.report ?? {};
     const strategy = Array.isArray(report.strategies) ? report.strategies[0] : null;
     const checklist = Array.isArray(report.checklist) ? report.checklist[0] : null;
+    // 펼쳐서 읽는 자리라 1~2문장이 적당하다. scenario_recommendation이 그 길이로
+    // 쓰이는 필드이고(현재 권고 카드와 같은 문장), 없으면 전략 상세로 내려간다.
     return textValue(
+      report.scenario_recommendation,
       strategy?.detail,
+      stripLabel(report.summary_points?.[0]),
       strategy?.title,
       checklist?.task,
-      report.summary_points?.[1],
-      report.summary_points?.[0],
     ) ?? RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle;
   }
 
@@ -325,7 +352,6 @@ export default function MainPage({ onOpenCompany }) {
   const [ratioView, setRatioView] = useState("risk");
   const { period, changePeriod } = useAnalysisPeriod();
   const [riskPage, setRiskPage] = useState(1);
-  const [riskListView, setRiskListView] = useState("risk");
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
     "/companies", () => api.get("/companies").then((response) => response.data),
   );
@@ -394,7 +420,11 @@ export default function MainPage({ onOpenCompany }) {
               const draftResponse = await api.get(`/risk-events/${risk.id}/response-drafts`);
               const drafts = draftResponse.data ?? [];
               const latestDraft = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0] ?? null;
-              return { ...risk, response_summary: responseDraftSummary(risk, latestDraft) };
+              return {
+                ...risk,
+                response_summary: responseDraftSummary(risk, latestDraft),
+                response_points: responseDraftPoints(latestDraft),
+              };
             } catch {
               return { ...risk, response_summary: RESPONSE_STATUS_SUMMARIES[risk.response_generation_status] ?? RESPONSE_STATUS_SUMMARIES.idle };
             }
@@ -485,16 +515,21 @@ export default function MainPage({ onOpenCompany }) {
         </section>
         <section className="panel briefing-risk-articles">
           <div className="pipeline-panel-heading story-group-heading">
-            <div className="story-view-tabs" role="tablist" aria-label="선택 기간 위험 사건 보기">
-              <button id="briefing-risk-tab" type="button" role="tab" aria-selected={riskListView === "risk"} aria-controls="briefing-risk-content" className={riskListView === "risk" ? "active" : ""} onClick={() => setRiskListView("risk")}>위험 사건</button>
-              <button id="briefing-response-tab" type="button" role="tab" aria-selected={riskListView === "response"} aria-controls="briefing-risk-content" className={riskListView === "response" ? "active" : ""} onClick={() => setRiskListView("response")}>대응 방안</button>
-            </div>
+            <PanelTitle title="위험 사건 및 대응방안" />
           </div>
-          <div id="briefing-risk-content" className="briefing-risk-list" role="tabpanel" aria-labelledby={`briefing-${riskListView}-tab`}>{!riskPageData && !riskPageError ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오는 중입니다.</p> : riskPageError && !riskPageData ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오지 못했습니다.</p> : riskyStories.length ? riskyStories.map((risk) => <button className="briefing-risk-card" type="button" onClick={() => onOpenCompany(selectedCompanyId, risk.id)} key={risk.id} aria-label={`${riskEventTitle(risk)} 자세히 보기`}>
-            {riskListView === "risk"
-              ? <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
-              : <><small className="briefing-response-context">{riskEventTitle(risk)}</small><span className="briefing-response-summary">{risk.response_summary}</span></>}
-          </button>) : <p className="panel-empty">선택한 기간의 위험 사건이 없습니다.</p>}</div>
+          <div className="briefing-risk-list">{!riskPageData && !riskPageError ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오는 중입니다.</p> : riskPageError && !riskPageData ? <p className="panel-empty">선택한 기간의 위험 사건을 불러오지 못했습니다.</p> : riskyStories.length ? riskyStories.map((risk) => <details className="briefing-risk-card" key={risk.id}>
+            <summary>
+              <strong className="briefing-risk-story-title">{riskEventTitle(risk)}</strong>
+            </summary>
+            <div className="briefing-risk-response">
+              {risk.response_points?.length
+                ? <ul className="briefing-response-points">{risk.response_points.map((point, index) => <li key={`${risk.id}-point-${index}`}>{point}</li>)}</ul>
+                : <p className="briefing-response-summary">{risk.response_summary}</p>}
+              <div className="briefing-response-foot">
+                <button type="button" className="briefing-response-more" onClick={() => onOpenCompany(selectedCompanyId, risk.id, { stage: "response" })}>대응 화면에서 보기</button>
+              </div>
+            </div>
+          </details>) : <p className="panel-empty">선택한 기간의 위험 사건이 없습니다.</p>}</div>
           <Pagination page={riskPage} pageSize={RISK_PAGE_SIZE} total={riskTotal} onChange={setRiskPage} />
         </section>
       </div>}
