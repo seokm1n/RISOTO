@@ -112,15 +112,11 @@ function RecommendationGroups({ recommendations, channels }) {
   }
 
   let order = 0;
+  // 제목과 과제 수는 이 컴포넌트를 감싸는 접기의 요약줄로 올라갔다. 여기에 다시 두면
+  // 펼쳤을 때 같은 말이 두 줄 겹친다. 패널 테두리(response-workboard)도 뺐다 - 접기
+  // 본문 안에 들어가므로 남겨 두면 액자가 두 겹이 된다.
   return (
-    <section className="response-workboard response-peer-workboard">
-      <header className="response-section-heading">
-        <div>
-          <span>실행 권고</span>
-          <h4>우리 기업이 준비할 일</h4>
-        </div>
-        <strong>{recommendations.length}개 과제</strong>
-      </header>
+    <section className="response-peer-workboard">
       <div className="response-channel-groups">
         {groups.map((group) => (
           <article className="response-channel-group" key={group.channel}>
@@ -163,10 +159,15 @@ function RecommendationGroups({ recommendations, channels }) {
   );
 }
 
-function FollowUpSection({ impact, recommendation }) {
+// 「동종 업계 영향 가이드」·「동종 기업에서 일어난 일」·「현재 권고」까지만 펼쳐 두고 그
+// 아래는 전부 접는다(강사님 요청). 다섯 칸을 한 컴포넌트가 쥐고 있는 이유는 "비었는가"를
+// 판단하는 곳이 하나여야 하기 때문이다 - 부모가 따로 세면 조건이 갈라져 한쪽만 고쳐졌을
+// 때 빈 묶음이 남고, .response-fold-stack이 grid라 부모의 gap 15px가 그대로 벌어진다.
+function FoldStack({ impact, recommendation, recommendations }) {
   const watchPoints = impact.watch_points ?? [];
   const avoid = recommendation?.avoid ?? [];
   if (
+    !recommendations.length &&
     !watchPoints.length &&
     !avoid.length &&
     !recommendation?.realert_condition &&
@@ -176,53 +177,52 @@ function FollowUpSection({ impact, recommendation }) {
   }
 
   return (
-    <section className="response-followup-panel">
-      <header className="response-section-heading">
-        <div>
-          <span>후속 관리</span>
-          <h4>하지 말아야 할 일과 후속 점검</h4>
-        </div>
-      </header>
-      {/* 네 칸 중 이것만 펼쳐 둔다. 위 실행 권고에 없는 유일한 정보이고, 반사이익
-          사안에서는 검증 규칙 4가 비어 있으면 위반으로 잡는 필수 항목이라 접으면
-          안 된다. 색이 들어간 카드도 여기 하나뿐이어야 시선이 갈린다. */}
+    <div className="response-fold-stack">
+      {recommendations.length > 0 && (
+        <FoldSection title={`우리 기업이 준비할 일 ${recommendations.length}개 과제`}>
+          <RecommendationGroups
+            recommendations={recommendations}
+            channels={impact.impact_channels}
+          />
+        </FoldSection>
+      )}
+      {/* 「하지 말아야 할 일」도 접는다. PR #45에서 이것만 펼쳐 뒀던 근거는 "위 실행 권고에
+          없는 유일한 정보"였는데, 그 실행 권고가 함께 접히면서 대비할 대상이 사라졌다.
+          이것만 펼쳐 두면 화면에 할 일은 없고 금지사항만 남는다. 검증 규칙 4가 요구하는
+          항목이라는 점은 그대로이므로, 건수를 제목에 남겨 접힌 채로도 보이게 한다. */}
       {avoid.length > 0 && (
-        <article className="response-avoid-card">
-          <h5>하지 말아야 할 일</h5>
+        <FoldSection title={`하지 말아야 할 일 ${avoid.length}건`}>
           <ul>
             {avoid.map((item, index) => (
               <li key={`avoid-${index}`}>{item}</li>
             ))}
           </ul>
-        </article>
+        </FoldSection>
       )}
-      <div className="response-fold-stack">
-        {/* 지켜볼 신호는 위 실행 권고와 내용이 겹친다 - impact가 낸 영향 경로를
-            recommend가 다시 받아 권고를 만드니 같은 축을 두 번 말하게 된다.
-            (실측: 조사 확대 여부/계정·결제정보 유출/외부 로그인·휴면 계정/고객 문의가
-            각각 권고 01·04·04·02·03과 대응) 그래서 기본은 접어 두고, 몇 건인지는
-            펼치지 않아도 보이게 요약에 적는다. */}
-        {watchPoints.length > 0 && (
-          <FoldSection title={`지켜볼 신호 ${watchPoints.length}건`}>
-            <ul>
-              {watchPoints.map((point, index) => (
-                <li key={`watch-${index}`}>{point}</li>
-              ))}
-            </ul>
-          </FoldSection>
-        )}
-        {recommendation?.realert_condition && (
-          <FoldSection title="다시 알릴 기준">
-            <BulletText text={recommendation.realert_condition} />
-          </FoldSection>
-        )}
-        {recommendation?.limitations && (
-          <FoldSection title="사용 전 확인">
-            <BulletText text={recommendation.limitations} />
-          </FoldSection>
-        )}
-      </div>
-    </section>
+      {/* 지켜볼 신호는 위 실행 권고와 내용이 겹친다 - impact가 낸 영향 경로를
+          recommend가 다시 받아 권고를 만드니 같은 축을 두 번 말하게 된다.
+          (실측: 조사 확대 여부/계정·결제정보 유출/외부 로그인·휴면 계정/고객 문의가
+          각각 권고 01·04·04·02·03과 대응) */}
+      {watchPoints.length > 0 && (
+        <FoldSection title={`지켜볼 신호 ${watchPoints.length}건`}>
+          <ul>
+            {watchPoints.map((point, index) => (
+              <li key={`watch-${index}`}>{point}</li>
+            ))}
+          </ul>
+        </FoldSection>
+      )}
+      {recommendation?.realert_condition && (
+        <FoldSection title="다시 알릴 기준">
+          <p>{recommendation.realert_condition}</p>
+        </FoldSection>
+      )}
+      {recommendation?.limitations && (
+        <FoldSection title="사용 전 확인">
+          <p>{recommendation.limitations}</p>
+        </FoldSection>
+      )}
+    </div>
   );
 }
 
@@ -289,14 +289,11 @@ export default function PeerRecommendationContent({ content }) {
         </section>
       )}
 
-      {recommendations.length > 0 && (
-        <RecommendationGroups
-          recommendations={recommendations}
-          channels={impact.impact_channels}
-        />
-      )}
-
-      <FollowUpSection impact={impact} recommendation={recommendation} />
+      <FoldStack
+        impact={impact}
+        recommendation={recommendation}
+        recommendations={recommendations}
+      />
       <VerificationNotice verification={content.verification} />
     </div>
   );

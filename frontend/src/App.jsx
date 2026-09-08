@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 
 import { api, setCsrfToken } from "./api";
+import { clearResourceCache } from "./shared/resourceCache";
 import WorkspaceApp from "./features/app/WorkspaceApp";
 import LoginPage from "./features/auth/LoginPage";
 import SignupPage from "./features/auth/SignupPage";
@@ -14,10 +15,14 @@ function AuthLoading() {
 // 서버 세션을 단일 진실 공급원으로 삼아 공개·온보딩·제품 경로를 보호한다.
 export default function App() {
   const [auth, setAuth] = useState(undefined);
+  const cacheUser = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
 
   const applyAuth = useCallback((payload) => {
+    const nextUser = payload?.user?.id ?? null;
+    if (nextUser === null || cacheUser.current !== nextUser) clearResourceCache();
+    cacheUser.current = nextUser;
     setCsrfToken(payload?.csrf_token);
     setAuth(payload ?? null);
     return payload;

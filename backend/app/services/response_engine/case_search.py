@@ -5,7 +5,7 @@
   1) 검색 API가 반환한 기사만 허용 집합에 넣고
   2) 그 기사들만 읽혀 교훈을 뽑게 한다
 모델이 URL을 만들어낼 경로 자체가 없으므로, 사후에 URL 실재를 검증할 필요가 사라진다.
-response_generation._filter_citations가 마지막 방어선으로 남는다.
+verify.py의 규칙 1·2(사례·원문 인용 대조)가 마지막 방어선으로 남는다.
 
 **검수된 사례를 먼저 쓴다**: CaseRecord에 verification_status="verified"인 사례가 있으면
 그것을 우선하고, 모자란 만큼만 검색으로 채운다. 사례 DB가 자라는 만큼 검색 호출이 줄어든다.

@@ -104,7 +104,7 @@ export default function MyPage({ session, onAccountDeleted }) {
     <div className="my-page-shell">
     <header className="workspace-head my-page-head">
       <div>
-        <span className="eyebrow">ACCOUNT SETTINGS</span>
+
         <h1>마이페이지</h1>
         <p>계정 정보를 확인하고 로그인 비밀번호를 변경할 수 있습니다.</p>
       </div>
@@ -115,7 +115,7 @@ export default function MyPage({ session, onAccountDeleted }) {
       <section className="account-settings-pane account-summary-card">
         <div className="my-card-head">
           <div>
-            <span className="eyebrow">PROFILE</span>
+
             <h2>계정 정보</h2>
           </div>
         </div>
@@ -145,7 +145,7 @@ export default function MyPage({ session, onAccountDeleted }) {
       <section className="account-settings-pane password-card">
         <div className="my-card-head">
           <div>
-            <span className="eyebrow">SECURITY</span>
+
             <h2>비밀번호 변경</h2>
           </div>
         </div>

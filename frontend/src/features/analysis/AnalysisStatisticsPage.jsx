@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
+import { useSharedResource } from "../../shared/useSharedResource";
 import { Pagination, PanelTitle, useAppConfirm } from "../../shared/components";
 import RiskOverviewTrendChart from "../../shared/RiskOverviewTrendChart";
 import MainResponseContent, { BulletText } from "./MainResponseContent";
@@ -25,7 +26,7 @@ function FeatureWindowSummary({ window: featureWindow }) {
   if (!featureWindow) return <p className="panel-empty">아직 생성된 15분 특징 구간이 없습니다.</p>;
   const endTime = new Date(featureWindow.window_end).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }).replace(/^(오전|오후)\s*/, "");
   return <div className="feature-window-summary">
-    <div className="feature-window-head"><div><span className="eyebrow">LATEST 15-MINUTE COLLECTION</span><h2>최근 15분 수집</h2><strong>{formatDate(featureWindow.window_start)} – {endTime}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span></div></div>
+    <div className="feature-window-head"><div><h2>최근 15분 수집</h2><strong>{formatDate(featureWindow.window_start)} – {endTime}</strong></div><div><span className={`quality-pill ${featureWindow.data_quality}`}>{DATA_QUALITY_LABELS[featureWindow.data_quality]}</span></div></div>
     <div className="window-metrics"><div><span>기사</span><strong>{formatNumber(featureWindow.article_count)}<small className="count-unit">건</small></strong></div><div><span>스토리</span><strong>{formatNumber(featureWindow.story_count)}<small className="count-unit">건</small></strong></div><div><span>확산</span><strong>{formatNumber(featureWindow.amplification_count)}<small className="count-unit">건</small></strong></div><div><span>언론사</span><strong>{formatNumber(featureWindow.publisher_count)}<small className="count-unit">건</small></strong></div><div><span>위험도</span><strong>{formatRiskProbability(featureWindow.risk_probability)}</strong></div></div>
     {featureWindow.data_quality === "unavailable" && <p className="window-warning">수집 불가 구간이므로 위험도를 계산하지 않았습니다.</p>}
   </div>;
@@ -119,7 +120,7 @@ export function RiskJudgmentModelInfo({ risk, showVersion = false }) {
   const modelName = risk.model_version.startsWith("story-if-lgbm")
     ? "스토리 IF + LightGBM"
     : risk.event_source === "story_v2" ? "스토리 위험 판정" : "15분 구간 위험 판정";
-  return <small className="risk-event-context" title={risk.model_version}>{modelName}{risk.model_state === "provisional" && " · 사람 검증 전"}{showVersion && ` · ${risk.model_version}`}</small>;
+  return <small className="risk-event-context" title={risk.model_version}>{modelName}{risk.model_state === "provisional" && " · 승인 대기"}{showVersion && ` · ${risk.model_version}`}</small>;
 }
 
 // 위험 이벤트 목록에서 스토리 제목, 다중 유형, 근거와 대응 상태를 보여준다.
@@ -153,6 +154,14 @@ export function RiskEventListContent({ risk, judgmentCompact = false, plain = fa
     {judgmentCompact && risk.issue_latest_at && <small className="risk-event-context">최근 기사 {formatDate(risk.issue_latest_at)}</small>}
     {!judgmentCompact && <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>}
   </>;
+}
+
+export function RecentCollectionDate({ risk }) {
+  const latest = (risk.evidence_articles ?? []).reduce((current, article) => {
+    const value = article.collected_at;
+    return value && (!current || new Date(value) > new Date(current)) ? value : current;
+  }, null);
+  return <small className="pipeline-risk-collected-date">최근 수집 {formatDate(latest)}</small>;
 }
 
 const HORIZON_LABELS = { immediate: "즉시", within_24h: "24시간 이내", within_7d: "7일 이내" };
@@ -206,37 +215,19 @@ function ResponseDraftContent({ draft, riskTitle, risk }) {
 }
 
 // 위험 이벤트의 유형과 관리 승인이 필요한 대응 초안을 표시한다.
-// onDraftLoaded는 지금 그리는 초안이 어느 경로의 산출물인지(content_kind) 부모에게 올린다.
-// 화면 제목이 "대응 방안"과 "동종 기업 · 대응 방안"으로 갈리는데, 그 판단 근거를 선택한
-// 기업의 역할이 아니라 **실제로 생성된 초안**에서 가져오기 위해서다. 초안이 아직 없거나
-// 근거부족으로 보류된 상태에서 제목만 먼저 바뀌면 화면이 내용보다 앞서 말하게 된다.
-export function RiskDetail({ risk, canReview = false, onGenerationStarted, onDraftLoaded }) {
+export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const riskId = risk?.id ?? null;
-  const [drafts, setDrafts] = useState([]); const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
   const [generationStatus, setGenerationStatus] = useState(risk?.response_generation_status ?? "idle");
-  const loadDrafts = useCallback(async () => {
-    if (!riskId) { setDrafts([]); return; }
-    try {
-      const response = await api.get(`/risk-events/${riskId}/response-drafts`);
-      const nextDrafts = response.data ?? [];
-      setDrafts(nextDrafts);
-    } catch (requestError) { setError(getErrorMessage(requestError)); }
-  }, [riskId]);
-  useEffect(() => { setDrafts([]); setNotes(""); setError(null); loadDrafts(); }, [loadDrafts]);
+  const { data: drafts = [], error: draftsError, refresh: refreshDrafts } = useSharedResource(
+    `response-drafts:${riskId}`,
+    () => riskId ? api.get(`/risk-events/${riskId}/response-drafts`).then((response) => response.data ?? []) : Promise.resolve([]),
+    { intervalMs: ["pending", "generating"].includes(generationStatus) ? 5000 : 30000 },
+  );
+  const loadDrafts = () => refreshDrafts().catch((requestError) => setError(getErrorMessage(requestError)));
+  useEffect(() => { setNotes(""); setError(null); }, [riskId]);
   useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
-  // 초안을 다시 불러올 때마다 부모에게 종류를 알린다. loadDrafts가 아니라 drafts를 보고
-  // 도는 이유는, 콜백이 매 렌더 새로 만들어져도 재조회로 번지지 않게 하기 위해서다
-  // (같은 값을 다시 넣으면 React가 렌더를 건너뛰므로 여기서 멈춘다).
-  useEffect(() => {
-    const shown = drafts.find((draft) => draft.schema_version === 3) ?? drafts[0];
-    onDraftLoaded?.(shown?.content?.content_kind ?? null);
-  }, [drafts, onDraftLoaded]);
-  useEffect(() => {
-    if (!riskId || !["pending", "generating"].includes(generationStatus)) return undefined;
-    const timer = window.setInterval(loadDrafts, 5000);
-    return () => window.clearInterval(timer);
-  }, [generationStatus, loadDrafts, riskId]);
   if (!risk) return <p className="panel-empty">확인할 위험 이벤트를 선택해 주세요.</p>;
 
   const v3Draft = drafts.find((draft) => draft.schema_version === 3);
@@ -278,47 +269,36 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted, onDra
       </div>
     </div>
     {generationStatus === "failed" && risk.response_generation_error && <div className="notice error">{risk.response_generation_error}</div>}
-    {error && <div className="notice error">{error}</div>}
+    {(error || draftsError) && <div className="notice error">{error || getErrorMessage(draftsError)}</div>}
     {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} risk={risk} />{reviewFooter}</>}
   </div>;
 }
 
 // 기업별 실시간 수집 현황, 기사, 위험 이벤트와 제어 기능을 제공한다.
 export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister = false, onOpenCollectedArticles, onOpenRiskManagement, onMonitoringChanged }) {
-  const [companies, setCompanies] = useState([]); const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
-  const [data, setData] = useState(null); const [error, setError] = useState(null);
+  const { data: companies = [], error: companiesError } = useSharedResource(
+    "/companies", () => api.get("/companies").then((response) => response.data),
+  );
+  const [selectedId, setSelectedId] = useState(initialCompanyId ? String(initialCompanyId) : "");
+  const [actionError, setError] = useState(null);
   const [changingState, setChangingState] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const refreshSequence = useRef(0);
   const { confirm, confirmationDialog } = useAppConfirm();
-  // 선택 기업의 모니터링 수치와 추세 데이터를 병렬로 갱신한다.
-  const refresh = useCallback(async () => {
-    const requestId = ++refreshSequence.current;
-    try {
-      const companyResponse = await api.get("/companies"); const nextCompanies = companyResponse.data;
-      if (requestId !== refreshSequence.current) return;
-      setCompanies(nextCompanies);
-      const requestedCompany = nextCompanies.find((company) => String(company.id) === String(selectedId));
-      const mainCompany = nextCompanies.find((company) => company.company_role === "main");
-      const id = requestedCompany?.id ?? mainCompany?.id ?? nextCompanies[0]?.id;
-      if (!id) { setData(null); return; }
-      if (String(id) !== String(selectedId)) {
-        setSelectedId(String(id));
-      }
-      const featureWindowLimit = STATISTICS_PERIOD_DAYS * 96;
-      const [monitoring, windows, dailySummaries] = await Promise.all([
-        api.get(`/companies/${id}/monitoring`), api.get(`/companies/${id}/feature-windows?limit=${featureWindowLimit}`),
-        api.get(`/companies/${id}/daily-summaries?days=${STATISTICS_PERIOD_DAYS}`),
-      ]);
-      if (requestId !== refreshSequence.current) return;
-      setData({ monitoring: monitoring.data, windows: windows.data, dailySummaries: dailySummaries.data }); setError(null);
-    } catch (requestError) { if (requestId === refreshSequence.current) setError(getErrorMessage(requestError)); }
-  }, [selectedId]);
-  // 수집 주기보다 빠른 30초 간격으로 서버 현황을 다시 조회한다.
-  useEffect(() => { refresh(); const timer = window.setInterval(refresh, 30000); return () => { window.clearInterval(timer); refreshSequence.current += 1; }; }, [refresh]);
+  const selected = companies.find((company) => String(company.id) === selectedId)
+    ?? companies.find((company) => company.company_role === "main") ?? companies[0];
+  const id = selected?.id;
+  useEffect(() => { if (id) setSelectedId(String(id)); }, [id]);
+  const { data, error: dataError, refresh } = useSharedResource(`statistics:${id}:${STATISTICS_PERIOD_DAYS}`, async () => {
+    if (!id) return null;
+    const [monitoring, windows, dailySummaries] = await Promise.all([
+      api.get(`/companies/${id}/monitoring`), api.get(`/companies/${id}/feature-windows?limit=${STATISTICS_PERIOD_DAYS * 96}`),
+      api.get(`/companies/${id}/daily-summaries?days=${STATISTICS_PERIOD_DAYS}`),
+    ]);
+    return { monitoring: monitoring.data, windows: windows.data, dailySummaries: dailySummaries.data };
+  });
+  const error = actionError || (companiesError || dataError ? getErrorMessage(companiesError || dataError) : null);
   // 서버 요청 없이 카운트다운 표시만 매초 다시 계산하도록 현재 시각을 갱신한다.
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  const selected = companies.find((company) => String(company.id) === String(selectedId));
   const mainCompanies = companies.filter((company) => company.company_role === "main");
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   const latestWindow = data?.windows?.[0] ?? null;
@@ -360,7 +340,7 @@ export default function AnalysisStatisticsPage({ initialCompanyId, canAdminister
     <div className="monitor-toolbar"><div className="analysis-toolbar-filters"><label><span className="analysis-field-label">분석 기업</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</optgroup>}</select></label></div><div className="analysis-toolbar-actions">{selected && canAdminister && <button className={`monitor-control ${monitorControlClass}`} onClick={changeMonitoringState} disabled={changingState || !monitoringActionAvailable}>{monitorControlLabel}</button>}{showCollectionCountdown && <div className="collection-countdown"><span>다음 기사 수집까지</span><strong>{formatCountdown(secondsUntilCollection)}</strong><small>15분 주기</small></div>}</div></div>
     {error && <div className="notice error">{error}</div>}
     {!selected ? <p className="empty-state">먼저 기업 등록 페이지에서 모니터링할 기업을 등록해 주세요.</p> : data && <>
-      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 최근 7일 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle kicker="COLLECTED ARTICLES" title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle kicker="RISK EVENTS" title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
+      <div className="statistics-count-grid"><button className="panel statistics-count-card" type="button" onClick={() => confirmPageMove("수집 현황", "선택한 기업의 최근 7일 수집 기사 목록을 팝업으로 엽니다.", () => onOpenCollectedArticles(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 수집 기사 ${formatNumber(periodArticleCount)}건 보기`}><PanelTitle title="최근 7일 수집된 기사" /><div><strong>{formatNumber(periodArticleCount)}</strong>건<span></span></div></button><button className="panel statistics-count-card risk" type="button" onClick={() => confirmPageMove("위험 관리", "선택한 기업의 위험 이벤트와 대응 초안을 확인합니다.", () => onOpenRiskManagement(selected.id, STATISTICS_PERIOD_DAYS))} aria-label={`${selected.name} ${STATISTICS_PERIOD_LABEL} 위험 이벤트 ${formatNumber(periodRiskEventCount)}건 보기`}><PanelTitle title="최근 7일 발생한 위험 이벤트" /><div><strong>{formatNumber(periodRiskEventCount)}</strong>건<span></span></div></button></div>
       <FeatureWindowSummary window={latestWindow} />
       <section className="panel statistics-overview-trend">
         <PanelTitle kicker={`${STATISTICS_PERIOD_LABEL} · 기사 2건 이상 스토리 기준`} title="위험·부정 스토리 비율 추이" />

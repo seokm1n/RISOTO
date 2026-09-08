@@ -47,6 +47,7 @@ REPORT_SCHEMA = {
             # 무엇이 다른지 알 수 없다. 사람이 읽을 이름을 모델이 직접 짓게 한다.
             "scenario_headline": {"type": "string"},
             "scenario_contrast": {"type": "string"},
+            "scenario_recommendation": {"type": "string"},
             "scenario_tradeoff": {"type": "string"},
             "summary_points": {"type": "array", "items": {"type": "string"}},
             "judgment_basis": {"type": "string"},
@@ -112,6 +113,7 @@ REPORT_SCHEMA = {
             "scenario_stance",
             "scenario_headline",
             "scenario_contrast",
+            "scenario_recommendation",
             "scenario_tradeoff",
             "summary_points",
             "judgment_basis",

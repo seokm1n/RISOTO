@@ -1,7 +1,9 @@
+import Icon from "../../shared/Icon";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
+import { useSharedResource } from "../../shared/useSharedResource";
 import { AppNoticeDialog, useAppConfirm } from "../../shared/components";
 import {
   COMPANY_KEYWORD_FIELDS,
@@ -73,10 +75,10 @@ export function CompanyCard({ company, onOpen, onEdit }) {
   return <article className={`company-card ${company.company_role === "main" ? "main-company-card" : ""} ${onEdit ? "editable-company-card" : ""}`}>
     <div className="company-card-head flex items-start justify-between gap-5">
       <div><div className="company-role-line"><span className={`company-role-badge ${company.company_role}`}>{roleLabel}</span></div><div className="company-card-status-line"><span className={`status-dot ${collectionRunning ? "running" : "stopped"}`} aria-hidden="true" /><div><h3><button className="company-name-link" type="button" onClick={() => onOpen(company.id)}>{company.name}</button></h3><p>{company.industry_name} · {monitoringLabel}</p></div></div></div>
-      {onEdit && <div className="company-card-controls"><button className="company-edit-icon" type="button" onClick={() => onEdit(company.id)} aria-label={`${company.name} 수정`} title="기업 수정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg><span>수정</span></button></div>}
+      {onEdit && <div className="company-card-controls"><button className="company-edit-icon" type="button" onClick={() => onEdit(company.id)} aria-label={`${company.name} 수정`} title="기업 수정"><Icon name="edit" /><span>수정</span></button></div>}
     </div>
     <div className="company-finance-summary"><div><span>연매출</span><strong>{formatRevenue(company.annual_revenue_100m_krw)}</strong></div><div><span>기업 규모</span><strong>{COMPANY_SIZE_LABELS[company.company_size_class] ?? "미입력"}</strong></div></div>
-    <div className="company-card-keywords mt-6 grid gap-4 sm:grid-cols-3">{Object.entries(KEYWORD_LABELS).map(([type, label]) => <div key={type}><span className="mini-label">{label}</span><p className="mt-1 text-sm leading-6 text-[#4e4642]">{grouped[type].join(" · ") || "등록 없음"}</p></div>)}</div>
+    <div className="company-card-keywords">{Object.entries(KEYWORD_LABELS).map(([type, label]) => <div key={type}><span className="mini-label">{label}</span><p>{grouped[type].join(" · ") || "등록 없음"}</p></div>)}</div>
   </article>;
 }
 
@@ -99,12 +101,17 @@ function companyPayload(form, submittedKeywords) {
 }
 
 function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEditCompany, onRegister, onboarding = false, registrationOnly = false, showRegistrationForm = true, refreshKey = 0 }) {
-  const [industries, setIndustries] = useState([]);
-  const [companies, setCompanies] = useState([]);
+  const { data: industries = [], loading: industriesLoading, error: industriesError, refresh: refreshIndustries } = useSharedResource(
+    "/industries", () => api.get("/industries").then((response) => response.data), { intervalMs: 0 },
+  );
+  const { data: companies = [], loading: companiesLoading, error: companiesError, refresh: refreshCompanies } = useSharedResource(
+    onboarding || registrationOnly ? "skip:setup-companies" : "/companies",
+    () => onboarding || registrationOnly ? Promise.resolve([]) : api.get("/companies").then((response) => response.data),
+  );
+  const loading = industriesLoading || (!onboarding && !registrationOnly && companiesLoading);
   const [form, setForm] = useState(() => companyToForm(null));
   const [keywordDrafts, setKeywordDrafts] = useState(() => emptyKeywordDrafts());
   const [formVersion, setFormVersion] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState(null);
   const { confirm, confirmationDialog } = useAppConfirm();
@@ -116,26 +123,17 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
   const changeKeyword = (field, values) => setForm((current) => ({ ...current, [field]: values }));
   const changeKeywordDraft = (field, value) => setKeywordDrafts((current) => ({ ...current, [field]: value }));
 
-  const loadData = useCallback(async () => {
-    try {
-      const industryResponse = await api.get("/industries");
-      setIndustries(industryResponse.data);
-      if (!onboarding && !registrationOnly) {
-        const companyResponse = await api.get("/companies");
-        const registeredCompanies = companyResponse.data;
-        setCompanies(registeredCompanies);
-      }
-      setNotice(null);
-    } catch (error) { setNotice({ type: "error", message: getErrorMessage(error) }); }
-    finally { setLoading(false); }
-  }, [onboarding, registrationOnly]);
+  const loadData = async () => {
+    try { await Promise.all([refreshIndustries(), refreshCompanies()]); setNotice(null); }
+    catch (error) { setNotice({ type: "error", message: getErrorMessage(error) }); }
+  };
+  useEffect(() => {
+    if (industriesError || companiesError) setNotice({ type: "error", message: getErrorMessage(industriesError || companiesError) });
+  }, [industriesError, companiesError]);
 
   useEffect(() => {
-    loadData();
-    if (onboarding || registrationOnly) return undefined;
-    const timer = window.setInterval(loadData, 30000);
-    return () => window.clearInterval(timer);
-  }, [loadData, onboarding, refreshKey]);
+    if (refreshKey) refreshCompanies().catch((error) => setNotice({ type: "error", message: getErrorMessage(error) }));
+  }, [refreshKey, refreshCompanies]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -164,7 +162,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
   };
 
   const registrationForm = <form className={registrationOnly ? "edit-card company-registration-form" : "setup-card"} onSubmit={submit}>
-    {onboarding && <div className="card-heading onboarding-card-heading"><div><span className="eyebrow">MY COMPANY SETUP</span><h2>나의 기업 등록</h2><h3><strong>나의 기업은 위험 대응의 기준이 됩니다.<br />등록 후 정보는 수정할 수 있지만 삭제하거나 역할을 바꿀 수 없습니다.</strong></h3></div></div>}
+    {onboarding && <div className="card-heading onboarding-card-heading"><div><h2>나의 기업 등록</h2><h3><strong>나의 기업은 위험 대응의 기준이 됩니다.<br />등록 후 정보는 수정할 수 있지만 삭제하거나 역할을 바꿀 수 없습니다.</strong></h3></div></div>}
     <CompanySettingsFields idPrefix={companyRole === "main" ? "main-register" : "competitor-register"} form={form} industries={industries} disabled={submitting || loading} version={formVersion} onFieldChange={changeField} onKeywordChange={changeKeyword} onKeywordDraftChange={changeKeywordDraft} />
     {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
     <button className="submit-button" type="submit" disabled={submitting || loading}><span>{submitting ? "등록 중..." : `${targetLabel} 등록`}</span><b aria-hidden="true">→</b></button>
@@ -174,7 +172,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
 
   return <>
     {showRegistrationForm && <section className={`hero-grid ${onboarding ? "onboarding-hero" : "competitor-hero"}`}>
-      {!onboarding && <div className="competitor-setup-heading"><span className="eyebrow">NEW COMPETITOR TARGET</span><h1>{COMPETITOR_LABEL} 등록</h1></div>}
+      {!onboarding && <div className="competitor-setup-heading"><h1>{COMPETITOR_LABEL} 등록</h1></div>}
       {registrationForm}
     </section>}
     {!onboarding && <section className="registered-section">
@@ -186,7 +184,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
         ].map((group) => {
           const roleCompanies = companies.filter((company) => company.company_role === group.role);
           return <section className={`company-role-section ${group.role}`} key={group.role}>
-            <div className="section-title company-role-section-title"><div><span className="eyebrow">{group.kicker}</span><h3>{group.title}</h3></div>{group.role === "competitor" && onRegister && <button className="company-register-button" type="button" onClick={onRegister}><span>{COMPETITOR_LABEL} 등록</span><b aria-hidden="true">＋</b></button>}</div>
+            <div className="section-title company-role-section-title"><div><h3>{group.title}</h3></div>{group.role === "competitor" && onRegister && <button className="company-register-button" type="button" onClick={onRegister}><span>{COMPETITOR_LABEL} 등록</span><b aria-hidden="true">＋</b></button>}</div>
             {roleCompanies.length ? <div className="company-list">{roleCompanies.map((company) => <CompanyCard company={company} key={company.id} onOpen={onOpenCompany} onEdit={onEditCompany} />)}</div> : <p className="empty-state">{group.empty}</p>}
           </section>;
         })}
@@ -214,7 +212,7 @@ export function MainCompanyOnboardingPage({ onCreated }) {
   return <main className="onboarding-page">
     <header className="topbar onboarding-topbar"><div className="brand onboarding-brand"><img className="brand-icon" src="/risoto-app-icon.png" alt="" aria-hidden="true" />RISOTO<span>RISk Out Through Observation</span></div></header>
     <SetupPage companyRole="main" onboarding onCreated={complete} />
-    {createdCompany && <AppNoticeDialog kicker="REALTIME COLLECTION" title="실시간 수집을 시작했습니다" onConfirm={acknowledgeCollectionStart} busy={completing}>
+    {createdCompany && <AppNoticeDialog title="실시간 수집을 시작했습니다" onConfirm={acknowledgeCollectionStart} busy={completing}>
       <p><strong>{createdCompany.name}</strong>을(를) 나의 기업으로 등록했습니다.</p>
       <p className="app-notice-detail">등록과 동시에 최근 기사 수집과 실시간 모니터링이 시작됩니다. 요약 및 수집 현황에서 진행 상태를 확인할 수 있습니다.</p>
     </AppNoticeDialog>}
@@ -327,10 +325,10 @@ function CompanyEditModal({ companyId, onDirtyChange, onClose, onChanged }) {
   return <div className="company-edit-modal">
     <button className="company-edit-backdrop" type="button" onClick={requestClose} aria-label="기업 수정창 닫기" />
     <section className="company-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="company-edit-title">
-      <div className="company-edit-dialog-head"><div><span className="eyebrow">{selected?.company_role === "main" ? "EDIT MY COMPANY" : "EDIT COMPETITOR"}</span><h1 id="company-edit-title">{editTargetLabel} 수정</h1></div><button className="company-edit-close" type="button" onClick={requestClose} aria-label="수정창 닫기">×</button></div>
+      <div className="company-edit-dialog-head"><div><h1 id="company-edit-title">{editTargetLabel} 수정</h1></div><button className="company-edit-close" type="button" onClick={requestClose} aria-label="수정창 닫기">×</button></div>
       {notice && <div className={`notice ${notice.type}`} role="status">{notice.message}</div>}
       {loading ? <p className="empty-state">기업 설정을 불러오는 중입니다.</p> : selected && <form className="edit-card" onSubmit={save}>
-        <div className="card-heading"><div><div className="company-role-line"><span className={`company-role-badge ${selected.company_role}`}>{selected.company_role === "main" ? "나의 기업" : COMPETITOR_LABEL}</span><span className="eyebrow">EDIT COLLECTION CONTEXT</span></div><h2>{selected.name} 설정</h2></div></div>
+        <div className="card-heading"><div><div className="company-role-line"><span className={`company-role-badge ${selected.company_role}`}>{selected.company_role === "main" ? "나의 기업" : COMPETITOR_LABEL}</span></div><h2>{selected.name} 설정</h2></div></div>
         <CompanySettingsFields idPrefix="management" form={form} industries={industries} disabled={saving || deleting} version={`${selected.id}-${formVersion}`} onFieldChange={changeField} onKeywordChange={changeKeyword} onKeywordDraftChange={changeKeywordDraft} />
         <div className="edit-form-actions">{selected.company_role === "competitor" && <button className="delete-button" type="button" onClick={removeCompany} disabled={saving || deleting}><span>{deleting ? "삭제 중..." : `${COMPETITOR_LABEL} 삭제`}</span><b aria-hidden="true">×</b></button>}<button className="submit-button" type="submit" disabled={saving || deleting || !isDirty}><span>{saving ? "저장 중..." : "변경사항 저장"}</span><b aria-hidden="true">→</b></button></div>
       </form>}
@@ -356,7 +354,7 @@ function CompanyRegistrationModal({ onClose, onCreated }) {
   return <div className="company-edit-modal">
     <button className="company-edit-backdrop" type="button" onClick={onClose} aria-label="비교 기업 등록창 닫기" />
     <section className="company-edit-dialog company-registration-dialog" role="dialog" aria-modal="true" aria-labelledby="company-registration-title">
-      <div className="company-edit-dialog-head"><div><span className="eyebrow">NEW COMPETITOR TARGET</span><h1 id="company-registration-title">비교 기업 등록</h1></div><button className="company-edit-close" type="button" onClick={onClose} aria-label="등록창 닫기">×</button></div>
+      <div className="company-edit-dialog-head"><div><h1 id="company-registration-title">비교 기업 등록</h1></div><button className="company-edit-close" type="button" onClick={onClose} aria-label="등록창 닫기">×</button></div>
       <SetupPage companyRole="competitor" registrationOnly onCreated={complete} />
     </section>
   </div>;
