@@ -104,7 +104,7 @@ html body { background: var(--page-bg); }
 :is(.general-app, .admin-app) .topbar .main-nav button { min-height: 32px; padding: 6px 12px; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: 14px; font-weight: 500; gap: 6px; }
 :is(.general-app, .admin-app) .topbar .main-nav button .ui-icon { width: 16px; height: 16px; --icon-color: currentColor; }
 :is(.general-app, .admin-app) .topbar .main-nav button:hover { background: var(--accent-surface); color: var(--foreground); }
-:is(.general-app, .admin-app) .topbar .main-nav button.active { background: var(--accent-surface); color: var(--foreground); box-shadow: none; font-weight: 500; }
+:is(.general-app, .admin-app) .topbar .main-nav button.active { background: var(--primary); color: var(--primary-foreground); box-shadow: none; font-weight: 600; }
 :is(.general-app, .admin-app) .topbar .main-nav button.active .ui-icon { --icon-color: currentColor; }
 :is(.general-app, .admin-app) .topbar .main-nav button:hover:not(.active) .ui-icon { --icon-color: currentColor; }
 :is(.general-app, .admin-app) .topbar-actions { gap: 8px; }
@@ -113,7 +113,7 @@ html body { background: var(--page-bg); }
 :is(.general-app, .admin-app) .topbar-live-collecting.stopped { background: var(--destructive-soft); color: var(--destructive); }
 :is(.general-app, .admin-app) .topbar-live-collecting.stopped .topbar-live-spinner { width: 8px; height: 8px; background: var(--destructive); box-shadow: none; }
 :is(.general-app, .admin-app) .topbar-live-collecting:hover .topbar-live-label { text-decoration: none; }
-:is(.general-app, .admin-app) .notification-siren { width: 36px; height: 36px; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); }
+:is(.general-app, .admin-app) .notification-siren { width: 36px; height: 36px; min-width: 36px; min-height: 36px; flex: 0 0 36px; padding: 0; box-sizing: border-box; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); }
 :is(.general-app, .admin-app) .notification-siren:hover, :is(.general-app, .admin-app) .notification-siren:focus-visible { border-color: var(--ring); background: var(--accent-surface); color: var(--foreground); outline-color: rgba(139, 92, 246, .3); }
 :is(.general-app, .admin-app) .notification-siren svg { width: 16px; height: 16px; }
 :is(.general-app, .admin-app) .notification-badge { top: -4px; right: -5px; min-width: 18px; height: 18px; border-color: var(--background); background: var(--primary); font-size: 11px; }

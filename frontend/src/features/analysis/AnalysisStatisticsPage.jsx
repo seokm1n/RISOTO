@@ -101,10 +101,6 @@ function DailySentimentCompositionChart({ days }) {
   </div>;
 }
 
-const HELD_STATUSES = new Set([
-  "근거부족_보류", "유형불명_보류", "유형불일치_보류", "대응불필요_종료",
-]);
-
 const RESPONSE_STATUS_LABELS = {
   not_applicable: "대응 불필요",
   pending: "생성 중",
@@ -142,11 +138,10 @@ export function RiskEventListContent({ risk, judgmentCompact = false, plain = fa
       </div>
     </>;
   }
-  // 목록 한 줄에 제목과 최근 기사 날짜만 남겨 공간을 아낀다(유형·위험도·판정 모델 정보는 상세 패널에서 확인).
+  // 목록에는 이슈 제목만 남긴다(날짜·유형·위험도·판정 모델 정보는 상세 패널에서 확인).
   if (judgmentCompact) {
     return <div className="risk-event-compact-head">
       <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
-      {risk.issue_latest_at && <small className="risk-event-recent-date">최근 기사 {formatDate(risk.issue_latest_at)}</small>}
     </div>;
   }
 
@@ -226,15 +221,14 @@ function ResponseDraftContent({ draft, riskTitle, risk }) {
 export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
   const riskId = risk?.id ?? null;
   const [loading, setLoading] = useState(false);
-  const [notes, setNotes] = useState(""); const [error, setError] = useState(null);
+  const [error, setError] = useState(null);
   const [generationStatus, setGenerationStatus] = useState(risk?.response_generation_status ?? "idle");
-  const { data: drafts = [], error: draftsError, refresh: refreshDrafts } = useSharedResource(
+  const { data: drafts = [], error: draftsError } = useSharedResource(
     `response-drafts:${riskId}`,
     () => riskId ? api.get(`/risk-events/${riskId}/response-drafts`).then((response) => response.data ?? []) : Promise.resolve([]),
     { intervalMs: ["pending", "generating"].includes(generationStatus) ? 5000 : 30000 },
   );
-  const loadDrafts = () => refreshDrafts().catch((requestError) => setError(getErrorMessage(requestError)));
-  useEffect(() => { setNotes(""); setError(null); }, [riskId]);
+  useEffect(() => { setError(null); }, [riskId]);
   useEffect(() => { setGenerationStatus(risk?.response_generation_status ?? "idle"); }, [risk?.response_generation_status, riskId]);
   if (!risk) return <p className="panel-empty">확인할 위험 이벤트를 선택해 주세요.</p>;
 
@@ -253,23 +247,6 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
     } catch (requestError) { setError(getErrorMessage(requestError)); }
     finally { setLoading(false); }
   };
-  const review = async (decision) => {
-    if (!latest) return;
-    setLoading(true); setError(null);
-    try { await api.post(`/response-drafts/${latest.id}/${decision}`, { notes }); await loadDrafts(); }
-    catch (requestError) { setError(getErrorMessage(requestError)); } finally { setLoading(false); }
-  };
-  // 검토가 끝난 초안은 결과만 남긴다. 되돌릴 수 없는 판정이라 버튼을 남겨 둘 이유가 없다.
-  const reviewed = latest && latest.approval_state !== "draft";
-  const reviewFooter = !content ? null
-    : HELD_STATUSES.has(content.status)
-      ? <div className="draft-review readonly"><span>{content.review_reason || "확인 후 다시 생성해 주세요."}</span></div>
-      : reviewed
-        ? <div className="draft-review readonly"><span className={`review-result ${latest.approval_state}`}>{latest.approval_state === "approved" ? "승인 완료" : "반려 완료"}</span></div>
-        : canReview
-          ? <div className="draft-review"><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="검토 메모 (선택)" /><button type="button" onClick={() => review("approve")} disabled={loading}>승인</button><button type="button" onClick={() => review("reject")} disabled={loading}>반려</button><span>외부 전송·실행 금지</span></div>
-          : <div className="draft-review readonly"><span>멤버 승인 대기</span></div>;
-
   return <div className="risk-detail">
     <div className="risk-detail-head">
       <div><h3><strong className="risk-event-display-title">{riskEventTitle(risk)}</strong></h3></div>
@@ -280,7 +257,7 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
     </div>
     {generationStatus === "failed" && risk.response_generation_error && <div className="notice error">{risk.response_generation_error}</div>}
     {(error || draftsError) && <div className="notice error">{error || getErrorMessage(draftsError)}</div>}
-    {content && <><ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} risk={risk} />{reviewFooter}</>}
+    {content && <ResponseDraftContent draft={latest} riskTitle={riskEventTitle(risk)} risk={risk} />}
   </div>;
 }
 

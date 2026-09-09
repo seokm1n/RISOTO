@@ -154,7 +154,7 @@ button:disabled { cursor: default; }
 .login-copyright { align-self: end; margin: 30px 0 0; color: var(--text-muted); font-size: var(--text-caption); }
 
 .brand { display: inline-flex; align-items: center; border: 0; background: transparent; color: inherit; padding: 0; }
-.main-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; min-width: 0; justify-content: center; justify-self: center; }
+.main-nav { display: flex; flex-wrap: nowrap; align-items: center; gap: 24px; min-width: 0; max-width: 100%; justify-content: safe center; justify-self: center; overflow-x: auto; overflow-y: hidden; }
 .main-nav button { border: 0; background: transparent; padding: 11px 14px; color: var(--text-copy); font-size: var(--text-body); font-weight: 600; white-space: nowrap; min-height: 46px; border-radius: 8px; transition: background 160ms ease, color 160ms ease; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .main-nav button:hover { background: var(--title-surface); color: var(--text-heading); }
 .main-nav button.active { background: var(--accent); color: #fffdf8; box-shadow: 0 3px 8px rgba(9, 9, 11, .16); font-weight: 700; }
@@ -183,8 +183,8 @@ button:disabled { cursor: default; }
 .topbar > .brand { justify-self: start; }
 .topbar > .main-nav { justify-self: center; }
 @media (max-width: 1399px) {
-  .topbar { display: flex; flex-wrap: wrap; }
-  .topbar .main-nav { order: 3; flex: 1 0 100%; justify-content: center; overflow: visible; }
+  .topbar { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 16px; }
+  .topbar .main-nav { min-width: 0; justify-content: safe center; overflow-x: auto; overflow-y: hidden; }
 }
 
 .brand { flex: 0 0 auto; font-family: var(--font-soft); font-size: 1.375rem; font-weight: 800; letter-spacing: -.035em; color: var(--text-heading); }
@@ -1760,9 +1760,9 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   .topbar { min-height: 64px; gap: 10px; }.main-nav { overflow-x: auto; }.main-nav button { padding: 8px 7px; white-space: nowrap; font-size: var(--text-body); min-height: 44px; }.workspace { padding: 32px 32px 80px; max-width: 1440px; }.workspace-head { align-items: stretch; flex-direction: column; margin-bottom: 28px; gap: 20px; }.edit-card { padding: var(--card-padding); border-radius: var(--card-radius); }.settings-note { grid-template-columns: 1fr; }.edit-form-actions { flex-direction: column; align-items: stretch; }.edit-form-actions .submit-button, .delete-button { width: 100%; }.edit-form-actions .submit-button { order: 1; margin-left: 0; }.delete-button { order: 2; }.monitor-toolbar { align-items: stretch; flex-direction: column; }.monitor-toolbar select { width: 100%; }.collection-countdown { grid-template-columns: 1fr auto; }.metric-grid { grid-template-columns: 1fr 1fr; gap: 10px; }.metric { min-height: 98px; padding: var(--card-padding); border-radius: var(--card-radius); }.metric strong { font-size: 1.7rem; }.filter-summary { grid-template-columns: 1fr 1fr; }.filter-summary div:nth-child(3n) { border-right: 1px solid var(--divider); }.filter-summary div:nth-child(2n) { border-right: 0; }.trend-legend { align-items: flex-start; flex-wrap: wrap; }.trend-legend small { width: 100%; margin-left: 0; }.company-table { overflow-x: auto; }.table-head, .table-row { min-width: 640px; font-size: var(--text-small); }.article-row { grid-template-columns: auto minmax(0, 1fr); }.readiness-banner, .feature-window-head { align-items: flex-start; flex-direction: column; }.window-metrics { grid-template-columns: 1fr 1fr; }.window-metrics div:nth-child(3n) { border-right: 1px solid var(--divider); }.window-metrics div:nth-child(2n) { border-right: 0; }.window-metrics div:first-child { padding-left: 12px; }.review-progress, .label-form, .draft-review, .risk-type-checks { grid-template-columns: 1fr; }.draft-generation-toolbar { align-items: stretch; flex-direction: column; }.draft-generation-toolbar .secondary-button { width: 100%; }.analysis-status-grid article { padding: 8px 6px; }.label-form > *, .review-article, .label-wide, .label-form .submit-button { grid-column: auto; }.label-form .submit-button { width: 100%; }.daily-check-summary { grid-template-columns: 1fr 1fr; }
   .company-edit-modal { padding: 0; }
   .company-edit-dialog { width: 100%; max-height: 100svh; min-height: 100svh; padding: 24px 18px; }
-  .topbar { display: flex; min-height: 0; gap: 10px; padding: 12px 16px; }.brand { justify-self: start; font-size: 1.1rem; }.brand-icon { width: 28px; height: 28px; }.brand span { display: none; }.topbar-actions {
+  .topbar { display: grid; min-height: 0; gap: 10px; padding: 12px 16px; }.brand { justify-self: start; font-size: 1.1rem; }.brand-icon { width: 28px; height: 28px; }.brand span { display: none; }.topbar-actions {
     gap: 6px;
-    margin-left: auto; }.notification-siren { width: 44px; height: 44px; }.account-button { min-height: 34px; padding-left: 8px; }.main-nav { width: 100%; padding-top: 10px; border-top: 1px solid var(--divider); }.main-nav button { flex: 0 0 auto; padding: 6px 7px; font-size: var(--text-body); min-height: 44px; }.management-notifications-head { align-items: flex-start; flex-direction: column; }.notification-summary { width: 100%; flex-wrap: wrap; }.notification-summary > span { flex: 1; justify-content: center; }.management-notification { grid-template-columns: auto minmax(0,1fr); }.notification-action { grid-column: 2; justify-self: start; }.management-notifications, .risk-detail-panel { scroll-margin-top: 106px; }
+    margin-left: auto; }.notification-siren { width: 44px; height: 44px; }.account-button { min-height: 34px; padding-left: 8px; }.main-nav { width: auto; min-width: 0; padding-top: 0; border-top: 0; }.main-nav button { flex: 0 0 auto; padding: 6px 7px; font-size: var(--text-body); min-height: 44px; }.management-notifications-head { align-items: flex-start; flex-direction: column; }.notification-summary { width: 100%; flex-wrap: wrap; }.notification-summary > span { flex: 1; justify-content: center; }.management-notification { grid-template-columns: auto minmax(0,1fr); }.notification-action { grid-column: 2; justify-self: start; }.management-notifications, .risk-detail-panel { scroll-margin-top: 106px; }
 }
 
 @media (max-width: 900px) {
@@ -1958,7 +1958,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 /* 검증 규칙 1이 "권고는 영향 경로 중 하나에 매달려야 한다"고 강제한다. 평평한 목록으로
    그리면 그 구조가 화면에서 사라지므로 경로별로 묶어 보여준다. */
 .draft-recommendations { gap: 9px; }
-.response-draft-v3 .draft-channel-group { display: grid; gap: 6px; padding: 10px 12px; border-left: 3px solid var(--divider); border-radius: 0 9px 9px 0; background: var(--page-surface); }
+.response-draft-v3 .draft-channel-group { display: grid; gap: 6px; padding: 10px 12px; border-radius: 9px; background: var(--page-surface); }
 .draft-channel { color: var(--text-heading); font-size: var(--text-caption); font-weight: 700; }
 .draft-channel-empty { margin: 0; color: var(--text-muted); font-size: var(--text-caption); }
 .draft-recommendations ul { padding-left: 0; gap: 9px; list-style: none; }
@@ -1974,7 +1974,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .draft-orphan-channel { margin: 0; color: #9e3b22; font-size: var(--text-caption); }
 
 /* 영향_없음일 때. "만들다 실패했다"가 아니라 "만들지 않기로 했다"로 읽혀야 한다. */
-.response-draft-v3 .draft-no-recommendation { padding: 11px 13px; border-left: 3px solid #a84f32; border-radius: 0 9px 9px 0; background: var(--page-surface); }
+.response-draft-v3 .draft-no-recommendation { padding: 11px 13px; border-radius: 9px; background: var(--page-surface); }
 .draft-no-recommendation p { margin: 0; color: var(--text-copy); font-size: var(--text-body); line-height: 1.7; overflow-wrap: anywhere; font-weight: 400; }
 
 /* 메인 경로 · 시나리오 ----------------------------------------------------- */
@@ -2033,7 +2033,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .draft-limitations { margin: 0; color: var(--text-heading); font-size: var(--text-caption); line-height: 1.5; }
 .draft-limitations strong { display: block; color: var(--text-heading); font-size: var(--text-caption); font-weight: 700; }
 /* 통과하면 아무것도 그리지 않는다. 담당자가 봐야 하는 건 걸린 항목뿐이다. */
-.response-draft-v3 .draft-verification { display: grid; gap: 5px; padding: 10px 12px; border-left: 3px solid #9e3b22; border-radius: 0 9px 9px 0; background: var(--page-surface); }
+.response-draft-v3 .draft-verification { display: grid; gap: 5px; padding: 10px 12px; border-radius: 9px; background: var(--page-surface); }
 .draft-verification strong { color: #9e3b22; font-size: var(--text-caption); font-weight: 700; }
 .draft-verification li { color: #7d3a26; font-size: var(--text-body); overflow-wrap: anywhere; }
 
@@ -2054,7 +2054,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .draft-headline p { color: var(--text-copy); font-size: var(--text-body); font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
 .draft-situation p { color: var(--text-copy); overflow-wrap: anywhere; font-weight: 400; }
 /* 금지 항목. 반사이익 국면에서 특히 중요해 검증 규칙 4가 비어 있는 것을 잡는다. */
-.response-draft-v3 .draft-avoid { padding: 10px 12px; border-left: 3px solid #9e3b22; border-radius: 0 9px 9px 0; background: var(--page-surface); }
+.response-draft-v3 .draft-avoid { padding: 10px 12px; border-radius: 9px; background: var(--page-surface); }
 .draft-avoid h5 { color: var(--text-heading); font-weight: 700; }
 .draft-avoid li { color: #7d3a26; overflow-wrap: anywhere; }
 /* 메인 경로 요약도 같은 이유로 첫 블록을 조금 세운다. */
@@ -2089,19 +2089,32 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   letter-spacing: .08em;
 }
 
-/* 상단에는 내부 등급 코드 대신 사람이 바로 이해할 우선순위와 운영 정보를 둔다.
-   tone별 테두리 색·그라디언트 음영은 걷어내고, 이 화면의 다른 카드(overview-panel 등)와
-   같은 톤(단일 배경 + 은은한 테두리)으로 맞춘다. 등급 구분은 아래 priority-pill 배지가
-   맡는다 - 위험 목록의 "긴급"/"주의" 배지와 같은 방식이라 화면 간 표기가 일관된다. */
+/* 상단에는 내부 등급 코드 대신 사람이 바로 이해할 우선순위와 운영 정보를 둔다. */
 .response-operations-view .response-command-card {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr);
   align-items: stretch;
   gap: 20px;
   padding: 20px 21px;
-  border: 1px solid var(--divider-strong);
+  border: 1px solid rgba(9, 9, 11, .3);
   border-radius: 14px;
-  background: var(--surface-muted);
+  background: linear-gradient(135deg, var(--surface-muted) 0%, var(--surface-muted) 100%);
+}
+.response-operations-view .response-command-card.urgent {
+  border-color: rgba(177, 84, 54, .34);
+  background: linear-gradient(135deg, #f3ddd2 0%, #eee4d8 100%);
+}
+.response-operations-view .response-command-card.caution {
+  border-color: rgba(9, 9, 11, .34);
+  background: linear-gradient(135deg, #f1e5c9 0%, #eee6d9 100%);
+}
+.response-operations-view .response-command-card.watch {
+  border-color: rgba(83, 128, 95, .3);
+  background: linear-gradient(135deg, #e4ece1 0%, var(--surface-muted) 100%);
+}
+.response-operations-view .response-command-card.opportunity {
+  border-color: rgba(69, 126, 112, .3);
+  background: linear-gradient(135deg, #dfeae4 0%, var(--surface-muted) 100%);
 }
 .response-command-copy { display: grid !important; align-content: start; gap: 9px !important; }
 .response-command-title { display: flex !important; flex-wrap: wrap; align-items: center; gap: 8px 11px !important; }
@@ -2119,24 +2132,6 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   line-height: 1.7;
   overflow-wrap: anywhere;
   font-weight: 400;
-}
-.response-operations-view .response-command-points {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding-left: 18px;
-  list-style: disc;
-}
-.response-operations-view .response-command-points > li {
-  color: var(--text-copy);
-  font-size: var(--text-body);
-  line-height: 1.65;
-  overflow-wrap: anywhere;
-  font-weight: 400;
-}
-.response-operations-view .response-command-points > li > strong {
-  color: var(--text-heading);
-  font-weight: 700;
 }
 .response-priority-pill {
   display: inline-flex;
@@ -2281,7 +2276,6 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-operations-view .response-plan-note {
   margin: 0;
   padding: 10px 12px;
-  border-left: 3px solid #c18b6a;
   background: var(--surface-muted);
   color: var(--text-copy);
   font-size: var(--text-caption);
@@ -2579,7 +2573,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   display: grid;
   gap: 6px;
   padding: 15px 16px;
-  border: 1px solid var(--divider-strong);
+  border: 1px solid rgba(83, 128, 95, .25);
   border-radius: 12px;
   background: var(--surface-soft);
 }
@@ -2655,7 +2649,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   display: grid;
   gap: 5px;
   padding: 13px 15px;
-  border: 1px solid var(--divider-strong);
+  border: 1px solid rgba(9, 9, 11, .26);
   border-radius: 12px;
   background: var(--surface-muted);
 }
@@ -2681,13 +2675,14 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   display: grid;
   gap: 7px;
   padding: 13px 14px;
-  border: 1px solid var(--divider-strong);
+  border: 1px solid rgba(9, 9, 11, .25);
   border-radius: 10px;
   background: var(--surface-muted);
 }
-.response-quality-alert > strong { color: var(--text-copy); font-size: var(--text-caption); font-weight: 700; }
+.response-quality-alert > strong { color: #8e4c35; font-size: var(--text-caption); font-weight: 700; }
 .response-quality-alert ul { margin: 0; padding-left: 18px; }
 .response-quality-alert li { color: var(--text-copy); font-size: var(--text-body); overflow-wrap: anywhere; }
+.response-quality-alert.neutral { border-color: rgba(9, 9, 11, .23); background: var(--surface-muted); }
 .response-quality-alert.neutral > strong { color: var(--text-copy); }
 .response-quality-alert.neutral > p { margin: 0; color: var(--text-copy); font-size: var(--text-body); line-height: 1.7; overflow-wrap: anywhere; font-weight: 400; }
 .response-legacy-overview {
@@ -2705,7 +2700,6 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   gap: 13px;
   padding: 17px;
   border: 1px solid rgba(9, 9, 11, .28);
-  border-left: 4px solid #aa813f;
   border-radius: 13px;
   background: var(--surface-muted);
 }
@@ -2720,15 +2714,6 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-draft-hold dd { margin: 0; color: var(--text-heading); font-size: var(--text-caption); font-weight: 700; }
 .response-hold-guide { color: var(--text-copy); font-size: var(--text-caption); line-height: 1.5; }
 .response-empty-state { margin: 0; padding: 18px; border: 1px dashed var(--divider-strong); border-radius: 11px; color: var(--text-muted); font-size: var(--text-caption); text-align: center; }
-
-/* 승인·반려는 실행 정보보다 한 단계 낮은 보조 제어로 보이게 한다. */
-.risk-detail > .draft-review {
-  padding: 13px;
-  border: 1px solid var(--divider-strong);
-  border-radius: 11px;
-  background: var(--surface-muted);
-}
-.risk-detail > .draft-review input { background: var(--surface-muted); }
 
 @media (max-width: 980px) {
   .response-operations-view .response-command-card { grid-template-columns: 1fr; }
@@ -2803,7 +2788,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 /* Shared readable page structure. Breakpoints follow the space the content needs. */
 @media (max-width: 1180px) {
   .topbar .brand span { display: none; }
-  .topbar .main-nav { order: 3; flex: 1 0 100%; overflow: visible; }
+  .topbar .main-nav { min-width: 0; overflow-x: auto; overflow-y: hidden; }
 }
 @media (max-width: 1023px) {
   .pipeline-split { grid-template-columns: minmax(0, 1fr); }
@@ -2812,8 +2797,8 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   :root { --card-padding: 20px; }
   .workspace, .workspace.my-page, .admin-app .admin-members-workspace, .registered-section { padding: 24px 16px 64px; }
   .topbar { position: static; }
-  .topbar .main-nav { width: 100%; gap: 12px; }
-  .topbar .main-nav button { white-space: normal; padding: 10px 12px; max-width: 100%; }
+  .topbar .main-nav { width: auto; min-width: 0; gap: 12px; }
+  .topbar .main-nav button { white-space: nowrap; padding: 10px 12px; max-width: none; }
   .metric-grid, .metric-grid.dashboard-metrics, .metric-grid.main-summary-metrics, .pipeline-stat-grid, .collection-summary-grid, .collection-company-row, .company-card, .company-card-keywords, .edit-form-grid, .form-grid, .risk-summary-grid, .pipeline-risk-metrics, .operations-grid, .review-grid, .model-layout, .admin-collection-grid, .response-command-facts, .response-quality-grid, .response-legacy-overview, .response-overview-grid, .response-peer-brief, .response-brief, .response-task-grid, .daily-check-summary, .analysis-status-grid { grid-template-columns: minmax(0, 1fr) !important; }
   .edit-field-wide, .company-card-keywords { grid-column: auto; }
   .pipeline-heading-filters, .monitor-toolbar, .analysis-toolbar, .admin-panel-heading, .collection-window-heading { align-items: stretch; flex-direction: column; }

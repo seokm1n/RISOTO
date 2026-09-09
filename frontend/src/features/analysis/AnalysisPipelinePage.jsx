@@ -84,6 +84,15 @@ async function fetchAllCompanyArticles(companyId, period, periodBasis = "article
 }
 
 const safeNumber = (value) => Math.max(Number(value) || 0, 0);
+const uniqueRiskIssues = (items = []) => {
+  const seen = new Set();
+  return items.filter((risk) => {
+    const key = risk.story_cluster_id ?? risk.risk_event_id ?? risk.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 function Stat({ label, value, note, tone = "", active = false, onClick }) {
   const className = `pipeline-stat ${tone}${onClick ? " selectable" : ""}${active ? " active" : ""}`;
   const content = <><div className="metric-label-row"><span>{label}</span><IconBadge name={tone === "danger" ? "risk" : tone === "success" ? "check" : tone === "warning" ? "clock" : "articles"} /></div><strong>{value}</strong>{note && <small>{note}</small>}</>;
@@ -102,7 +111,7 @@ function CollectionStage({ data, date, page, onDateChange, onPageChange, onOpenW
   return <div className="pipeline-stage-content">
     <div className="pipeline-stat-grid">
       <Stat label="최근 구간 기사" value={`${formatNumber(latest?.article_count)}건`} note="정제 통과" />
-      <Stat label="최근 구간 스토리" value={`${formatNumber(latest?.story_count)}건`} note="중복 보도 통합" />
+      <Stat label="최근 구간 이슈" value={`${formatNumber(latest?.story_count)}건`} note="중복 보도 통합" />
       <Stat label="출처" value={`${formatNumber(latest?.publisher_count)}곳`} note="최근 15분" />
       <Stat label="수집 품질" value={latest ? DATA_QUALITY_LABELS[latest.data_quality] : "대기"} note={latest ? formatDate(latest.window_end) : "생성 전"} tone={latest?.data_quality ?? ""} />
     </div>
@@ -287,6 +296,9 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
   const isRisk = classification === "risk";
   const classificationLabel = isRisk ? "위험" : "비위험";
   const summary = data.risks?.summary ?? {};
+  const riskIssueCount = isRisk
+    ? new Set(events.map((risk) => risk.story_cluster_id ?? risk.risk_event_id ?? risk.id)).size
+    : summary.risk;
   useEffect(() => {
     if (!isRisk || !selected || selected.id === selectedRiskId) return;
     onSelect(selected.id);
@@ -298,7 +310,7 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
       <div className="pipeline-panel-heading pipeline-risk-list-heading">
         <PanelTitle title={listTitle} />
         <div className="risk-class-toggle" role="group" aria-label="위험 판정 분류 선택">
-          <button type="button" className={`danger${isRisk ? " active" : ""}`} aria-pressed={isRisk} onClick={() => onClassificationChange("risk")}>위험 {formatNumber(summary.risk)}건</button>
+          <button type="button" className={`danger${isRisk ? " active" : ""}`} aria-pressed={isRisk} onClick={() => onClassificationChange("risk")}>위험 {formatNumber(riskIssueCount)}건</button>
           <button type="button" className={`success${classification === "non_risk" ? " active" : ""}`} aria-pressed={classification === "non_risk"} onClick={() => onClassificationChange("non_risk")}>비위험 {formatNumber(summary.non_risk)}건</button>
         </div>
       </div>
@@ -415,7 +427,7 @@ export default function AnalysisPipelinePage() {
           const next = await api.get(`/companies/${selectedCompanyId}/risk-judgments/page?${params}`);
           items.push(...(next.data?.items ?? []));
         }
-        result = { risks: { ...risks.data, items } };
+        result = { risks: { ...risks.data, items: uniqueRiskIssues(items) } };
       }
       return result;
     },
