@@ -2784,6 +2784,13 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
 .response-peer-view .response-task-copy > small { color: var(--text-copy); }
 .response-peer-view .response-task-copy > p { color: var(--text-copy) !important; overflow-wrap: anywhere; font-weight: 400; }
 .response-peer-view .response-task-due { color: var(--text-copy); }
+
+/* 카드가 align-items: stretch라 오른쪽 표가 왼쪽 본문 높이까지 늘어난다. 칸이 네 개일
+   때는 두 줄이 그 높이를 채웠는데, 동종 카드에서 위험 유형을 뺀 뒤로는 한 줄이 남아
+   빈 공간만 커졌다. 내용만큼만 높이를 쓰되 세로 가운데에 둔다 - 위에 붙이면 아래가
+   비어 보이고, 늘리면 글자가 허공에 뜬다. 칸 수가 달라져도 같은 모양이 된다. */
+.response-peer-view .response-command-facts { align-self: center; }
+.response-peer-view .response-command-facts > div { justify-items: center; text-align: center; }
 /* Search and review controls share a wrapping toolbar below the page description. */
 /* Shared readable page structure. Breakpoints follow the space the content needs. */
 @media (max-width: 1180px) {

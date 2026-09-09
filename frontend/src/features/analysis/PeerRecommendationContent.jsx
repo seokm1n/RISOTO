@@ -48,8 +48,12 @@ function ImpactHeader({ content, impact, recommendationCount }) {
     label: label({}, impact.impact_direction) || "영향 방향 확인",
     tone: "standard",
   };
+  // 위험 유형은 표시하지 않는다. 게이트 스키마가 유형을 필수로 요구해 "해당 없음"을
+  // 고를 수 없으므로, 근거가 사안과 어긋나면 아무 유형이나 붙는다(실측: 서울시 메신저
+  // 차단 기사에 품질·결함). 차단된 건에서는 그 값이 뒤 단계에서 쓰이지도 않는데 화면에만
+  // 남아 담당자가 기사와 무관한 유형을 읽는다. 유형은 사례·법령·권고의 내용으로 이미
+  // 드러나므로 여기서 한 번 더 단정하지 않는다.
   const facts = [
-    ["위험 유형", content.risk_type_label],
     ["영향 수준", impact.impact_level && impact.impact_level !== "없음" ? impact.impact_level : "낮음"],
     ["판단 확신도", percent(impact.confidence)],
     ["권고 과제", recommendationCount ? `${recommendationCount}개` : null],

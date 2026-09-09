@@ -498,12 +498,18 @@ def generate_response_draft(risk_event_id: int, force: bool = False) -> Response
         db.add(draft)
         if event.event_source == "story_v2":
             event.last_response_revision = event.evidence_revision
-            # 분류 안전장치가 "우리가 대응할 사안이 아니다"로 끝낸 건은 따로 표시한다.
-            # 탐지는 위험이라 했는데 대응 화면만 "대응 불필요"라고 말하면 같은 사건이
-            # 두 화면에서 다르게 읽힌다. 탐지 결과(status·is_risk)는 건드리지 않는다 -
-            # 그걸 덮으면 탐지 정확도를 나중에 잴 수 없다.
+            # 두 경로가 각자의 이유로 "대응할 것이 없다"로 끝낸 건은 따로 표시한다.
+            # 메인은 분류 안전장치가 대응할 사안이 아니라고 본 경우(대응불필요_종료),
+            # 동종은 영향 판단 게이트가 우리 기업으로 오는 경로를 찾지 못한 경우
+            # (영향없음_종료)다. 이유는 달라도 담당자가 할 일이 없다는 결과는 같으므로
+            # 화면에서 같은 상태로 읽혀야 한다. 동종 쪽이 빠져 있으면 아무것도 만들지
+            # 않고 끝낸 건이 "생성 완료"로 표시된다.
+            # 탐지 결과(status·is_risk)는 건드리지 않는다 - 그걸 덮으면 탐지 정확도를
+            # 나중에 잴 수 없다.
             event.response_generation_status = (
-                "not_applicable" if content.get("status") == "대응불필요_종료" else "generated"
+                "not_applicable"
+                if content.get("status") in ("대응불필요_종료", "영향없음_종료")
+                else "generated"
             )
             event.response_generation_error = None
         db.commit()
