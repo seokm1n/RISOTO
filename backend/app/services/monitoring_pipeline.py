@@ -26,11 +26,9 @@ from app.models import (
 )
 from app.services.article_filtering import (
     FilterConfig,
-    TOPICAL_RELEVANCE_TRAINED_COMPANIES,
     classify_article,
     content_hash,
     get_semantic_scorer,
-    normalized_content,
     normalize_text,
     normalize_url,
 )
@@ -50,11 +48,6 @@ from app.services.news_collectors import (
     YouTubeCommentCollector,
 )
 from app.services.llm_labeling import enqueue_llm_labeling_for_company
-from app.services.fine_tuned_text import (
-    predict_relevance_batch,
-    predict_topical_relevance_batch,
-)
-from app.services.company_reranker import predict_company_relevance_batch
 from app.services.sentiment import analyze_company_articles
 from app.services.risk_analysis import (
     backfill_historical_windows,
@@ -215,6 +208,49 @@ def _lock_company_collection(db, company_id: int) -> None:
             text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
             {"key": f"company-collection:{company_id}"},
         )
+
+
+def _classify_company_article(
+    db, company, keywords, item, raw, *, candidate_articles, semantic_scorer, config,
+):
+    """Deduplicate first; reuse only same-company, same-version judgments.
+
+    A duplicate can still be new to a company. In that case classify its canonical
+    article once, so unrelated companies do not inherit another company's match.
+    """
+    decision = classify_article(
+        company, keywords, item, raw, candidate_articles=candidate_articles,
+        semantic_scorer=semantic_scorer, config=config,
+    )
+    if decision.reason != "duplicate" or decision.duplicate_of_raw_id is None:
+        return decision
+    canonical_id = decision.duplicate_of_raw_id
+    previous = db.scalar(
+        select(ArticleFilterResult).where(
+            ArticleFilterResult.company_id == company.id,
+            ArticleFilterResult.filter_version == config.version,
+            or_(ArticleFilterResult.raw_article_id == canonical_id,
+                ArticleFilterResult.duplicate_of_raw_id == canonical_id),
+        ).order_by(ArticleFilterResult.id.desc()).limit(1)
+    )
+    reused = previous is not None
+    if previous is None:
+        canonical = db.get(RawNewsArticle, canonical_id)
+        if canonical is None:
+            return decision
+        previous = classify_article(
+            company, keywords, canonical, canonical, candidate_articles=[],
+            semantic_scorer=semantic_scorer, config=config,
+        )
+    decision.relevance_score = previous.relevance_score or 0.0
+    decision.advertising_score = previous.advertising_score or 0.0
+    decision.details = {
+        **(previous.details or {}), **decision.details,
+        "canonical_filter_reused": reused,
+        "canonical_filter_evaluated": not reused,
+        "canonical_company_id": company.id,
+    }
+    return decision
 
 
 def _curated_for_raw(db, raw_article_id: int | None) -> NewsArticle | None:
@@ -738,7 +774,8 @@ def run_collection(
                     )
                     article = None
                     if filter_result is None:
-                        decision = classify_article(
+                        decision = _classify_company_article(
+                            db,
                             company,
                             keywords,
                             item,
@@ -761,6 +798,8 @@ def run_collection(
                             decision.decision = "accepted"
                             decision.details["duplicate_merged"] = True
 
+                        if decision.decision != "accepted":
+                            article = None
                         if decision.decision == "accepted" and article is None:
                             article, article_created = _get_or_create_curated_article(
                                 db,
@@ -998,62 +1037,22 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                     )
                 )
             } if latest_hits else {}
-            article_texts = [normalized_content(raw) for raw, _hit in rows_to_evaluate]
-            aliases = [
-                keyword.value for keyword in keywords if keyword.keyword_type == "alias"
-            ]
-            products = [
-                keyword.value for keyword in keywords if keyword.keyword_type == "product"
-            ]
-            reranker_predictions = predict_company_relevance_batch(
-                [
-                    (company.name, aliases, products, raw.title, raw.summary or "")
-                    for raw, _hit in rows_to_evaluate
-                ]
-            )
-            if rows_to_evaluate and all(
-                prediction is not None for prediction in reranker_predictions
-            ):
-                # 승격된 공용 reranker가 전체 배치를 처리했으면 결과에 쓰이지 않는
-                # 구형 관련성 모델 두 개를 다시 실행하지 않는다.
-                relevance_predictions = [None] * len(article_texts)
-                topical_predictions = [None] * len(article_texts)
-            else:
-                relevance_predictions = predict_relevance_batch(
-                    [(company.name, text) for text in article_texts]
-                )
-                topical_predictions = (
-                    predict_topical_relevance_batch(article_texts)
-                    if company.name in TOPICAL_RELEVANCE_TRAINED_COMPANIES
-                    else [None] * len(article_texts)
-                )
-
             accepted_articles: dict[int, ArticleQueryHit] = {}
-            for (raw, hit), reranker_prediction, relevance_prediction, topical_prediction in zip(
-                rows_to_evaluate,
-                reranker_predictions,
-                relevance_predictions,
-                topical_predictions,
-            ):
-                decision = classify_article(
-                    company,
-                    keywords,
-                    raw,
-                    raw,
+            # Each stage gates the next: duplicates never enter the model batch,
+            # and advertising/review rows never reach company relevance inference.
+            for raw, hit in rows_to_evaluate:
+                decision = _classify_company_article(
+                    db, company, keywords, raw, raw,
                     candidate_articles=list({
                         candidate.id: candidate
                         for candidate in [
                             *same_url_candidates.get(raw.normalized_url, []),
                             *same_title_candidates.get(normalize_text(raw.title), []),
                         ]
-                        if candidate.id != raw.id
-                        and candidate.id < raw.id
+                        if candidate.id != raw.id and candidate.id < raw.id
                     }.values())[:250],
                     semantic_scorer=semantic_scorer,
                     config=filter_config,
-                    precomputed_company_reranker=reranker_prediction,
-                    precomputed_relevance=relevance_prediction,
-                    precomputed_topical_relevance=topical_prediction,
                 )
                 article = _curated_for_raw(db, decision.duplicate_of_raw_id)
                 if (
@@ -1066,6 +1065,8 @@ def reanalyze_existing_data(user_id: int) -> dict[str, int | str]:
                 ):
                     decision.decision = "accepted"
                     decision.details["duplicate_merged"] = True
+                if decision.decision != "accepted":
+                    article = None
                 if decision.decision == "accepted" and article is None:
                     article, _created = _get_or_create_curated_article(
                         db,

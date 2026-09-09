@@ -1,0 +1,147 @@
+{
+  "started_for": [
+    7938,
+    8640,
+    8642,
+    8641,
+    6538,
+    8639,
+    8637,
+    8638,
+    7513,
+    7775
+  ],
+  "updated_at": "2026-09-09T06:23:28.427504+00:00",
+  "results": [
+    {
+      "event_id": 8640,
+      "draft_id": 297,
+      "model": "gpt-5.6-sol",
+      "status": "대응불필요_종료",
+      "scenarios": 0,
+      "usage": {
+        "input_tokens": 1305,
+        "output_tokens": 424,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8642,
+      "draft_id": 299,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 3,
+      "usage": {
+        "input_tokens": 15178,
+        "output_tokens": 11927,
+        "calls": 6
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8641,
+      "draft_id": 300,
+      "model": "gpt-5.6-sol",
+      "status": "대응불필요_종료",
+      "scenarios": 0,
+      "usage": {
+        "input_tokens": 1339,
+        "output_tokens": 186,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 7938,
+      "draft_id": 301,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 2,
+      "usage": {
+        "input_tokens": 43430,
+        "output_tokens": 19811,
+        "calls": 9
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8639,
+      "draft_id": 302,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 2,
+      "usage": {
+        "input_tokens": 22413,
+        "output_tokens": 11483,
+        "calls": 6
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 6538,
+      "draft_id": 303,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 1,
+      "usage": {
+        "input_tokens": 40373,
+        "output_tokens": 18302,
+        "calls": 8
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8638,
+      "draft_id": 304,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 3,
+      "usage": {
+        "input_tokens": 38176,
+        "output_tokens": 16262,
+        "calls": 9
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8637,
+      "draft_id": 305,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 3,
+      "usage": {
+        "input_tokens": 35324,
+        "output_tokens": 19221,
+        "calls": 8
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 7775,
+      "draft_id": 306,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 2,
+      "usage": {
+        "input_tokens": 11043,
+        "output_tokens": 7611,
+        "calls": 4
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 7513,
+      "draft_id": 307,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "scenarios": 3,
+      "usage": {
+        "input_tokens": 46572,
+        "output_tokens": 15836,
+        "calls": 9
+      },
+      "state": "saved"
+    }
+  ]
+}

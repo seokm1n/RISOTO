@@ -30,7 +30,7 @@ from .schema import AlertPayload
 
 
 # 모델은 app.config의 response_model_name을 따른다(_llm.py). 이 저장소 기본값은
-# gpt-5.6-luna이고 **temperature를 지원하지 않는다**(실측: 400 Unsupported parameter).
+# 설정된 응답 모델을 사용하며 temperature 옵션은 보내지 않는다.
 #
 # 그래도 시나리오가 갈리는 이유: 시나리오는 같은 프롬프트를 반복 호출하는 방식이 아니라
 # 관점(SCENARIO_STANCES)을 프롬프트에 명시해 방향을 벌린다. temperature 없이도 서로 다른

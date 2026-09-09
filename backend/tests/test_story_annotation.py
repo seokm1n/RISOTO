@@ -110,14 +110,17 @@ class StoryAnnotationTests(unittest.TestCase):
 
     def test_mock_annotation_writes_audit_and_resumes_without_api_requests(self):
         items = [snapshot(1), snapshot(2)]
-        settings = SimpleNamespace(llm_labeling_model_name="gpt-4o-mini", openai_api_key="not-a-real-key")
+        settings = SimpleNamespace(llm_labeling_model_name="gpt-5.6-sol", openai_api_key="not-a-real-key")
 
         def create(**kwargs):
+            self.assertEqual(kwargs["model"], "gpt-5.6-sol")
+            self.assertNotIn("temperature", kwargs)
+            self.assertEqual(kwargs["reasoning"], {"effort": "none"})
             payload = json.loads(kwargs["input"])
             self.assertEqual(len(payload), 1)
             item = next(s for s in items if s["key"] == payload[0]["key"])
             text = json.dumps(response(item))
-            model = "gpt-4o-mini-2024-07-18"
+            model = "gpt-5.6-sol"
             return SimpleNamespace(id="resp_" + item["key"], status="completed", model=model,
                                    output_text=text, model_dump=lambda **kw: {
                                        "output_text": text, "model": model,

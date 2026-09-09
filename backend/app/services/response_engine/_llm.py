@@ -3,7 +3,7 @@
 독립 CLI로 만들 때는 os.environ + chat.completions를 썼지만, 이 저장소는
   - 설정을 app.config.get_settings()로 주입하고
   - Responses API(responses.create + text.format)를 쓰며
-  - 응답 모델이 gpt-5.6-luna로 temperature를 지원하지 않는다(실측: 400 Unsupported parameter)
+  - 응답 모델은 설정에서 선택하며 temperature 옵션을 보내지 않는다
 는 세 가지가 다르다. 호출 지점마다 분기하지 않도록 이 파일에 모아 둔다.
 
 **temperature를 안 쓰는데 시나리오가 갈리는 이유**: 시나리오는 같은 프롬프트를 여러 번

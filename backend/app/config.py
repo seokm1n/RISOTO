@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     baseline_min_days: int = 3
 
     # 기사 중복·광고·관련성 하이브리드 필터 설정
-    article_filter_version: str = "hybrid-company-reranker-v5"
+    article_filter_version: str = "staged-advertising-reranker-v6"
     article_filter_ai_enabled: bool = True
     article_filter_classifier_model: str = "Huffon/klue-roberta-base-nli"
     article_filter_semantic_model: str = (
@@ -117,7 +117,7 @@ class Settings(BaseSettings):
 
     # 근거 기반 대응 초안. 프로바이더가 준비되지 않으면 결정적 템플릿 초안으로 안전하게 폴백한다.
     openai_api_key: str = ""
-    response_model_name: str = "gpt-5.6-luna"
+    response_model_name: str = "gpt-5.6-sol"
     # "openai"(API 키 필요, 유료) 또는 "ollama"(로컬 무료 모델, API 키 불필요).
     response_generation_provider: str = "openai"
 
@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     llm_labeling_enabled: bool = True
     # "openai"(API 키 필요, 유료) 또는 "ollama"(로컬 무료 모델, API 키 불필요).
     llm_labeling_provider: str = "openai"
-    llm_labeling_model_name: str = "gpt-4o-mini"
+    llm_labeling_model_name: str = "gpt-5.6-sol"
     llm_labeling_batch_size: int = 20
     llm_labeling_audit_sample_size: int = 20
     # 백엔드 컨테이너에서 호스트의 Ollama 서버로 접근하는 주소.

@@ -1,0 +1,147 @@
+{
+  "started_for": [
+    9386,
+    9561,
+    8634,
+    8633,
+    8632,
+    8631,
+    7936,
+    7935,
+    5587,
+    5666
+  ],
+  "updated_at": "2026-09-09T08:45:06.580801+00:00",
+  "results": [
+    {
+      "event_id": 9386,
+      "draft_id": 323,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1832,
+        "output_tokens": 146,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 9561,
+      "draft_id": 324,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1920,
+        "output_tokens": 184,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8633,
+      "draft_id": 325,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1873,
+        "output_tokens": 232,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8634,
+      "draft_id": 326,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1501,
+        "output_tokens": 368,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8632,
+      "draft_id": 327,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1638,
+        "output_tokens": 274,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 7936,
+      "draft_id": 328,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1734,
+        "output_tokens": 272,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 7935,
+      "draft_id": 329,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1549,
+        "output_tokens": 220,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 5587,
+      "draft_id": 330,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 4891,
+        "output_tokens": 1980,
+        "calls": 3
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 5666,
+      "draft_id": 331,
+      "model": "gpt-5.6-sol",
+      "status": "영향없음_종료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 1761,
+        "output_tokens": 139,
+        "calls": 1
+      },
+      "state": "saved"
+    },
+    {
+      "event_id": 8631,
+      "draft_id": 332,
+      "model": "gpt-5.6-sol",
+      "status": "생성완료",
+      "generation_kind": "competitor_impact",
+      "usage": {
+        "input_tokens": 8167,
+        "output_tokens": 3969,
+        "calls": 4
+      },
+      "state": "saved"
+    }
+  ]
+}
