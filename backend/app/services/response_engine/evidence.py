@@ -113,7 +113,15 @@ def build(
     regulation_mapper = regulation_mapper or NullRegulationMapper()
 
     mentions = select_mentions(payload)
-    query_text = " ".join(m.text for m in mentions[:3])[:500]
+    # **사건 제목을 질의 맨 앞에 둔다.** 원문만으로 질의를 만들면 사안의 본질이 빠진다
+    # (실측: 국적 논란 사건의 상위 원문 3건이 "탈팡한다" 같은 일반 불만과 무관한 스팸이라
+    #  "이중국적"이 질의에 한 글자도 없었고, 검색이 "쿠팡 소송"으로만 매칭돼 개인정보
+    #  유출 집단소송이 유사 사례로 딸려 왔다). 제목은 스토리 군집의 대표 한 줄이라
+    #  그 사건이 무엇인지 가장 짧고 정확하게 말한다.
+    query_text = " ".join(
+        part for part in ((payload.event_title or "").strip(),
+                          " ".join(m.text for m in mentions[:3])) if part
+    )[:500]
     cases = case_retriever.search(risk_type_code, query_text, top_k=3)
     regulations = regulation_mapper.lookup(risk_type_code)
 

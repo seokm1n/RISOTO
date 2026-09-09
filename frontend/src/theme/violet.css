@@ -1,0 +1,155 @@
+/* Violet shadcn theme · pen.dev "리스크 브리핑 · Violet shadcn" 프레임 기준 토큰과 공통 셸(상단바) 스타일.
+ * 기존 갈색 토큰(--accent 등)은 다른 화면이 아직 쓰므로 그대로 두고, 새 토큰만 추가한다. */
+
+:root {
+  --background: #ffffff;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --primary-soft: #f5f3ff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent-surface: #f4f4f5;
+  --destructive: #dc2626;
+  --destructive-soft: #fef2f2;
+  --success-vi: #16a34a;
+  --success-vi-soft: #f0fdf4;
+  --warning-vi: #d97706;
+  --warning-vi-soft: #fffbeb;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #8b5cf6;
+  --violet-100: #ede9fe;
+  --violet-200: #ddd6fe;
+  --violet-300: #c4b5fd;
+  --violet-600: #7c3aed;
+  --violet-800: #5b21b6;
+  --zinc-100: #f4f4f5;
+  --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
+  --zinc-400: #a1a1aa;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-card: 0 1px 3px rgb(9 9 11 / .06);
+  --shadow-button: 0 1px 2px rgb(9 9 11 / .08);
+  --font-num: "Inter", var(--font-soft);
+  --font-mono-vi: "JetBrains Mono", ui-monospace, monospace;
+  --page-bg: var(--zinc-200);
+
+}
+
+/* 페이지 배경을 디자인과 같은 흰색으로 맞춘다. styles.css의 :root 선언보다 우선하도록 특이도를 올린다. */
+:root:root { --page-surface: var(--background); }
+
+/* 실제 캔버스(페이지) 배경은 옅은 회색으로 둬서 흰색 카드/패널의 경계가 잘 보이게 한다.
+ * --page-surface는 카드 안쪽 옅은 배경 등 다른 곳에서도 쓰이므로 값을 바꾸지 않고,
+ * body의 실제 배경색만 별도로 덮어쓴다. */
+html body { background: var(--page-bg); }
+
+/* 알림 패널처럼 특정 페이지 래퍼(.briefing-workspace 등)에 속하지 않고 .general-app 바로 아래
+ * 렌더링되는 공용 오버레이를 위해, 갈색 테마가 쓰던 변수들을 여기서도 한 번 더 다시 정의한다.
+ * 더 구체적인 페이지별 스코프가 이미 있으면 그쪽이 우선하고(가까운 조상이 이김), 이 블록은
+ * 그 외의 자리(알림 패널, 마이페이지 등)를 위한 기본값 역할만 한다. */
+.general-app {
+  --divider: var(--border);
+  --divider-strong: var(--border);
+  --divider-accent: var(--border);
+  --panel-surface: var(--card);
+  --surface-muted: var(--muted);
+  --surface-soft: var(--secondary);
+  --title-surface: var(--secondary);
+  --text-heading: var(--foreground);
+  --text-copy: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --accent: var(--primary);
+  --accent-hover: #6d28d9;
+  --success-strong: var(--success-vi);
+  --success: var(--success-vi);
+  --success-soft: var(--success-vi-soft);
+  --focus: var(--ring);
+  --focus-ring: rgba(139, 92, 246, .16);
+  --shadow-panel: var(--shadow-card);
+  /* 페이지 전체에서 헤딩/본문 크기를 하나의 척도로 통일한다: 페이지 제목 28px, 그 아래 모든
+     패널·다이얼로그·카드 제목은 18px, 본문 14px, 설명 13px, 캡션 12px. */
+  --section-title-size: 28px;
+  --card-title-size: 18px;
+  --text-body: 14px;
+  --text-small: 13px;
+  --text-caption: 12px;
+  --text-emphasis: 15px;
+}
+.general-app .icon-tone-accent { --icon-color: var(--primary); --icon-surface: var(--primary-soft); }
+.general-app .icon-tone-neutral { --icon-color: var(--muted-foreground); --icon-surface: var(--secondary); }
+
+/* ---------- Topbar (전 화면 공통) ---------- */
+:is(.general-app, .admin-app) .topbar {
+  min-height: 56px;
+  padding: 0 max(24px, calc((100% - 1392px) / 2));
+  gap: 16px;
+  column-gap: 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  box-shadow: none;
+}
+:is(.general-app, .admin-app) .topbar .brand { font-size: 15px; font-weight: 600; letter-spacing: -.3px; color: var(--foreground); gap: 10px; }
+:is(.general-app, .admin-app) .topbar .brand-icon { width: 28px; height: 28px; margin-right: 0; border-radius: var(--radius-sm); }
+:is(.general-app, .admin-app) .topbar .brand > .brand-copy { gap: 0; }
+:is(.general-app, .admin-app) .topbar .brand-copy small { display: none; }
+:is(.general-app, .admin-app) .topbar .main-nav { gap: 2px; }
+:is(.general-app, .admin-app) .topbar .main-nav button { min-height: 32px; padding: 6px 12px; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: 14px; font-weight: 500; gap: 6px; }
+:is(.general-app, .admin-app) .topbar .main-nav button .ui-icon { width: 16px; height: 16px; --icon-color: currentColor; }
+:is(.general-app, .admin-app) .topbar .main-nav button:hover { background: var(--accent-surface); color: var(--foreground); }
+:is(.general-app, .admin-app) .topbar .main-nav button.active { background: var(--accent-surface); color: var(--foreground); box-shadow: none; font-weight: 500; }
+:is(.general-app, .admin-app) .topbar .main-nav button.active .ui-icon { --icon-color: currentColor; }
+:is(.general-app, .admin-app) .topbar .main-nav button:hover:not(.active) .ui-icon { --icon-color: currentColor; }
+:is(.general-app, .admin-app) .topbar-actions { gap: 8px; }
+:is(.general-app, .admin-app) .topbar-live-collecting { min-height: 24px; padding: 2px 10px; border-radius: 999px; background: var(--success-vi-soft); color: var(--success-vi); font-size: 12px; font-weight: 600; letter-spacing: 0; gap: 6px; }
+:is(.general-app, .admin-app) .topbar-live-collecting .topbar-live-spinner { width: 8px; height: 8px; border: 0; background: var(--success-vi); animation: none; }
+:is(.general-app, .admin-app) .topbar-live-collecting.stopped { background: var(--destructive-soft); color: var(--destructive); }
+:is(.general-app, .admin-app) .topbar-live-collecting.stopped .topbar-live-spinner { width: 8px; height: 8px; background: var(--destructive); box-shadow: none; }
+:is(.general-app, .admin-app) .topbar-live-collecting:hover .topbar-live-label { text-decoration: none; }
+:is(.general-app, .admin-app) .notification-siren { width: 36px; height: 36px; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); }
+:is(.general-app, .admin-app) .notification-siren:hover, :is(.general-app, .admin-app) .notification-siren:focus-visible { border-color: var(--ring); background: var(--accent-surface); color: var(--foreground); outline-color: rgba(139, 92, 246, .3); }
+:is(.general-app, .admin-app) .notification-siren svg { width: 16px; height: 16px; }
+:is(.general-app, .admin-app) .notification-badge { top: -4px; right: -5px; min-width: 18px; height: 18px; border-color: var(--background); background: var(--primary); font-size: 11px; }
+:is(.general-app, .admin-app) .account-button { border-left: 1px solid var(--border); padding: 2px 0 2px 10px; }
+:is(.general-app, .admin-app) .account-button span { font-size: 12px; color: var(--muted-foreground); }
+:is(.general-app, .admin-app) .account-button strong { font-size: 12px; color: var(--foreground); }
+:is(.general-app, .admin-app) .logout-button { min-height: 36px; padding: 0 12px; border: 1px solid var(--input); border-radius: var(--radius-md); color: var(--foreground); font-size: 13px; font-weight: 500; background: var(--background); }
+:is(.general-app, .admin-app) .logout-button:hover, :is(.general-app, .admin-app) .logout-button:focus-visible { border-color: var(--ring); background: var(--accent-surface); color: var(--foreground); outline: 2px solid rgba(139, 92, 246, .3); }
+
+/* ---------- 날짜 선택 달력 (DatePicker) ----------
+ * 달력 팝업은 <dialog>를 document.body로 포탈해서 렌더링되므로 어느 페이지 래퍼에도 속하지 않는다.
+ * 브리핑/파이프라인 등 이미 violet으로 바꾼 화면에서만 쓰이므로 전역으로 다시 입힌다.
+ * DatePicker.css의 원본 규칙과 특이도가 같으면 소스 순서로 밀릴 수 있어, 모든 선택자를
+ * dialog.date-picker-dialog(또는 .date-picker)로 한 단계 더 구체화해 항상 이기게 한다. */
+.date-picker .date-picker-trigger { border-color: var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); font-weight: 500; }
+.date-picker .date-picker-trigger svg { color: var(--muted-foreground); }
+.date-picker .date-picker-trigger:hover, .date-picker .date-picker-trigger[aria-expanded="true"] { border-color: var(--ring); background: var(--accent-surface); }
+.date-picker .date-picker-trigger:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+dialog.date-picker-dialog { border-color: var(--border); border-radius: var(--radius-lg); background: var(--card); color: var(--foreground); box-shadow: 0 16px 48px rgb(9 9 11 / .2); font-family: var(--font-soft); }
+dialog.date-picker-dialog .date-picker-icon { color: var(--foreground); }
+dialog.date-picker-dialog .date-picker-icon:hover:not(:disabled) { background: var(--secondary); color: var(--primary); }
+dialog.date-picker-dialog .date-picker-month-bar { background: var(--muted); }
+dialog.date-picker-dialog .date-picker-month-selects select { border-color: var(--input); border-radius: var(--radius-sm); background: var(--background); color: var(--foreground); }
+dialog.date-picker-dialog .date-picker-grid th { color: var(--muted-foreground); }
+dialog.date-picker-dialog .date-picker-grid th:first-child { color: var(--primary); }
+dialog.date-picker-dialog .date-picker-grid .date-picker-day { color: var(--foreground); }
+dialog.date-picker-dialog .date-picker-grid .date-picker-day.outside { color: var(--muted-foreground); }
+dialog.date-picker-dialog .date-picker-grid .date-picker-day.today { border-color: var(--primary); }
+dialog.date-picker-dialog .date-picker-grid .date-picker-day:hover:not(:disabled) { background: var(--secondary); }
+dialog.date-picker-dialog .date-picker-grid .date-picker-day.selected, dialog.date-picker-dialog .date-picker-grid .date-picker-day.selected:hover { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+dialog.date-picker-dialog button:focus-visible, dialog.date-picker-dialog select:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+dialog.date-picker-dialog .date-picker-footer { border-top-color: var(--border); }
+dialog.date-picker-dialog .date-picker-footer span { color: var(--muted-foreground); }
+dialog.date-picker-dialog .date-picker-footer button { border-color: var(--input); border-radius: var(--radius-sm); background: var(--background); color: var(--primary); }
+
+/* 알림 패널·공용 확인 다이얼로그 제목도 같은 척도로 통일(크기는 --card-title-size 재정의로 18px) */
+.general-app .notification-drawer-head h2 { font-weight: 600; }
+.general-app .notification-drawer-head p { color: var(--muted-foreground); font-size: 13px; }
+.general-app .app-notice-dialog h2 { font-weight: 600; }
