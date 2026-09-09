@@ -196,11 +196,20 @@ def annotation_payload(batch: list[dict]) -> list[dict]:
             for s in batch]
 
 
+def generation_options(model: str) -> dict:
+    """Keep bounded classification output without unsupported sampling options."""
+    if model.startswith("gpt-5.6"):
+        return {"reasoning": {"effort": "none"}}
+    return {"temperature": 0}
+
+
 def protocol_for(snapshots: list[dict], model: str) -> dict:
-    prompt_hash = digest([INSTRUCTIONS, CONTRACT, LABEL_VERSION])
+    contract = {key: value for key, value in CONTRACT.items() if key != "temperature"}
+    contract.update(generation_options(model))
+    prompt_hash = digest([INSTRUCTIONS, contract, LABEL_VERSION])
     return dict(label_version=LABEL_VERSION, model=model, prompt_hash=prompt_hash,
                 corpus_hash=digest(snapshots), snapshot_count=len(snapshots),
-                instructions=INSTRUCTIONS, contract=CONTRACT,
+                instructions=INSTRUCTIONS, contract=contract,
                 source="ai_generated", human_reviewed=False)
 
 
@@ -280,7 +289,7 @@ def label_snapshots(output: Path, workers: int = 8, batch_size: int = 8) -> None
                 with OpenAI(api_key=settings.openai_api_key, timeout=120, max_retries=0) as client:
                     response = client.responses.create(
                         model=model, instructions=INSTRUCTIONS,
-                        input=json.dumps(payload, ensure_ascii=False), temperature=0,
+                        input=json.dumps(payload, ensure_ascii=False), **generation_options(model),
                         max_output_tokens=640 * len(batch) + 128,
                         text={"format": {"type": "json_schema", "name": "story_labels_v2",
                                          "strict": True, "schema": label_schema(batch)}})

@@ -130,10 +130,6 @@ export function RiskJudgmentModelInfo({ risk, showVersion = false }) {
 // 정보가 오히려 초안의 유형과 어긋나 보인다.
 export function RiskEventListContent({ risk, judgmentCompact = false, plain = false }) {
   const title = riskEventTitle(risk);
-  const isNonRisk = risk.classification === "non_risk";
-  const types = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
-  const primaryType = types.find((item) => item.is_primary) ?? types.find((item) => item.risk_type === risk.primary_type) ?? types[0];
-  const secondaryTypes = types.filter((item) => item !== primaryType);
   if (plain) {
     return <>
       <div className="risk-event-plain-head">
@@ -146,14 +142,25 @@ export function RiskEventListContent({ risk, judgmentCompact = false, plain = fa
       </div>
     </>;
   }
+  // 목록 한 줄에 제목과 최근 기사 날짜만 남겨 공간을 아낀다(유형·위험도·판정 모델 정보는 상세 패널에서 확인).
+  if (judgmentCompact) {
+    return <div className="risk-event-compact-head">
+      <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
+      {risk.issue_latest_at && <small className="risk-event-recent-date">최근 기사 {formatDate(risk.issue_latest_at)}</small>}
+    </div>;
+  }
+
+  const isNonRisk = risk.classification === "non_risk";
+  const types = [...(risk.risk_types ?? [])].sort((left, right) => Number(right.is_primary) - Number(left.is_primary));
+  const primaryType = types.find((item) => item.is_primary) ?? types.find((item) => item.risk_type === risk.primary_type) ?? types[0];
+  const secondaryTypes = types.filter((item) => item !== primaryType);
 
   return <>
     <strong className="risk-event-article-title risk-event-display-title"><span>{title}</span></strong>
     <div className="risk-event-type-row">{isNonRisk ? <span className="non-risk">비위험</span> : <>{primaryType ? <span className="primary">{RISK_TYPE_LABELS[primaryType.risk_type] ?? primaryType.risk_type}</span> : <span>분류 중</span>}{secondaryTypes.map((item) => <span key={item.risk_type}>{RISK_TYPE_LABELS[item.risk_type] ?? item.risk_type}</span>)}</>}</div>
-    <small className="risk-event-context">위험도 {formatRiskProbability(risk.risk_probability)}{judgmentCompact ? <> · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건</> : <> · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? 0)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳</>}</small>
+    <small className="risk-event-context">위험도 {formatRiskProbability(risk.risk_probability)} · 위험 판정 기사 {formatNumber(risk.risk_article_count ?? 0)}건 · 관련 보도 {formatNumber(risk.evidence_article_count ?? risk.evidence_articles?.length ?? 0)}건 · 출처 {formatNumber(risk.risk_source_count ?? risk.source_count ?? 0)}곳</small>
     <RiskJudgmentModelInfo risk={risk} />
-    {judgmentCompact && risk.issue_latest_at && <small className="risk-event-context">최근 기사 {formatDate(risk.issue_latest_at)}</small>}
-    {!judgmentCompact && <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>}
+    <div className="risk-event-list-footer"><small>마지막 근거 {formatDate(risk.last_evidence_at ?? risk.last_seen_at ?? risk.opened_at)}</small><span className={`response-status ${risk.response_generation_status}`}>{RESPONSE_STATUS_LABELS[risk.response_generation_status] ?? "미생성"}</span></div>
   </>;
 }
 

@@ -18,7 +18,7 @@ import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.services.klue_nli import KlueNliClassifier, get_klue_nli_classifier
-from app.services.fine_tuned_text import predict_filter, predict_relevance, predict_topical_relevance
+from app.services.fine_tuned_text import predict_filter, predict_advertising, predict_topical_relevance
 from app.services.company_reranker import (
     predict_company_relevance,
     strip_affiliate_boilerplate,
@@ -112,7 +112,7 @@ TOPICAL_RELEVANCE_TRAINED_COMPANIES = {
 class FilterConfig:
     """필터 버전, 판정 임계값 및 선택적 AI 모델 설정을 한데 묶는다."""
 
-    version: str = "hybrid-company-reranker-v5"
+    version: str = "staged-advertising-reranker-v6"
     duplicate_threshold: float = 0.92
     advertising_reject_threshold: float = 0.85
     advertising_review_threshold: float = 0.55
@@ -494,7 +494,7 @@ def classify_article(
     nli_classifier: KlueNliClassifier | None = None,
     config: FilterConfig | None = None,
     precomputed_company_reranker: dict | None | object = _PRECOMPUTED_UNSET,
-    precomputed_relevance: dict | None | object = _PRECOMPUTED_UNSET,
+    precomputed_advertising: dict | None | object = _PRECOMPUTED_UNSET,
     precomputed_topical_relevance: dict | None | object = _PRECOMPUTED_UNSET,
 ) -> FilterDecision:
     """데이터베이스를 변경하지 않고 원문 기사 하나의 중복·광고·관련성을 판정한다."""
@@ -521,194 +521,7 @@ def classify_article(
                 },
             },
         )
-    scorer = semantic_scorer if semantic_scorer is not None else get_semantic_scorer(config)
-    nli = nli_classifier
-    if nli is None and config.ai_enabled:
-        nli = get_klue_nli_classifier(
-            config.classifier_model_name, config.allow_model_download
-        )
-    groups = _keyword_groups(company, keywords)
-    text = normalized_content(item)
     item_url = normalize_url(getattr(item, "url", ""))
-
-    relevance_score, relevance_evidence = _rule_relevance(item, groups)
-    identity_in_title = any(
-        evidence.startswith("identity_in_title:") for evidence in relevance_evidence
-    )
-    product_in_title = any(
-        evidence.startswith("product_in_title:") for evidence in relevance_evidence
-    )
-    # 사람이 매긴 정답지(2026-09-04, docs/2026-09-04-model-quality-devlog.md 1-1)로 측정한 결과,
-    # 제목 언급은 71% 유효한 반면 본문에만 있는 언급은 32%만 유효했다. 통과시킨 기사의 60%가
-    # 본문 전용 언급이라 필터 정밀도(48.7%)를 크게 끌어내리고 있었다.
-    mentioned_in_body_only = not identity_in_title and not product_in_title and any(
-        evidence.startswith("identity_in_summary:") or evidence.startswith("product_in_summary:")
-        for evidence in relevance_evidence
-    )
-    ai_used = False
-    ai_relevance: float | None = None
-    advertising_score, advertising_evidence = _advertising_rules(item)
-    affiliate_only = _affiliate_only_target_mention(item, groups["identity"])
-    if affiliate_only:
-        advertising_score = max(advertising_score, 0.98)
-        relevance_score = 0.0
-        advertising_evidence.append("target_only_in_affiliate_disclosure")
-    ai_advertising: float | None = None
-    nli_labels: dict[str, float] | None = None
-    nli_error: str | None = None
-    company_reranker = (
-        precomputed_company_reranker
-        if precomputed_company_reranker is not _PRECOMPUTED_UNSET
-        else predict_company_relevance(
-            str(getattr(company, "name", "")),
-            groups["identity"],
-            groups["product"],
-            str(getattr(item, "title", "") or ""),
-            str(getattr(item, "summary", "") or ""),
-        )
-        if text and config.ai_enabled and not affiliate_only
-        else None
-    )
-    local_relevance = (
-        precomputed_relevance
-        if precomputed_relevance is not _PRECOMPUTED_UNSET
-        else predict_relevance(str(getattr(company, "name", "")), text)
-        if text and config.ai_enabled and nli_classifier is None and company_reranker is None
-        else None
-    )
-    fine_tuned = (
-        predict_filter(text)
-        if text and local_relevance is None and company_reranker is None and not affiliate_only
-        else None
-    )
-    if company_reranker is not None:
-        raw_reranker_score = float(company_reranker["relevant"])
-        model_relevance = _calibrated_reranker_score(company_reranker)
-        # reranker was validated on the 9 companies in TOPICAL_RELEVANCE_TRAINED_COMPANIES;
-        # on companies outside that set its own eval shows precision/recall on "relevant"
-        # collapsing from 64-76% to 33% (unseen_company_validation, 2026-09-04). Don't let
-        # it force a confident auto-accept there -- lower the floor and lean back on the
-        # company-name-agnostic rule score instead.
-        reranker_company_is_known = str(getattr(company, "name", "")) in TOPICAL_RELEVANCE_TRAINED_COMPANIES
-        if identity_in_title:
-            # A direct company name in a news headline is a high-recall anchor. This
-            # protects genuine logistics/facility incidents from an overconfident model.
-            if reranker_company_is_known:
-                relevance_score = max(0.76, 0.45 * relevance_score + 0.55 * model_relevance)
-            else:
-                relevance_score = max(0.60, 0.65 * relevance_score + 0.35 * model_relevance)
-        elif product_in_title:
-            if reranker_company_is_known:
-                relevance_score = max(0.70, 0.35 * relevance_score + 0.65 * model_relevance)
-            else:
-                relevance_score = max(0.55, 0.60 * relevance_score + 0.40 * model_relevance)
-        elif mentioned_in_body_only:
-            # Reranker confidence alone isn't enough evidence here (measured 32% precision on
-            # this exact case). Cap below the accept threshold so these route to review instead
-            # of auto-passing.
-            relevance_score = min(0.55, 0.30 * relevance_score + 0.70 * model_relevance)
-        elif relevance_score > 0:
-            relevance_score = 0.25 * relevance_score + 0.75 * model_relevance
-        else:
-            relevance_score = min(0.30, 0.55 * model_relevance)
-        ai_used = True
-        ai_relevance = model_relevance
-        nli_labels = {
-            "substantive": raw_reranker_score,
-            "incidental": 0.0,
-            "unrelated": 1.0 - raw_reranker_score,
-        }
-    elif local_relevance is not None:
-        model_relevance = float(local_relevance["relevant"])
-        if relevance_score > 0:
-            relevance_score = min(
-                1.0, 0.35 * relevance_score + 0.65 * model_relevance
-            )
-        else:
-            # 회사·제품 언급이 전혀 없는 글은 도메인 모델만으로 자동 승인하지 않는다.
-            relevance_score = min(0.30, 0.55 * model_relevance)
-        ai_used = True
-        ai_relevance = model_relevance
-        nli_labels = {
-            "substantive": model_relevance,
-            "incidental": 0.0,
-            "unrelated": float(local_relevance["irrelevant"]),
-        }
-    elif fine_tuned is not None:
-        rel = fine_tuned["relevance"]
-        relevance_score = float(rel["relevant"] + 0.5 * rel["incidental"])
-        advertising_score = float(fine_tuned["advertisement"]["yes"])
-        ai_used = True
-        ai_relevance = float(rel["relevant"])
-        ai_advertising = advertising_score
-        nli_labels = {
-            "substantive": float(rel["relevant"]),
-            "incidental": float(rel["incidental"]),
-            "unrelated": float(rel["irrelevant"]),
-            "advertisement": advertising_score,
-        }
-    # 규칙 점수를 NLI 문맥 판정으로 보정하되 기업 언급이 전혀 없으면 자동 승인하지 않는다.
-    if company_reranker is None and local_relevance is None and fine_tuned is None and nli is not None and text:
-        company_name = str(getattr(company, "name", "해당 기업"))
-        relevance_hypotheses = [
-            f"이 글의 중심 주제는 {company_name}의 사업, 경영, 제품 또는 기업 위험이다.",
-            f"이 글에서 {company_name}은 부수적으로만 언급된다.",
-            f"이 글은 {company_name}과 관련이 없다.",
-        ]
-        try:
-            values = nli.score_hypotheses([text], [relevance_hypotheses])[0]
-            nli_labels = dict(
-                zip(("substantive", "incidental", "unrelated"), values)
-            )
-            ai_used = True
-            ai_relevance = nli_labels["substantive"]
-            if relevance_score > 0:
-                relevance_score = min(
-                    1.0, 0.35 * relevance_score + 0.65 * ai_relevance
-                )
-            else:
-                # 기업·제품 언급이 없는 모델 단독 추측은 모호한 동명이인 기사를 자동 승인할 수 없다.
-                relevance_score = min(0.30, 0.55 * ai_relevance)
-
-            if advertising_score > 0:
-                advertising_hypotheses = [
-                    "이 글은 정보 전달을 위한 일반 기사다.",
-                    "이 글은 상품 구매, 상담 또는 홍보를 유도하는 광고다.",
-                ]
-                ad_values = nli.score_hypotheses(
-                    [text], [advertising_hypotheses]
-                )[0]
-                ai_advertising = ad_values[1]
-                nli_labels["advertisement"] = ai_advertising
-                if ai_advertising >= 0.70:
-                    advertising_score = max(advertising_score, ai_advertising)
-        except Exception as exc:  # 모델 실패 시에도 결정적 규칙 판정과 실패 기록을 유지한다.
-            nli_error = f"{type(exc).__name__}: {exc}"[:500]
-
-    # 회사 관련성(동명이인 등) 보조 모델: "관련 있음" 예측은 오탐이 잦아 점수를 올리는 데 쓰지 않고,
-    # "무관"을 확신할 때(예: SSG 랜더스 야구팀 vs SSG 회사)만 점수를 그만큼 낮추는 안전장치로만 쓴다.
-    # 학습에 쓴 9개 실제 기업 밖에서는 일반화가 검증되지 않았다 (영문·가상 기업 입력에서 90%+ 확신으로
-    # "무관"을 오판하는 과신 현상을 테스트에서 확인함) -- 그래서 학습된 기업일 때만 적용한다.
-    topical_relevance = (
-        precomputed_topical_relevance
-        if precomputed_topical_relevance is not _PRECOMPUTED_UNSET
-        else predict_topical_relevance(text)
-        if text and str(getattr(company, "name", "")) in TOPICAL_RELEVANCE_TRAINED_COMPANIES
-        else None
-    )
-    if topical_relevance is not None and company_reranker is None:
-        topical_irrelevant = float(topical_relevance.get("irrelevant", 0.0))
-        if (
-            topical_irrelevant >= config.topical_irrelevant_override_threshold
-            and not identity_in_title
-        ):
-            relevance_score = min(relevance_score, 1.0 - topical_irrelevant)
-            details_topical_override = topical_irrelevant
-        else:
-            details_topical_override = None
-    else:
-        details_topical_override = None
-
     # URL이 같거나, 정규화 제목이 완전히 같고 15분 이내인 경우만 중복 제거한다.
     # 비슷한 제목·본문은 실제 타 언론사의 후속 보도일 수 있으므로 story_cluster_id로만 묶는다.
     # YouTube 댓글처럼 제목이 개별 항목이 아니라 상위 콘텐츠(영상)를 나타내는 소스는
@@ -759,12 +572,211 @@ def classify_article(
     duplicate_score, duplicate_candidate, duplicate_evidence = (
         ranked[0] if ranked else (0.0, None, None)
     )
+    if duplicate_candidate is not None and duplicate_score >= config.duplicate_threshold:
+        return FilterDecision(
+            decision="rejected", reason="duplicate", relevance_score=0.0,
+            advertising_score=0.0, confidence=duplicate_score,
+            classifier_kind="rules_only", filter_version=config.version,
+            duplicate_score=duplicate_score,
+            duplicate_of_raw_id=getattr(duplicate_candidate, "id", None),
+            details={"duplicate_evidence": duplicate_evidence, "stopped_at": "duplicate"},
+        )
+
+    text = normalized_content(item)
+    advertising_score, advertising_evidence = _advertising_rules(item)
+    groups = _keyword_groups(company, keywords)
+    affiliate_only = _affiliate_only_target_mention(item, groups["identity"])
+    if affiliate_only:
+        advertising_score = max(advertising_score, 0.98)
+        advertising_evidence.append("target_only_in_affiliate_disclosure")
+    advertising = (
+        precomputed_advertising
+        if precomputed_advertising is not _PRECOMPUTED_UNSET
+        else predict_advertising(str(getattr(company, "name", "")), text)
+        if text and config.ai_enabled and not affiliate_only
+        else None
+    )
+    ai_advertising = float(advertising["advertising"]) if advertising else None
+    if ai_advertising is not None:
+        advertising_score = max(advertising_score, ai_advertising)
+    advertising_details = {
+        "affiliate_only_target_mention": affiliate_only,
+        "advertising_evidence": advertising_evidence,
+        "ai_advertising_score": ai_advertising,
+        "advertising_model_version": advertising.get("version") if advertising else None,
+        "advertising_input_schema": advertising.get("input_schema") if advertising else None,
+        "advertising_fallback": "rules_only" if advertising is None else None,
+        "advertising_thresholds": {
+            "reject": config.advertising_reject_threshold,
+            "review": config.advertising_review_threshold,
+        },
+        "target_company": str(getattr(company, "name", "")),
+    }
+    if advertising_score >= config.advertising_review_threshold:
+        return FilterDecision(
+            decision="rejected" if advertising_score >= config.advertising_reject_threshold else "review_required",
+            reason="advertisement", relevance_score=0.0,
+            advertising_score=advertising_score, confidence=max(0.5, advertising_score),
+            classifier_kind="local_advertising" if advertising else "rules_only",
+            filter_version=config.version,
+            details={
+                **advertising_details, "stopped_at": "advertising",
+                "classifier_model": advertising.get("version") if advertising else None,
+            },
+        )
+
+    scorer = semantic_scorer if semantic_scorer is not None else get_semantic_scorer(config)
+    nli = nli_classifier
+    if nli is None and config.ai_enabled:
+        nli = get_klue_nli_classifier(
+            config.classifier_model_name, config.allow_model_download
+        )
+    groups = _keyword_groups(company, keywords)
+    text = normalized_content(item)
+    item_url = normalize_url(getattr(item, "url", ""))
+
+    relevance_score, relevance_evidence = _rule_relevance(item, groups)
+    identity_in_title = any(
+        evidence.startswith("identity_in_title:") for evidence in relevance_evidence
+    )
+    product_in_title = any(
+        evidence.startswith("product_in_title:") for evidence in relevance_evidence
+    )
+    # 사람이 매긴 정답지(2026-09-04, docs/2026-09-04-model-quality-devlog.md 1-1)로 측정한 결과,
+    # 제목 언급은 71% 유효한 반면 본문에만 있는 언급은 32%만 유효했다. 통과시킨 기사의 60%가
+    # 본문 전용 언급이라 필터 정밀도(48.7%)를 크게 끌어내리고 있었다.
+    mentioned_in_body_only = not identity_in_title and not product_in_title and any(
+        evidence.startswith("identity_in_summary:") or evidence.startswith("product_in_summary:")
+        for evidence in relevance_evidence
+    )
+    ai_used = False
+    ai_relevance: float | None = None
+    nli_labels: dict[str, float] | None = None
+    nli_error: str | None = None
+    company_reranker = (
+        precomputed_company_reranker
+        if precomputed_company_reranker is not _PRECOMPUTED_UNSET
+        else predict_company_relevance(
+            str(getattr(company, "name", "")),
+            groups["identity"],
+            groups["product"],
+            str(getattr(item, "title", "") or ""),
+            str(getattr(item, "summary", "") or ""),
+        )
+        if text and config.ai_enabled and not affiliate_only
+        else None
+    )
+    fine_tuned = (
+        predict_filter(text)
+        if text and config.ai_enabled and company_reranker is None and not affiliate_only
+        else None
+    )
+    if company_reranker is not None:
+        raw_reranker_score = float(company_reranker["relevant"])
+        model_relevance = _calibrated_reranker_score(company_reranker)
+        # reranker was validated on the 9 companies in TOPICAL_RELEVANCE_TRAINED_COMPANIES;
+        # on companies outside that set its own eval shows precision/recall on "relevant"
+        # collapsing from 64-76% to 33% (unseen_company_validation, 2026-09-04). Don't let
+        # it force a confident auto-accept there -- lower the floor and lean back on the
+        # company-name-agnostic rule score instead.
+        reranker_company_is_known = str(getattr(company, "name", "")) in TOPICAL_RELEVANCE_TRAINED_COMPANIES
+        if identity_in_title:
+            # A direct company name in a news headline is a high-recall anchor. This
+            # protects genuine logistics/facility incidents from an overconfident model.
+            if reranker_company_is_known:
+                relevance_score = max(0.76, 0.45 * relevance_score + 0.55 * model_relevance)
+            else:
+                relevance_score = max(0.60, 0.65 * relevance_score + 0.35 * model_relevance)
+        elif product_in_title:
+            if reranker_company_is_known:
+                relevance_score = max(0.70, 0.35 * relevance_score + 0.65 * model_relevance)
+            else:
+                relevance_score = max(0.55, 0.60 * relevance_score + 0.40 * model_relevance)
+        elif mentioned_in_body_only:
+            # Reranker confidence alone isn't enough evidence here (measured 32% precision on
+            # this exact case). Cap below the accept threshold so these route to review instead
+            # of auto-passing.
+            relevance_score = min(0.55, 0.30 * relevance_score + 0.70 * model_relevance)
+        elif relevance_score > 0:
+            relevance_score = 0.25 * relevance_score + 0.75 * model_relevance
+        else:
+            relevance_score = min(0.30, 0.55 * model_relevance)
+        ai_used = True
+        ai_relevance = model_relevance
+        nli_labels = {
+            "substantive": raw_reranker_score,
+            "incidental": 0.0,
+            "unrelated": 1.0 - raw_reranker_score,
+        }
+    elif fine_tuned is not None:
+        rel = fine_tuned["relevance"]
+        relevance_score = float(rel["relevant"] + 0.5 * rel["incidental"])
+        ai_used = True
+        ai_relevance = float(rel["relevant"])
+        nli_labels = {
+            "substantive": float(rel["relevant"]),
+            "incidental": float(rel["incidental"]),
+            "unrelated": float(rel["irrelevant"]),
+            "advertisement": advertising_score,
+        }
+    # 규칙 점수를 NLI 문맥 판정으로 보정하되 기업 언급이 전혀 없으면 자동 승인하지 않는다.
+    if company_reranker is None and fine_tuned is None and nli is not None and text:
+        company_name = str(getattr(company, "name", "해당 기업"))
+        relevance_hypotheses = [
+            f"이 글의 중심 주제는 {company_name}의 사업, 경영, 제품 또는 기업 위험이다.",
+            f"이 글에서 {company_name}은 부수적으로만 언급된다.",
+            f"이 글은 {company_name}과 관련이 없다.",
+        ]
+        try:
+            values = nli.score_hypotheses([text], [relevance_hypotheses])[0]
+            nli_labels = dict(
+                zip(("substantive", "incidental", "unrelated"), values)
+            )
+            ai_used = True
+            ai_relevance = nli_labels["substantive"]
+            if relevance_score > 0:
+                relevance_score = min(
+                    1.0, 0.35 * relevance_score + 0.65 * ai_relevance
+                )
+            else:
+                # 기업·제품 언급이 없는 모델 단독 추측은 모호한 동명이인 기사를 자동 승인할 수 없다.
+                relevance_score = min(0.30, 0.55 * ai_relevance)
+
+        except Exception as exc:  # 모델 실패 시에도 결정적 규칙 판정과 실패 기록을 유지한다.
+            nli_error = f"{type(exc).__name__}: {exc}"[:500]
+
+    # 회사 관련성(동명이인 등) 보조 모델: "관련 있음" 예측은 오탐이 잦아 점수를 올리는 데 쓰지 않고,
+    # "무관"을 확신할 때(예: SSG 랜더스 야구팀 vs SSG 회사)만 점수를 그만큼 낮추는 안전장치로만 쓴다.
+    # 학습에 쓴 9개 실제 기업 밖에서는 일반화가 검증되지 않았다 (영문·가상 기업 입력에서 90%+ 확신으로
+    # "무관"을 오판하는 과신 현상을 테스트에서 확인함) -- 그래서 학습된 기업일 때만 적용한다.
+    topical_relevance = (
+        precomputed_topical_relevance
+        if precomputed_topical_relevance is not _PRECOMPUTED_UNSET
+        else predict_topical_relevance(text)
+        if text and config.ai_enabled and company_reranker is None and str(getattr(company, "name", "")) in TOPICAL_RELEVANCE_TRAINED_COMPANIES
+        else None
+    )
+    if topical_relevance is not None and company_reranker is None:
+        topical_irrelevant = float(topical_relevance.get("irrelevant", 0.0))
+        if (
+            topical_irrelevant >= config.topical_irrelevant_override_threshold
+            and not identity_in_title
+        ):
+            relevance_score = min(relevance_score, 1.0 - topical_irrelevant)
+            details_topical_override = topical_irrelevant
+        else:
+            details_topical_override = None
+    else:
+        details_topical_override = None
+
     classifier_kind = (
         "company_cross_encoder_reranker" if company_reranker is not None else
         "fine_tuned_klue_multitask" if fine_tuned is not None else
         "hybrid_klue_nli" if ai_used else "rules_only"
     )
     details = {
+        **advertising_details,
+        "stopped_at": "relevance",
         "relevance_evidence": relevance_evidence,
         "advertising_evidence": advertising_evidence,
         "duplicate_evidence": duplicate_evidence,
@@ -781,7 +793,7 @@ def classify_article(
         "relevance_input_schema": (
             company_reranker.get("input_schema")
             if company_reranker
-            else local_relevance.get("input_schema") if local_relevance else None
+            else None
         ),
         "company_reranker_version": (
             company_reranker.get("version") if company_reranker else None

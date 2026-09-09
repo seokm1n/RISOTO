@@ -60,7 +60,7 @@ def write_model_card(output: Path, report: dict) -> None:
     text = f"""# 스토리 위험 모델 — {report['version']}
 
 **AI 생성 라벨로 학습한 후보 모델이며, 운영 사건 생성에는 아직 연결하지 않았다.**
-기사 텍스트에 대해 독립 호출한 gpt-4o-mini 라벨을 사용했다. 사람 검수 정답이 아니다.
+기사 텍스트에 대해 독립 호출한 {', '.join(sorted(report.get('annotation_models', {}))) or '기록된 모델'} 라벨을 사용했다. 사람 검수 정답이 아니다.
 AI 추가 점검에 따른 수정이 있으면 `ai_review.json`에 별도로 보존한다.
 
 ## 산출물

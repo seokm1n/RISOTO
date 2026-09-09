@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
 
+import "./MyPage.css";
+
 export default function MyPage({ session, onAccountDeleted }) {
   const [companies, setCompanies] = useState([]);
   const [companyLoading, setCompanyLoading] = useState(true);

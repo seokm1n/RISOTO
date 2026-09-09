@@ -135,6 +135,19 @@ def predict_relevance(company_name: str, text: str | None = None) -> dict | None
     return predict_relevance_batch([item])[0]
 
 
+def predict_advertising(company_name: str, text: str) -> dict | None:
+    """Expose normal/filter probabilities as advertising, never topical relevance."""
+    result = predict_relevance_batch([(company_name, text)])[0]
+    if result is None:
+        return None
+    return {
+        "version": result["version"],
+        "normal": result["relevant"],
+        "advertising": result["irrelevant"],
+        "input_schema": result["input_schema"],
+    }
+
+
 def predict_topical_relevance_batch(texts: list[str]) -> list[dict | None]:
     """Return relevant/irrelevant probabilities from the promoted company-topicality classifier.
 

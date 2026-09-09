@@ -1,0 +1,31 @@
+/* 마이페이지 · Violet shadcn
+ * 회원 탈퇴는 위험 신호(옅은 빨강 채움), 비밀번호 변경은 우리 보라 테마 그대로.
+ * styles.css의 원본 규칙과 특이도가 같으면 소스 순서로 밀릴 수 있어, 모든 선택자를
+ * .my-page(또는 상위 클래스)로 한 단계 더 구체화해 항상 이기게 한다. */
+.my-page.my-page .edit-card.account-settings-card { border-color: var(--border); }
+.my-page.my-page .account-readonly-list dt { background: var(--secondary); color: var(--secondary-foreground); }
+.my-page.my-page .my-password-field { border-color: var(--input); }
+.my-page.my-page .my-password-field.invalid { border-color: var(--destructive); }
+.my-page.my-page .my-password-field:focus-within { box-shadow: 0 0 0 3px rgba(139, 92, 246, .16); }
+
+/* 비밀번호 변경: 보라 테마 solid 버튼 */
+.my-page.my-page .password-card .submit-button { border: 0; background: var(--primary); color: var(--primary-foreground); }
+.my-page.my-page .password-card .submit-button:hover:not(:disabled) { background: #6d28d9; }
+
+/* 회원 탈퇴: 옅은 적색 채움으로 "잠깐만" 경고를 준다 */
+.my-page.my-page .account-delete-row .submit-button.account-delete-button { border: 1px solid var(--destructive-soft); background: var(--destructive-soft); color: var(--destructive); }
+.my-page.my-page .account-delete-row .submit-button.account-delete-button:hover:not(:disabled), .my-page.my-page .account-delete-row .submit-button.account-delete-button:focus-visible { background: var(--destructive-soft); border-color: var(--destructive); outline: 2px solid rgba(220, 38, 38, .16); outline-offset: 2px; }
+
+/* 탈퇴 확인 다이얼로그도 같은 경고색으로 통일 */
+.account-delete-modal-layer .account-delete-modal { background: var(--card); border-radius: var(--radius-lg); }
+.account-delete-modal-layer .account-delete-modal-head { border-bottom-color: var(--border); }
+.account-delete-modal-layer .account-delete-modal > input { border-color: var(--input); border-radius: var(--radius-md); background: var(--background); }
+.account-delete-modal-layer .account-delete-modal > input:focus-visible { border-color: var(--destructive); box-shadow: 0 0 0 3px var(--destructive-soft); }
+.account-delete-modal-layer .account-delete-confirm { border-color: var(--destructive); background: var(--destructive); color: #fff; border-radius: var(--radius-md); }
+.account-delete-modal-layer .account-delete-confirm:hover:not(:disabled), .account-delete-modal-layer .account-delete-confirm:focus-visible { background: #b91c1c; border-color: #b91c1c; outline: 2px solid rgba(220, 38, 38, .18); outline-offset: 2px; }
+
+/* 헤딩 크기·굵기를 다른 페이지와 통일: 페이지 제목 28px/700, 카드 제목 18px/600 */
+.my-page.my-page .my-page-head h1 { font-size: 28px; font-weight: 700; letter-spacing: -.8px; }
+.my-page.my-page .my-page-head p { color: var(--muted-foreground); font-size: 13px; }
+.my-page.my-page .my-card-head h2 { font-weight: 600; }
+.account-delete-modal-layer .account-delete-modal-head h2 { font-weight: 600; }
