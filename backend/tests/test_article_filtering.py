@@ -29,6 +29,10 @@ class ArticleFilteringTests(unittest.TestCase):
 
     def setUp(self):
         """각 테스트에서 공유할 기업, 키워드와 규칙 전용 필터 설정을 준비한다."""
+        for target in ("predict_advertising", "predict_filter", "predict_topical_relevance", "get_klue_nli_classifier"):
+            model_patch = patch(f"app.services.article_filtering.{target}", return_value=None)
+            model_patch.start()
+            self.addCleanup(model_patch.stop)
         self.company = SimpleNamespace(
             name="Acme Robotics",
             normalized_name="acme robotics",
@@ -360,13 +364,13 @@ class ArticleFilteringTests(unittest.TestCase):
         self.assertEqual((result.decision, result.reason), ("rejected", "irrelevant"))
         self.assertEqual(result.classifier_kind, "hybrid_klue_nli")
 
-    @patch("app.services.article_filtering.predict_relevance")
-    def test_local_relevance_model_receives_target_company(self, predict_relevance):
-        """로컬 관련성 모델 입력에서 대상 기업이 빠지는 회귀를 방지한다."""
-        predict_relevance.return_value = {
-            "version": "local:test-relevance",
-            "relevant": 0.90,
-            "irrelevant": 0.10,
+    @patch("app.services.article_filtering.predict_advertising")
+    def test_advertising_model_receives_target_company(self, predict_advertising):
+        """광고 모델의 기업 입력과 독립 광고 점수를 검증한다."""
+        predict_advertising.return_value = {
+            "version": "local:test-advertising",
+            "normal": 0.90,
+            "advertising": 0.10,
             "input_schema": "company-title-content-v1",
         }
 
@@ -382,20 +386,20 @@ class ArticleFilteringTests(unittest.TestCase):
                 semantic_model_name="unused",
                 allow_model_download=False,
             ),
-            # 이 테스트는 로컬 topical-relevance 모델 입력 계약만 검증한다. reranker
-            # 아티팩트 유무와 무관하게 predict_relevance가 호출되도록 명시적으로 끈다.
+            # 광고 판정 입력을 외부 모델 없이 검증한다.
             precomputed_company_reranker=None,
         )
 
-        predict_relevance.assert_called_once_with(
+        predict_advertising.assert_called_once_with(
             "Acme Robotics",
             "acme robotics launches robo one the company announced a product update.",
         )
         self.assertEqual(result.details["target_company"], "Acme Robotics")
         self.assertEqual(
-            result.details["relevance_input_schema"],
+            result.details["advertising_input_schema"],
             "company-title-content-v1",
         )
+        self.assertEqual(result.advertising_score, 0.10)
 
 
 if __name__ == "__main__":
