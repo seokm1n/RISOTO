@@ -83,13 +83,13 @@ export default function App() {
   }
 
   const requestedPath = location.state?.from?.pathname;
-  const requestedLocation = requestedPath && !["/login", "/signup", "/onboarding/main-company"].includes(requestedPath)
+  const requestedLocation = auth.user.role === "admin" && requestedPath && !["/login", "/signup", "/onboarding/main-company"].includes(requestedPath)
     ? `${requestedPath}${location.state?.from?.search ?? ""}${location.state?.from?.hash ?? ""}`
     : auth.user.role === "admin" ? "/admin/members" : "/main";
 
   return <Routes>
     <Route path="/login" element={<Navigate to={requestedLocation} replace />} />
-    <Route path="/signup" element={<Navigate to="/collection" replace />} />
+    <Route path="/signup" element={<Navigate to="/main" replace />} />
     <Route path="/onboarding/main-company" element={<Navigate to="/main" replace />} />
     <Route path="*" element={<WorkspaceApp session={auth} onLogout={logout} onAccountDeleted={completeAccountDeletion} />} />
   </Routes>;

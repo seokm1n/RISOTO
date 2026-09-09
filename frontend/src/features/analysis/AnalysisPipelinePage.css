@@ -56,7 +56,7 @@
 .ap-stage-head p { margin: 0; color: var(--muted-foreground); font-size: 13px; }
 
 /* ---------- 공용: 알림/빈 상태 ---------- */
-.analysis-pipeline-shell.analysis-pipeline-shell .notice { margin: 0; padding: 12px 16px; border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius-md); font-size: 13px; }
+.analysis-pipeline-shell.analysis-pipeline-shell .notice { margin: 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 13px; }
 .analysis-pipeline-shell.analysis-pipeline-shell .notice.error { background: var(--destructive-soft); border-color: var(--destructive); color: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell .notice.success { background: var(--success-vi-soft); border-color: var(--success-vi); color: var(--success-vi); }
 .analysis-pipeline-shell.analysis-pipeline-shell .empty-state { max-width: none; margin: 0; padding: 56px 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-card); text-align: center; color: var(--muted-foreground); font-size: 14px; }
@@ -123,9 +123,10 @@
 /* ---------- 세그먼트 탭 (스토리 보기) ---------- */
 .analysis-pipeline-shell.analysis-pipeline-shell .story-view-tabs { gap: 2px; padding: 4px; border-radius: var(--radius-md); background: var(--muted); }
 .analysis-pipeline-shell.analysis-pipeline-shell .story-view-tabs button { min-height: 32px; padding: 0 12px; border-radius: var(--radius-sm); color: var(--muted-foreground); font: 500 13px/1 var(--font-soft); }
-.analysis-pipeline-shell.analysis-pipeline-shell .story-view-tabs button.active { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgb(9 9 11 / .08); }
+.analysis-pipeline-shell.analysis-pipeline-shell .story-view-tabs button.active { background: var(--primary); color: var(--primary-foreground); box-shadow: 0 1px 2px rgb(109 40 217 / .24); }
 .analysis-pipeline-shell.analysis-pipeline-shell .story-view-tabs button strong { background: var(--secondary); color: var(--foreground); }
-.analysis-pipeline-shell.analysis-pipeline-shell .story-group-heading .story-view-tabs button.active { box-shadow: 0 1px 2px rgb(9 9 11 / .08); }
+.analysis-pipeline-shell.analysis-pipeline-shell .story-view-tabs button.active strong { background: rgb(255 255 255 / .2); color: var(--primary-foreground); }
+.analysis-pipeline-shell.analysis-pipeline-shell .story-group-heading .story-view-tabs button.active { box-shadow: 0 1px 2px rgb(109 40 217 / .24); }
 
 /* ---------- 표 ---------- */
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-table th { background: var(--muted); color: var(--muted-foreground); font-size: 12px; font-weight: 500; letter-spacing: 0; }
@@ -186,7 +187,7 @@
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-dropdown-action { background: var(--secondary); color: var(--foreground); }
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-dropdown-menu { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card); box-shadow: var(--shadow-card); }
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-head h3 { color: var(--foreground); }
-.analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-metrics { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--muted); }
+.analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-metrics { border: 1px solid var(--violet-200); border-radius: var(--radius-md); background: var(--primary-soft); }
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-metrics > div { border-right: 1px solid var(--border); }
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-metrics span { color: var(--muted-foreground); }
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-risk-metrics strong { color: var(--foreground); font-family: var(--font-num); }
@@ -203,6 +204,19 @@
 .analysis-pipeline-shell.analysis-pipeline-shell .pagination, .analysis-pipeline-shell.analysis-pipeline-shell .page-count { border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 13px; }
 .analysis-pipeline-shell.analysis-pipeline-shell .pagination button { min-height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); font-size: 13px; font-weight: 500; }
 .analysis-pipeline-shell.analysis-pipeline-shell .pagination button:hover:not(:disabled) { background: var(--accent-surface); }
+
+/* 대응 페이지의 제목 행: 버튼 유무와 관계없이 같은 높이와 정렬을 사용한다. */
+.analysis-pipeline-shell .risk-management-workspace .pipeline-panel-heading { align-items: center; min-height: 61px; box-sizing: border-box; }
+.analysis-pipeline-shell .risk-management-workspace .pipeline-panel-heading > .panel-title { margin: 0; }
+.analysis-pipeline-shell .risk-management-workspace .panel-title h2 { margin: 0; line-height: 1.5; }
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-head { align-items: center; min-height: 36px; }
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-head h3,
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-status { margin-top: 0; }
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-status { align-self: center; }
+.analysis-pipeline-shell .risk-management-workspace .response-draft :is(h4, h5) { margin: 0; line-height: 1.5; }
+.analysis-pipeline-shell .risk-management-workspace .response-draft :is(.response-command-title, .response-section-heading, .response-hold-heading) { align-items: center; }
+.analysis-pipeline-shell .risk-management-workspace .response-draft .response-section-heading { min-height: 44px; padding-bottom: 12px; box-sizing: border-box; }
+.analysis-pipeline-shell .risk-management-workspace .response-option-split > article.recommended { padding-top: 16px; }
 
 /* ---------- 대응 방안 (RiskManagementPage/MainResponseContent/PeerRecommendationContent 공용) ----------
  * 이 컴포넌트들은 .response-*, .draft-* 클래스 수백 개가 --divider/--text-heading/--surface-muted 같은
@@ -239,11 +253,10 @@
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-quality-alert > strong, .response-avoid-card h5, .response-avoid-card li) { color: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-quality-alert.neutral > strong { color: var(--warning-vi); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-no-action-card > strong, .response-metric-chips > span) { color: var(--success-vi); }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-metric-chips > span { border-color: var(--success-vi); }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-metric-chips > span { border-color: var(--border); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.draft-review-flag, .draft-verify-first, .draft-orphan-channel) { color: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-scenario.selected, .response-draft-v3 .response-scenario.selected) { border-color: var(--primary); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.selected-mark, .response-draft-v3 .draft-no-recommendation) { color: var(--primary); }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-draft-v3 .draft-no-recommendation { border-left-color: var(--primary); }
 .analysis-pipeline-shell.analysis-pipeline-shell .draft-kind.main { background: var(--primary); }
 .analysis-pipeline-shell.analysis-pipeline-shell .draft-kind.competitor { background: #52525b; }
 .analysis-pipeline-shell.analysis-pipeline-shell .draft-kind.hold { background: var(--muted-foreground); }
@@ -263,29 +276,25 @@
 .analysis-pipeline-shell.analysis-pipeline-shell .response-timeline-dot { background: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 
 /* 상태별 명령 카드(긴급/주의/관찰/기회)와 우선순위 배지 */
-.analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card { border-left-color: var(--primary); background: linear-gradient(135deg, var(--muted) 0%, var(--muted) 100%); }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card { border-left-width: 1px; border-left-color: var(--primary); background: linear-gradient(135deg, var(--muted) 0%, var(--muted) 100%); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.urgent { border-color: var(--destructive) !important; border-left-color: var(--destructive); background: linear-gradient(135deg, var(--destructive-soft) 0%, var(--muted) 100%); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.caution { border-color: var(--warning-vi) !important; border-left-color: var(--warning-vi); background: linear-gradient(135deg, var(--warning-vi-soft) 0%, var(--muted) 100%); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.watch { border-color: var(--primary) !important; border-left-color: var(--primary); background: linear-gradient(135deg, var(--primary-soft) 0%, var(--muted) 100%); }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.opportunity { border-color: var(--success-vi) !important; border-left-color: var(--success-vi); background: linear-gradient(135deg, var(--success-vi-soft) 0%, var(--muted) 100%); }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.opportunity { border-color: var(--border) !important; background: linear-gradient(135deg, var(--success-vi-soft) 0%, var(--muted) 100%); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill { background: var(--primary); color: #fff; }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill.urgent { background: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill.caution { background: var(--warning-vi); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill.watch { background: var(--primary); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill.opportunity { background: var(--success-vi); }
 
-/* 권고 카드(동종 경로)와 한계/품질 알림의 좌측 강조선 */
+/* 현재 권고 카드는 다른 대응 카드와 같은 중립 테두리를 사용한다. */
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-peer-brief, .response-brief) > article.recommended,
-.analysis-pipeline-shell.analysis-pipeline-shell .response-option-split > article.recommended { border-left-color: var(--success-vi) !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-no-action-card { border-color: var(--success-vi) !important; border-left-color: var(--success-vi) !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-limitations { border-left-color: var(--warning-vi) !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-quality-alert { border-left-color: var(--destructive) !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-quality-alert.neutral { border-left-color: var(--warning-vi) !important; }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-option-split > article.recommended { border-color: var(--border) !important; }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-no-action-card { border-color: var(--border) !important; }
+.analysis-pipeline-shell.analysis-pipeline-shell :is(.response-limitations, .response-quality-alert, .response-quality-alert.neutral) { border: 1px solid var(--border) !important; }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-draft.response-draft-hold { border-left-width: 1px; }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-draft-v3 :is(.draft-channel-group, .draft-no-recommendation, .draft-verification, .draft-avoid) { border-left: 0; border-radius: var(--radius-md); }
 
-/* 승인/반려 검토 버튼 */
-.analysis-pipeline-shell.analysis-pipeline-shell .draft-review button { background: var(--primary); }
-.analysis-pipeline-shell.analysis-pipeline-shell .draft-review button:nth-of-type(2) { background: var(--destructive); }
-.analysis-pipeline-shell.analysis-pipeline-shell .draft-review span { color: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-status.failed { background: var(--destructive-soft); color: var(--destructive); }
 
 /* ---------- 반응형 ---------- */

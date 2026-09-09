@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router";
 
 import { api, getErrorMessage } from "../../api";
 import { Pagination } from "../../shared/components";
 import Icon from "../../shared/Icon";
 import {
-  RISK_TYPE_LABELS,
   formatNumber,
   riskEventTitle,
 } from "../../shared/presentation";
@@ -49,32 +49,6 @@ function averageCompanyRisk(groups) {
     ratios: {
       risk: mean(ratios.map((item) => item.risk)),
       nonRisk: mean(ratios.map((item) => item.nonRisk)),
-    },
-    totals,
-  };
-}
-
-function averageCompanySentiment(groups) {
-  const totals = { story: 0, positive: 0, negative: 0, neutral: 0, pending: 0 };
-  const ratios = groups.flatMap((days) => {
-    const story = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_story_count) || 0, 0), 0);
-    const positive = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_positive_story_count) || 0, 0), 0);
-    const negative = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_negative_story_count) || 0, 0), 0);
-    const neutral = days.reduce((sum, day) => sum + Math.max(Number(day.eligible_neutral_story_count) || 0, 0), 0);
-    const pending = Math.max(story - positive - negative - neutral, 0);
-    totals.story += story;
-    totals.positive += positive;
-    totals.negative += negative;
-    totals.neutral += neutral;
-    totals.pending += pending;
-    return story > 0 ? [{ positive: positive / story, negative: negative / story, neutral: neutral / story, pending: pending / story }] : [];
-  });
-  return {
-    ratios: {
-      positive: mean(ratios.map((item) => item.positive)),
-      negative: mean(ratios.map((item) => item.negative)),
-      neutral: mean(ratios.map((item) => item.neutral)),
-      pending: mean(ratios.map((item) => item.pending)),
     },
     totals,
   };
@@ -257,8 +231,51 @@ const dayCount = (start, end) => {
 const percentOne = (ratio) => (Number.isFinite(ratio) ? `${(ratio * 100).toFixed(1)}%` : "—");
 const ratioOf = (numerator, denominator) => (denominator > 0 ? Math.min(Math.max(numerator / denominator, 0), 1) : 0);
 
+function ChartTooltip({ tip }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    if (!tip || !ref.current) return;
+    const box = ref.current.getBoundingClientRect();
+    const left = Math.max(8, Math.min(tip.x + 14, window.innerWidth - box.width - 8));
+    const top = tip.y + box.height + 20 > window.innerHeight
+      ? Math.max(8, tip.y - box.height - 12) : tip.y + 16;
+    ref.current.style.left = `${left}px`;
+    ref.current.style.top = `${top}px`;
+  }, [tip]);
+  return tip ? createPortal(<div ref={ref} className="bf-chart-tooltip" role="tooltip">{tip.text}</div>, document.body) : null;
+}
+
+function useChartTooltip() {
+  const [tip, setTip] = useState(null);
+  useEffect(() => {
+    const hide = () => setTip(null);
+    const onKeyDown = (event) => { if (event.key === "Escape") hide(); };
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+  const bind = (text) => ({
+    tabIndex: 0,
+    onPointerEnter: (event) => setTip({ text, x: event.clientX, y: event.clientY }),
+    onPointerMove: (event) => setTip({ text, x: event.clientX, y: event.clientY }),
+    onPointerLeave: () => setTip(null),
+    onFocus: (event) => {
+      const box = event.currentTarget.getBoundingClientRect();
+      setTip({ text, x: box.left + box.width / 2, y: box.top + box.height / 2 });
+    },
+    onBlur: () => setTip(null),
+  });
+  return { bind, tooltip: <ChartTooltip tip={tip} /> };
+}
+
 // 위험 지수 게이지: 링은 비율(0~100%)로 채우지만, 가운데 큰 숫자는 이슈 "건수"를 보여준다.
-function RiskGauge({ ringRatio, compareRingRatio, countValue, countUnit = "건", caption, delta, ready }) {
+function RiskGauge({ ringRatio, compareRingRatio, countValue, nonRiskCount, nonRiskRatio, countUnit = "건", caption, primaryLabel, delta, ready }) {
+  const hover = useChartTooltip();
   const size = 240;
   const outerRadius = 92;
   const innerRadius = 64;
@@ -270,24 +287,33 @@ function RiskGauge({ ringRatio, compareRingRatio, countValue, countUnit = "건",
   const deltaText = !ready || delta === null || delta === undefined ? null
     : deltaTone === "flat" ? "지난 기간과 동일"
       : `지난 기간 대비 ${delta > 0 ? "+" : "−"}${formatNumber(Math.abs(delta))}건`;
+  const segmentLabel = (label, count, ratio) => `${primaryLabel} · ${label} ${formatNumber(count)}${countUnit} · ${percentOne(ratio)}`;
+  const segmentTooltip = (label, color, colorName, count, ratio) => <>
+    <strong className="bf-chart-tooltip-key"><i style={{ background: color }} aria-hidden="true" />{label} · {colorName}</strong>
+    <div>{primaryLabel}</div><div>{formatNumber(count)}{countUnit} · {percentOne(ratio)}</div>
+  </>;
+  const riskHover = ready && outerRatio > 0 ? hover.bind(segmentTooltip("위험", "var(--violet-600)", "진한 보라", countValue, outerRatio)) : {};
+  const nonRiskHover = ready && nonRiskRatio > 0 ? hover.bind(segmentTooltip("비위험", "var(--violet-200)", "연한 보라", nonRiskCount, nonRiskRatio)) : {};
 
-  return <div className="bf-gauge" role="img" aria-label={`${caption} ${ready && Number.isFinite(countValue) ? formatNumber(countValue) : "정보 없음"}${countUnit}`}>
-    <svg viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-      <circle className="bf-ring-track" cx={size / 2} cy={size / 2} r={outerRadius} />
-      <circle className="bf-ring-value" cx={size / 2} cy={size / 2} r={outerRadius} strokeDasharray={`${outerLength * outerRatio} ${outerLength}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-      <circle className="bf-ring-track inner" cx={size / 2} cy={size / 2} r={innerRadius} />
-      <circle className="bf-ring-compare" cx={size / 2} cy={size / 2} r={innerRadius} strokeDasharray={`${innerLength * innerRatio} ${innerLength}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+  return <><div className="bf-gauge" role="group" aria-label={`${primaryLabel} 위험·비위험 이슈 비율`}>
+    <svg viewBox={`0 0 ${size} ${size}`}>
+      <circle className="bf-ring-track" cx={size / 2} cy={size / 2} r={outerRadius} aria-hidden="true" />
+      {ready && nonRiskRatio > 0 && <circle className="bf-ring-track bf-ring-segment" cx={size / 2} cy={size / 2} r={outerRadius} strokeDasharray={`${outerLength * (1 - outerRatio)} ${outerLength}`} transform={`rotate(${outerRatio * 360 - 90} ${size / 2} ${size / 2})`} role="img" aria-label={segmentLabel("비위험", nonRiskCount, nonRiskRatio)} {...nonRiskHover} />}
+      <circle className="bf-ring-value bf-ring-segment" cx={size / 2} cy={size / 2} r={outerRadius} strokeDasharray={`${outerLength * outerRatio} ${outerLength}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} role="img" aria-label={ready ? segmentLabel("위험", countValue, outerRatio) : "분석 수치를 불러오는 중입니다."} {...riskHover} />
+      <circle className="bf-ring-track inner" cx={size / 2} cy={size / 2} r={innerRadius} aria-hidden="true" />
+      <circle className="bf-ring-compare" cx={size / 2} cy={size / 2} r={innerRadius} strokeDasharray={`${innerLength * innerRatio} ${innerLength}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} aria-hidden="true" />
     </svg>
     <div className="bf-gauge-label">
       <strong>{ready && Number.isFinite(countValue) ? formatNumber(countValue) : "—"}<small>{countUnit}</small></strong>
       <span>{caption}</span>
       {deltaText && <em className={`bf-gauge-delta ${deltaTone}`}><Icon name={deltaTone === "up" ? "trendingUp" : deltaTone === "down" ? "trendingDown" : "minus"} tone="inherit" />{deltaText}</em>}
     </div>
-  </div>;
+  </div>{hover.tooltip}</>;
 }
 
 // 날짜별 위험·부정 비율을 묶음 막대로 그린다. 목업(추이 Panel)의 구조를 따른다.
 function TrendBars({ days }) {
+  const hover = useChartTooltip();
   const points = [...days]
     .filter((day) => (day.eligible_story_count ?? 0) > 0)
     .sort((left, right) => left.summary_date.localeCompare(right.summary_date))
@@ -303,34 +329,49 @@ function TrendBars({ days }) {
         negativeCount: negative,
       };
     });
+  const trendScrollRef = useRef(null);
+  const latestDate = points[points.length - 1]?.date ?? null;
+  useEffect(() => {
+    if (!points.length) return;
+    const latestScroller = trendScrollRef.current;
+    if (!latestScroller) return;
+    latestScroller.scrollLeft = latestScroller.scrollWidth - latestScroller.clientWidth;
+  }, [points.length, latestDate]);
   if (!points.length) return <p className="bf-empty-inline">아직 표시할 날짜별 비율 데이터가 없습니다.</p>;
   const maxRatio = Math.max(...points.flatMap((point) => [point.risk, point.negative]), 0.05);
   const scaleMax = Math.min(Math.max(Math.ceil(maxRatio * 10) * 10, 10), 100);
   const ticks = [scaleMax, Math.round(scaleMax * 2 / 3), Math.round(scaleMax / 3), 0];
   const peak = points.reduce((best, point) => (point.risk > (best?.risk ?? -1) ? point : best), null);
   const height = (ratio) => `${Math.min(ratio / (scaleMax / 100), 1) * 100}%`;
+  const chartMinWidth = `${Math.max(points.length * 72 + 56, 320)}px`;
+  const columnsStyle = {
+    gridTemplateColumns: `repeat(${points.length}, minmax(52px, 1fr))`,
+    columnGap: "16px",
+  };
   return <>
-    <div className="bf-trend-plot">
-      <div className="bf-trend-y" aria-hidden="true">{ticks.map((tick) => <span key={tick}>{tick}%</span>)}</div>
-      <div className="bf-trend-bars">
-        {points.map((point) => <div className={`bf-trend-day${peak?.date === point.date ? " peak" : ""}`} key={point.date} role="img" aria-label={`${shortDateKey(point.date)} 위험 ${percentOne(point.risk)} ${formatNumber(point.riskCount)}건, 부정 ${percentOne(point.negative)} ${formatNumber(point.negativeCount)}건`} title={`${shortDateKey(point.date)} · 위험 ${percentOne(point.risk)} · 부정 ${percentOne(point.negative)}`}>
-          <i className="negative" style={{ height: height(point.negative) }} />
-          <i className="risk" style={{ height: height(point.risk) }} />
-        </div>)}
+    <div className="bf-trend-scroll" ref={trendScrollRef}>
+      <div className="bf-trend-chart" style={{ minWidth: chartMinWidth }}>
+        <div className="bf-trend-y" aria-hidden="true">{ticks.map((tick) => <span key={tick}>{tick}%</span>)}</div>
+        <div className="bf-trend-bars" style={columnsStyle}>
+          {points.map((point) => <div className={`bf-trend-day${peak?.date === point.date ? " peak" : ""}`} key={point.date} role="img" aria-label={`${shortDateKey(point.date)} 위험 ${percentOne(point.risk)} ${formatNumber(point.riskCount)}건, 부정 ${percentOne(point.negative)} ${formatNumber(point.negativeCount)}건`} {...hover.bind(`${point.date}\n위험 ${percentOne(point.risk)} · ${formatNumber(point.riskCount)}건\n부정 ${percentOne(point.negative)} · ${formatNumber(point.negativeCount)}건`)}>
+            <i className="negative" style={{ height: height(point.negative) }} />
+            <i className="risk" style={{ height: height(point.risk) }} />
+          </div>)}
+        </div>
+        <div className="bf-trend-x" aria-hidden="true" style={columnsStyle}>{points.map((point) => <span className={peak?.date === point.date ? "peak" : ""} key={point.date}>{shortDateKey(point.date)}</span>)}</div>
       </div>
     </div>
-    <div className="bf-trend-x" aria-hidden="true">{points.map((point) => <span className={peak?.date === point.date ? "peak" : ""} key={point.date}>{shortDateKey(point.date)}</span>)}</div>
+    {hover.tooltip}
   </>;
 }
 
-// 로그인 직후 나의 기업과 등록 기업 평균을 비교하고 선택 기간의 위험 사건과 대응을 브리핑한다.
+// 로그인 직후 나의 기업과 전체 평균을 비교하고 선택 기간의 위험 사건과 대응을 브리핑한다.
 export default function MainPage({ onOpenCompany }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [briefingView, setBriefingView] = useState("company");
   const { period, changePeriod } = useAnalysisPeriod();
   const [riskPage, setRiskPage] = useState(1);
   const [expandedRiskId, setExpandedRiskId] = useState(null);
-  const eventsRef = useRef(null);
   const { data: companies = [], error: companiesError, loading } = useSharedResource(
     "/companies", () => api.get("/companies").then((response) => response.data),
   );
@@ -362,6 +403,7 @@ export default function MainPage({ onOpenCompany }) {
 
   const selectCompany = (companyId) => {
     rememberSelectedCompanyId(companyId);
+    setBriefingView("company");
     setRiskPage(1);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -442,23 +484,17 @@ export default function MainPage({ onOpenCompany }) {
   const sumOf = (days, key) => days.reduce((sum, day) => sum + Math.max(Number(day[key]) || 0, 0), 0);
   const selectedStoryCount = sumOf(dailySummaries, "eligible_story_count");
   const selectedRiskCount = sumOf(dailySummaries, "eligible_risk_story_count");
-  const selectedNegativeCount = sumOf(dailySummaries, "eligible_negative_story_count");
+  const selectedNonRiskCount = sumOf(dailySummaries, "eligible_non_risk_story_count");
   const selectedRiskRatio = ratioOf(selectedRiskCount, selectedStoryCount);
   const previousStoryCount = sumOf(previousSummaries, "eligible_story_count");
   const previousRiskCount = sumOf(previousSummaries, "eligible_risk_story_count");
   const averageRisk = averageCompanyRisk(dailyGroups);
-  const averageSentiment = averageCompanySentiment(dailyGroups);
 
   const isAverageView = briefingView === "average";
-  const viewStoryCount = isAverageView ? averageRisk.totals.story : selectedStoryCount;
   const viewRiskCount = isAverageView ? averageRisk.totals.risk : selectedRiskCount;
-  const viewNegativeCount = isAverageView ? averageSentiment.totals.negative : selectedNegativeCount;
   const viewRiskRatio = isAverageView ? averageRisk.ratios.risk : selectedRiskRatio;
-  const viewNegativeRatio = isAverageView ? averageSentiment.ratios.negative : ratioOf(selectedNegativeCount, selectedStoryCount);
-  const negativeOnlyRatio = Math.max(viewNegativeRatio - viewRiskRatio, 0);
-  const normalRatio = Math.max(1 - viewRiskRatio - negativeOnlyRatio, 0);
-  const negativeOnlyCount = Math.max(viewNegativeCount - viewRiskCount, 0);
-  const normalCount = Math.max(viewStoryCount - viewRiskCount - negativeOnlyCount, 0);
+  const viewNonRiskRatio = isAverageView ? averageRisk.ratios.nonRisk : ratioOf(selectedNonRiskCount, selectedStoryCount);
+  const viewNonRiskCount = isAverageView ? averageRisk.totals.nonRisk : selectedNonRiskCount;
 
   const statisticsReady = !loading && !dailyLoading && !dailyError && Boolean(selectedCompany);
   const eventsReady = Boolean(riskPageData) && !riskPageLoading && !riskPageError;
@@ -466,44 +502,32 @@ export default function MainPage({ onOpenCompany }) {
     ? selectedRiskCount - previousRiskCount : null;
   const companyRoleLabel = selectedCompany?.company_role === "main" ? "나의 기업" : "비교 기업";
 
-  const typeCounts = riskyStories.reduce((counts, risk) => {
-    const key = risk.primary_type ?? risk.risk_types?.[0]?.type ?? risk.risk_types?.[0]?.code ?? null;
-    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
-    return counts;
-  }, new Map());
-  const topType = [...typeCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
-  const topTypeLabel = topType ? RISK_TYPE_LABELS[topType] ?? topType : null;
-
   const headline = (() => {
     if (!statisticsReady) return "분석 결과를 불러오고 있습니다.";
     if (isAverageView) {
       if (!averageRisk.totals.story) return "등록 기업의 판정 완료 이슈가 아직 없습니다.";
       const comparison = selectedStoryCount > 0
-        ? ` ${selectedCompany.name}은(는) ${percentOne(selectedRiskRatio)}로 평균보다 ${selectedRiskRatio > averageRisk.ratios.risk ? "높습니다" : selectedRiskRatio < averageRisk.ratios.risk ? "낮습니다" : "같습니다"}.`
+        ? `${selectedCompany.name}은(는) ${percentOne(selectedRiskRatio)}로 평균보다 ${selectedRiskRatio > averageRisk.ratios.risk ? "높습니다" : selectedRiskRatio < averageRisk.ratios.risk ? "낮습니다" : "같습니다"}.`
         : "";
-      return `등록 기업 ${formatNumber(companies.length)}곳의 평균 위험 이슈 비율은 ${percentOne(averageRisk.ratios.risk)}입니다.${comparison}`;
+      const averageHeadline = `등록 기업 ${formatNumber(companies.length)}곳의 평균 위험 이슈 비율은 ${percentOne(averageRisk.ratios.risk)}입니다.`;
+      return comparison ? `${averageHeadline}\n${comparison}` : averageHeadline;
     }
     if (!selectedStoryCount) return "이 기간에 위험 여부를 판정한 이슈가 없습니다. 다른 기간을 선택해 보세요.";
-    const base = `이슈 ${formatNumber(selectedStoryCount)}건 중 ${formatNumber(selectedRiskCount)}건이 위험으로 판정됐습니다.`;
+    const base = <>이슈 {formatNumber(selectedStoryCount)}건 중 <strong className="bf-headline-risk-count">{formatNumber(selectedRiskCount)}건</strong>이 위험으로 판정됐습니다.</>;
     const diff = previousStoryCount > 0 ? selectedRiskCount - previousRiskCount : null;
     const change = diff === null ? null : diff > 0 ? `지난 기간보다 ${formatNumber(diff)}건 늘었` : diff < 0 ? `지난 기간보다 ${formatNumber(-diff)}건 줄었` : "지난 기간과 같";
-    if (change && topTypeLabel) return `${base} ${change}고, 대부분 ${topTypeLabel} 유형입니다.`;
-    if (change) return `${base} ${change}습니다.`;
-    if (topTypeLabel) return `${base} 대부분 ${topTypeLabel} 유형입니다.`;
+    if (change) return <>{base}<br />{change}습니다.</>;
     return base;
   })();
 
   const legendRows = [
     { key: "risk", label: "위험 판정 이슈", ratio: viewRiskRatio, count: viewRiskCount },
-    { key: "negative", label: "부정 감성 이슈 (위험 제외)", ratio: negativeOnlyRatio, count: negativeOnlyCount },
-    { key: "normal", label: "정상 이슈", ratio: normalRatio, count: normalCount },
+    { key: "normal", label: "비위험 이슈", ratio: viewNonRiskRatio, count: viewNonRiskCount },
   ];
   const trendPeak = briefingSummaries
     .filter((day) => (day.eligible_story_count ?? 0) > 0)
     .map((day) => ({ date: day.summary_date, risk: Number.isFinite(day.eligible_risk_story_ratio) ? day.eligible_risk_story_ratio : ratioOf(day.eligible_risk_story_count ?? 0, day.eligible_story_count ?? 0) }))
     .sort((left, right) => right.risk - left.risk)[0] ?? null;
-
-  const scrollToEvents = () => eventsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return <section className="workspace main-workspace briefing-workspace">
     <header className="bf-head">
@@ -530,7 +554,7 @@ export default function MainPage({ onOpenCompany }) {
       <section id="briefing-hero" className="bf-hero" role="tabpanel" aria-labelledby={isAverageView ? "briefing-average-tab" : "briefing-company-tab"} aria-busy={dailyLoading}>
         <div className="bf-gauge-side">
           <div className="bf-gauge-company">
-            <strong>{isAverageView ? "등록 기업 평균" : selectedCompany.name}</strong>
+            <strong>{isAverageView ? "전체 평균" : selectedCompany.name}</strong>
             <span>{isAverageView ? `등록 기업 ${formatNumber(companies.length)}곳 · ${periodShortLabel}` : `${companyRoleLabel} · ${shortDateKey(period.end)} 기준`}</span>
           </div>
           <RiskGauge
@@ -538,40 +562,39 @@ export default function MainPage({ onOpenCompany }) {
             ringRatio={viewRiskRatio}
             compareRingRatio={isAverageView ? selectedRiskRatio : averageRisk.ratios.risk}
             countValue={viewRiskCount}
+            nonRiskCount={viewNonRiskCount}
+            nonRiskRatio={viewNonRiskRatio}
             caption="위험 판정 이슈"
+            primaryLabel={isAverageView ? "전체 평균" : selectedCompany.name}
             delta={isAverageView ? null : riskDeltaCount}
           />
           <div className="bf-compare" aria-label="위험 이슈 비율 비교">
-            <span><i className="me" />{isAverageView ? "등록 기업 평균" : "내 기업"}<b>{statisticsReady ? percentOne(viewRiskRatio) : "—"}</b></span>
-            <span><i className="avg" />{isAverageView ? selectedCompany.name : "등록 기업 평균"}<b>{statisticsReady ? percentOne(isAverageView ? selectedRiskRatio : averageRisk.ratios.risk) : "—"}</b></span>
+            <span><i className="me" />{isAverageView ? "전체 평균" : "내 기업"}<b>{statisticsReady ? percentOne(viewRiskRatio) : "—"}</b></span>
+            <span><i className="avg" />{isAverageView ? selectedCompany.name : "전체 평균"}<b>{statisticsReady ? percentOne(isAverageView ? selectedRiskRatio : averageRisk.ratios.risk) : "—"}</b></span>
           </div>
-          <div className="bf-tiles">
-            <div className="danger"><strong>{eventsReady ? `${formatNumber(riskTotal)}건` : "—"}</strong><span>위험 사건</span></div>
-            <div className="warning"><strong>{statisticsReady ? `${formatNumber(viewNegativeCount)}건` : "—"}</strong><span>부정 이슈</span></div>
-            <div><strong>{statisticsReady ? `${formatNumber(viewStoryCount)}건` : "—"}</strong><span>분석 완료 이슈</span></div>
-          </div>
+
         </div>
         <div className="bf-story">
-          <span className="bf-badge soft-primary">{periodShortLabel} · {periodDays}일</span>
+          <div className="bf-period-context">
+            <span className="bf-badge soft-primary">{periodShortLabel} · {periodDays}일</span>
+            {!isAverageView && <span className="bf-previous-period">지난 기간: {previousStart} ~ {previousEnd}<small>선택 기간 바로 이전의 동일한 {periodDays}일 구간과 비교합니다.</small></span>}
+          </div>
           <h2 className="bf-headline">{headline}</h2>
           <div className="bf-legend">
-            {legendRows.map((row) => <div className={`bf-legend-row ${row.key}`} key={row.key}>
+            {legendRows.map((row) => <div className={`bf-legend-row ${row.key}`} key={row.key} title={`${row.label} · ${statisticsReady ? `${formatNumber(Math.round(row.count))}건 · ${percentOne(row.ratio)}` : "수치를 불러오는 중입니다."}`}>
               <div className="bf-legend-top"><span><i />{row.label}</span><span className="bf-legend-value"><strong>{statisticsReady ? `${formatNumber(Math.round(row.count))}건` : "—"}</strong><small>{statisticsReady ? percentOne(row.ratio) : ""}</small></span></div>
               <div className="bf-legend-bar"><i style={{ width: `${statisticsReady ? Math.min(row.ratio, 1) * 100 : 0}%` }} /></div>
             </div>)}
           </div>
-          <div className="bf-story-foot">
-            <button type="button" className="bf-button primary" onClick={scrollToEvents}><Icon name="siren" tone="inherit" />위험 사건 {eventsReady ? formatNumber(riskTotal) : "—"}건 확인</button>
-            <button type="button" className="bf-button ghost" onClick={() => onOpenCompany(selectedCompanyId, null, { stage: "risk" })}><Icon name="gitBranch" tone="inherit" />분석 파이프라인 열기</button>
-          </div>
+
         </div>
       </section>
 
       <div className="bf-grid">
-        <section className="bf-panel bf-events" aria-labelledby="briefing-events-title" ref={eventsRef}>
+        <section className="bf-panel bf-events" aria-labelledby="briefing-events-title">
           <header className="bf-panel-head">
             <div>
-              <h2 id="briefing-events-title">위험 사건 및 대응방안 <span className="bf-badge primary">{eventsReady ? formatNumber(riskTotal) : "—"}</span></h2>
+              <h2 id="briefing-events-title">위험 이슈 • 대응 <span className="bf-badge primary">{eventsReady ? formatNumber(riskTotal) : "—"}</span></h2>
               <p>확률이 높은 순서. 카드를 열면 대응 초안을 볼 수 있습니다.</p>
             </div>
             <button type="button" className="bf-button link" onClick={() => onOpenCompany(selectedCompanyId, null, { stage: "risk" })}>전체 보기 <Icon name="arrowRight" tone="inherit" /></button>
@@ -579,7 +602,6 @@ export default function MainPage({ onOpenCompany }) {
           <div className="bf-event-list">{!riskPageData && !riskPageError ? <p className="bf-empty-inline" role="status">선택한 기간의 위험 사건을 불러오는 중입니다.</p> : riskPageError && !riskPageData ? <p className="bf-empty-inline">선택한 기간의 위험 사건을 불러오지 못했습니다.</p> : riskyStories.length ? riskyStories.map((risk, index) => {
             const open = expandedRiskId === risk.id;
             const severity = SEVERITY_META[risk.severity] ?? { label: risk.severity ?? "판정", className: "neutral" };
-            const typeLabel = RISK_TYPE_LABELS[risk.primary_type] ?? risk.risk_types?.[0]?.label ?? risk.primary_type ?? "유형 분류 중";
             const probability = Number.isFinite(risk.risk_probability) ? `${Math.round(risk.risk_probability * 100)}%` : "—";
             return <details className={`bf-event${open ? " open" : ""}${index === 0 && riskPage === 1 ? " lead" : ""}`} key={risk.id} open={open}>
               <summary aria-expanded={open} aria-controls={`briefing-risk-response-${risk.id}`} onClick={(event) => { event.preventDefault(); setExpandedRiskId((current) => (current === risk.id ? null : risk.id)); }}>
@@ -588,7 +610,6 @@ export default function MainPage({ onOpenCompany }) {
                   <strong className="bf-event-title">{riskEventTitle(risk)}</strong>
                   <span className="bf-event-meta">
                     <span className={`bf-badge severity-${severity.className}`}>{severity.label}</span>
-                    <span className="bf-event-type">{typeLabel}</span>
                     <span className="bf-event-sub">{shortDate(risk.last_evidence_at ?? risk.issue_latest_at ?? risk.detected_at)} · 기사 {formatNumber(risk.risk_article_count || risk.evidence_article_count)} · 언론사 {formatNumber(risk.risk_source_count || risk.source_count)}</span>
                   </span>
                 </span>
@@ -616,7 +637,7 @@ export default function MainPage({ onOpenCompany }) {
             <div className="bf-trend-legend" aria-hidden="true"><span><i className="negative" />부정</span><span><i className="risk" />위험</span></div>
           </header>
           {dailyLoading ? <p className="bf-empty-inline" role="status">선택한 기간의 데이터를 불러오는 중입니다.</p> : dailyError ? <p className="bf-empty-inline">선택한 기간의 데이터를 불러오지 못했습니다.</p> : <TrendBars days={briefingSummaries} />}
-          <div className="bf-note"><Icon name="lightbulb" tone="inherit" /><div><strong>위험은 부정의 부분집합입니다</strong><p>부정 감성 이슈 중 사건화 기준(정제 기사 2건 이상)을 넘긴 것만 위험으로 셉니다.</p></div></div>
+          
         </section>
       </div>
       <footer className="bf-page-foot"><p>실시간으로 수집한 기사를 모델이 분석하고, AI가 위험 여부와 유형을 분류·판단한 결과입니다.</p></footer>
