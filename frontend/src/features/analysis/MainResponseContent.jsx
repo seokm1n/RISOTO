@@ -182,11 +182,10 @@ function RiskSummaryHeader({ content, risk, scenario }) {
   const report = scenario?.report ?? {};
   // 한 문장만 뽑으면 무슨 일인지 알 수 없다. 라벨을 떼고 앞의 두세 항목을 이어 붙여
   // 담당자가 이 카드만 읽고도 사안을 파악할 수 있게 한다.
-  const rows = summaryRows(report.summary_points ?? []);
-  const headline = rows.length
-    ? rows.slice(0, 3).map((row) => row.text.replace(/[.\s]+$/, "")).join(". ") + "."
-    : report.risk_assessment?.primary_risks?.[0]
-      || "생성된 대응안의 상황 요약을 확인해 주세요.";
+  const rows = summaryRows(report.summary_points ?? []).slice(0, 3);
+  const fallbackHeadline = !rows.length
+    ? report.risk_assessment?.primary_risks?.[0] || "생성된 대응안의 상황 요약을 확인해 주세요."
+    : null;
   const tone = TIER_TONES[content.tier] ?? "caution";
   const tierLabel = TIER_LABELS[content.tier] ?? humanize(content.tier);
   const facts = [
@@ -204,7 +203,18 @@ function RiskSummaryHeader({ content, risk, scenario }) {
           <span className={`response-priority-pill ${tone}`}>{tierLabel || "확인 필요"}</span>
           <h4>{content.risk_type_label ? `${content.risk_type_label} 위험` : "위험 사건 대응"}</h4>
         </div>
-        <p>{headline}</p>
+        {rows.length ? (
+          <ul className="response-command-points">
+            {rows.map((row, index) => (
+              <li key={`command-point-${index}`}>
+                {row.label && <strong>{row.label}: </strong>}
+                {row.text}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>{fallbackHeadline}</p>
+        )}
       </div>
       {facts.length > 0 && (
         <dl className="response-command-facts">
