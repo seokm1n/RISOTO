@@ -768,8 +768,16 @@ def _build_peer_content(db, payload):
         db=db,
         exclude_urls=[m.url for m in payload.mentions if m.url],
         event_title=payload.event_title or "",
+        # impact.analyze가 사건을 읽으면서 함께 뽑아 둔 핵심어(메인 경로 classify.refine과
+        # 같은 패턴). 없으면 case_search가 유형 키워드 사전으로 폴백한다.
+        search_keywords=analysis.get("search_keywords") or [],
     )
-    query_text = " ".join(m.text for m in payload.mentions[:3])[:300]
+    # 사건 제목을 질의 맨 앞에 둔다 - 원문만으로 질의를 만들면 사안의 본질이 빠진다
+    # (메인 경로의 evidence.build와 같은 이유. main_response_engine 참고).
+    query_text = " ".join(
+        part for part in ((payload.event_title or "").strip(),
+                          " ".join(m.text for m in payload.mentions[:3])) if part
+    )[:300]
     cases = retriever.search(analysis["risk_type"], query_text, top_k=3)
     _add(retriever.last_usage)
     # 동종 경로는 시행 중인 조문만 쓴다. 여기 블록은 recommend.build_user_prompt에서

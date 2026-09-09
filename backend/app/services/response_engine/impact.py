@@ -64,10 +64,11 @@ _SCHEMA = {
             "reason": {"type": "string"},
             "watch_points": {"type": "array", "items": {"type": "string"}},
             "confidence": {"type": "number"},
+            "search_keywords": {"type": "array", "items": {"type": "string"}},
         },
         "required": [
             "risk_type", "impact_direction", "impact_level",
-            "impact_channels", "reason", "watch_points", "confidence",
+            "impact_channels", "reason", "watch_points", "confidence", "search_keywords",
         ],
         "additionalProperties": False,
     },
@@ -79,6 +80,12 @@ _SYSTEM_PROMPT = """당신은 기업 리스크 모니터링 분석가입니다.
 
 [우리 기업] {main_company}{main_context}
 [이슈 발생 기업] {peer_company}{peer_context}
+
+[이 사건의 제목]
+{event_title}
+스토리 군집의 대표 제목입니다. 아래 원문이 댓글·반응처럼 단편적일 때는 **이 제목이
+사안을 규정합니다.** 원문 몇 줄이 다른 주제를 말하더라도 제목이 가리키는 사안으로
+유형을 판정하세요.
 
 [리스크 유형 목록 - 이 이슈가 어디에 해당하는지도 함께 고르세요]
 {catalog}
@@ -103,7 +110,14 @@ _SYSTEM_PROMPT = """당신은 기업 리스크 모니터링 분석가입니다.
   구체적인 관찰 대상을 쓰세요. 영향_없음이면 빈 배열입니다.
 - reason은 한국어 2~3문장입니다. 왜 그렇게 판단했는지, 특히 **어떤 경로로 닿는지**를
   적으세요. 지표 필드명이나 원문 번호는 쓰지 마세요.
-- confidence는 0.0~1.0입니다. 원문이 적거나 판단이 갈리면 낮게 주세요."""
+- confidence는 0.0~1.0입니다. 원문이 적거나 판단이 갈리면 낮게 주세요.
+
+[검색 키워드]
+- search_keywords에는 **이번 사안과 비슷한 다른 사건을 찾을 때 쓸 핵심어 2~3개**를 넣으세요.
+  우리 기업 관점의 유사 사례 검색에 그대로 들어가는 값입니다.
+- 사안의 성격을 가리키는 말로 쓰세요. 회사명·매체명·날짜는 넣지 마세요 - 그 회사 기사만
+  다시 걸려 비교할 사례를 못 찾습니다.
+- 제목에 없는 말이라도 사안을 더 정확히 가리킨다면 쓰세요."""
 
 
 
@@ -150,6 +164,7 @@ def analyze(payload: AlertPayload, top_k_texts: int = 6) -> dict:
             peer_context=_context_line(
                 payload.company_name, payload.industry, payload.main_services
             ),
+            event_title=payload.event_title or "(제목 없음 - 원문만으로 판정하세요)",
             catalog=risk_types.catalog_for_prompt(),
         ),
         user=user_content,
@@ -163,6 +178,11 @@ def analyze(payload: AlertPayload, top_k_texts: int = 6) -> dict:
     result["confidence"] = confidence
     result["needs_review"] = confidence < NEEDS_REVIEW_BELOW
     result["keyword_hint"] = counts
+    # 유사 사례 검색이 쓸 핵심어. 이 호출은 이미 사건 제목과 원문을 읽고 있으므로
+    # 호출을 늘리지 않고 얻는다(main path의 classify.refine과 같은 패턴).
+    result["search_keywords"] = [
+        str(w).strip() for w in (parsed.get("search_keywords") or []) if str(w).strip()
+    ][:3]
     # 영향_없음이면 여기서 끝난다. 추천 생성으로 넘기지 않는 게 이 경로의 비용 통제 지점이다.
     result["proceed"] = direction != "영향_없음"
     result["usage"] = call_usage
