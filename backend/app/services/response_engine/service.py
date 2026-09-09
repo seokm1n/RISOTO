@@ -574,6 +574,10 @@ def _build_content(db, payload, event, generation_kind, target_company):
         company_name=payload.company_name,
         db=db,
         exclude_urls=[m.url for m in payload.mentions if m.url],
+        event_title=payload.event_title or "",
+        # 분류 호출이 사건을 읽으면서 함께 뽑아 둔 핵심어. 규칙 기반 추출은 구어체·
+        # 신조어에 약해서(실측: "한국꺼"가 핵심어로 뽑혔다) 이 값을 먼저 쓴다.
+        search_keywords=cls.get("search_keywords") or [],
     )
     ev = evidence.build(
         payload, code,
@@ -757,6 +761,7 @@ def _build_peer_content(db, payload):
         company_name=payload.main_company_name or "",
         db=db,
         exclude_urls=[m.url for m in payload.mentions if m.url],
+        event_title=payload.event_title or "",
     )
     query_text = " ".join(m.text for m in payload.mentions[:3])[:300]
     cases = retriever.search(analysis["risk_type"], query_text, top_k=3)
