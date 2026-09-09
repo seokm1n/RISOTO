@@ -106,6 +106,7 @@ const HELD_STATUSES = new Set([
 ]);
 
 const RESPONSE_STATUS_LABELS = {
+  not_applicable: "대응 불필요",
   pending: "생성 중",
   generating: "생성 중",
   generated: "생성 완료",
@@ -232,7 +233,9 @@ export function RiskDetail({ risk, canReview = false, onGenerationStarted }) {
 
   const v3Draft = drafts.find((draft) => draft.schema_version === 3);
   const latest = v3Draft ?? drafts[0]; const content = latest?.content;
-  const canGenerate = ["idle", "pending", "generating", "deferred", "failed"].includes(generationStatus);
+  // not_applicable도 다시 생성할 수 있게 둔다. 분류 안전장치의 판정은 실행마다 흔들리는
+  // 것이 확인돼서(같은 사건이 한 번은 통과, 한 번은 종료), 사람이 뒤집을 길이 있어야 한다.
+  const canGenerate = ["idle", "pending", "generating", "deferred", "failed", "not_applicable"].includes(generationStatus);
   const generate = async () => {
     setLoading(true); setError(null);
     try {

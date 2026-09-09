@@ -719,7 +719,10 @@ def list_risk_events_page(
         "supply_operations",
         "reputation_consumer",
     ] | None = None,
-    response: Literal["all", "needs_action", "without_needs_action", "in_progress", "generated", "none"] = "all",
+    response: Literal[
+        "all", "actionable", "needs_action", "without_needs_action",
+        "in_progress", "generated", "none",
+    ] = "all",
     db: Session = Depends(get_db),
     auth: CurrentAuth = Depends(require_auth),
     start_date: date | None = None,
@@ -824,6 +827,10 @@ def list_risk_events_page(
         "in_progress": ("pending", "generating"),
         "generated": ("generated",),
         "none": ("idle",),
+        # 분류 단계가 "대응할 사안이 아니다"로 끝낸 건(not_applicable)을 뺀 목록.
+        # 대응 화면의 기본값이다 - 탐지는 위험이라 했지만 대응이 필요 없다고 판정된
+        # 사건이 목록에 남아 있으면, 눌렀을 때 "대응 불필요"만 보여 혼선을 준다.
+        "actionable": ("idle", "pending", "generating", "generated", "deferred", "failed"),
     }
     if response != "all":
         query = query.where(

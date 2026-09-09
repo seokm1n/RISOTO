@@ -25,6 +25,7 @@ const RESPONSE_STATUS_SUMMARIES = {
   deferred: "대응 방안 생성이 보류되었습니다.",
   failed: "대응 방안 생성에 실패했습니다.",
   idle: "아직 생성된 대응 방안이 없습니다.",
+  not_applicable: "상세 판정 결과 대응이 필요한 위험으로 분류되지 않아 대응방안이 생성되지 않았습니다.",
 };
 
 const textValue = (...values) => values.find((value) => typeof value === "string" && value.trim())?.trim() ?? null;
