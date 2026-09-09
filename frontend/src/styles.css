@@ -2089,37 +2089,19 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   letter-spacing: .08em;
 }
 
-/* 상단에는 내부 등급 코드 대신 사람이 바로 이해할 우선순위와 운영 정보를 둔다. */
+/* 상단에는 내부 등급 코드 대신 사람이 바로 이해할 우선순위와 운영 정보를 둔다.
+   tone별 테두리 색·그라디언트 음영은 걷어내고, 이 화면의 다른 카드(overview-panel 등)와
+   같은 톤(단일 배경 + 은은한 테두리)으로 맞춘다. 등급 구분은 아래 priority-pill 배지가
+   맡는다 - 위험 목록의 "긴급"/"주의" 배지와 같은 방식이라 화면 간 표기가 일관된다. */
 .response-operations-view .response-command-card {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr);
   align-items: stretch;
   gap: 20px;
   padding: 20px 21px;
-  border: 1px solid rgba(9, 9, 11, .3);
-  border-left: 5px solid #bc7454;
+  border: 1px solid var(--divider-strong);
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--surface-muted) 0%, var(--surface-muted) 100%);
-}
-.response-operations-view .response-command-card.urgent {
-  border-color: rgba(177, 84, 54, .34);
-  border-left-color: #b85c3e;
-  background: linear-gradient(135deg, #f3ddd2 0%, #eee4d8 100%);
-}
-.response-operations-view .response-command-card.caution {
-  border-color: rgba(9, 9, 11, .34);
-  border-left-color: #b88738;
-  background: linear-gradient(135deg, #f1e5c9 0%, #eee6d9 100%);
-}
-.response-operations-view .response-command-card.watch {
-  border-color: rgba(83, 128, 95, .3);
-  border-left-color: #688f71;
-  background: linear-gradient(135deg, #e4ece1 0%, var(--surface-muted) 100%);
-}
-.response-operations-view .response-command-card.opportunity {
-  border-color: rgba(69, 126, 112, .3);
-  border-left-color: #5c9284;
-  background: linear-gradient(135deg, #dfeae4 0%, var(--surface-muted) 100%);
+  background: var(--surface-muted);
 }
 .response-command-copy { display: grid !important; align-content: start; gap: 9px !important; }
 .response-command-title { display: flex !important; flex-wrap: wrap; align-items: center; gap: 8px 11px !important; }
@@ -2137,6 +2119,24 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   line-height: 1.7;
   overflow-wrap: anywhere;
   font-weight: 400;
+}
+.response-operations-view .response-command-points {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+.response-operations-view .response-command-points > li {
+  color: var(--text-copy);
+  font-size: var(--text-body);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.response-operations-view .response-command-points > li > strong {
+  color: var(--text-heading);
+  font-weight: 700;
 }
 .response-priority-pill {
   display: inline-flex;
@@ -2573,14 +2573,13 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   border-radius: 12px;
   background: var(--surface-muted);
 }
-:is(.response-peer-brief, .response-brief) > article.recommended { border-left: 4px solid #6d9279; background: var(--surface-soft); }
+:is(.response-peer-brief, .response-brief) > article.recommended { background: var(--surface-soft); }
 :is(.response-peer-brief, .response-brief) > article.recommended p { color: var(--text-copy); font-size: var(--text-body); font-weight: 400; overflow-wrap: anywhere; }
 .response-operations-view .response-no-action-card {
   display: grid;
   gap: 6px;
   padding: 15px 16px;
-  border: 1px solid rgba(83, 128, 95, .25);
-  border-left: 4px solid #688f71;
+  border: 1px solid var(--divider-strong);
   border-radius: 12px;
   background: var(--surface-soft);
 }
@@ -2626,7 +2625,6 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   gap: 6px;
   padding: 14px 16px;
   border: 1px solid var(--divider-strong);
-  border-left: 4px solid #6d9279;
   border-radius: 12px;
   background: var(--surface-soft);
 }
@@ -2657,8 +2655,7 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   display: grid;
   gap: 5px;
   padding: 13px 15px;
-  border: 1px solid rgba(9, 9, 11, .26);
-  border-left: 4px solid #b7883b;
+  border: 1px solid var(--divider-strong);
   border-radius: 12px;
   background: var(--surface-muted);
 }
@@ -2684,15 +2681,13 @@ button.statistics-count-card:focus-visible { border-color: #b45a28; outline: 3px
   display: grid;
   gap: 7px;
   padding: 13px 14px;
-  border: 1px solid rgba(9, 9, 11, .25);
-  border-left: 4px solid #b76447;
+  border: 1px solid var(--divider-strong);
   border-radius: 10px;
   background: var(--surface-muted);
 }
-.response-quality-alert > strong { color: #8e4c35; font-size: var(--text-caption); font-weight: 700; }
+.response-quality-alert > strong { color: var(--text-copy); font-size: var(--text-caption); font-weight: 700; }
 .response-quality-alert ul { margin: 0; padding-left: 18px; }
 .response-quality-alert li { color: var(--text-copy); font-size: var(--text-body); overflow-wrap: anywhere; }
-.response-quality-alert.neutral { border-color: rgba(9, 9, 11, .23); border-left-color: var(--warning-vi); background: var(--surface-muted); }
 .response-quality-alert.neutral > strong { color: var(--text-copy); }
 .response-quality-alert.neutral > p { margin: 0; color: var(--text-copy); font-size: var(--text-body); line-height: 1.7; overflow-wrap: anywhere; font-weight: 400; }
 .response-legacy-overview {
