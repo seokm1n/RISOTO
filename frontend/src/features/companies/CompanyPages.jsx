@@ -20,6 +20,8 @@ import {
   isValidAnnualRevenue,
 } from "./companyForm";
 
+import "./CompanyPages.css";
+
 const COMPETITOR_LABEL = "비교 기업";
 
 function KeywordInput({ id, label, usage, hint, values, onChange, onDraftChange, disabled = false }) {
@@ -77,7 +79,7 @@ export function CompanyCard({ company, onOpen, onEdit }) {
       <div><div className="company-role-line"><span className={`company-role-badge ${company.company_role}`}>{roleLabel}</span></div><div className="company-card-status-line"><span className={`status-dot ${collectionRunning ? "running" : "stopped"}`} aria-hidden="true" /><div><h3><button className="company-name-link" type="button" onClick={() => onOpen(company.id)}>{company.name}</button></h3><p>{company.industry_name} · {monitoringLabel}</p></div></div></div>
       {onEdit && <div className="company-card-controls"><button className="company-edit-icon" type="button" onClick={() => onEdit(company.id)} aria-label={`${company.name} 수정`} title="기업 수정"><Icon name="edit" /><span>수정</span></button></div>}
     </div>
-    <div className="company-finance-summary"><div><span>연매출</span><strong>{formatRevenue(company.annual_revenue_100m_krw)}</strong></div><div><span>기업 규모</span><strong>{COMPANY_SIZE_LABELS[company.company_size_class] ?? "미입력"}</strong></div></div>
+    <div className="company-finance-summary"><div><span>기업 규모</span><strong>{COMPANY_SIZE_LABELS[company.company_size_class] ?? "미입력"}</strong></div><div><span>연매출</span><strong>{formatRevenue(company.annual_revenue_100m_krw)}</strong></div><div><span>종목코드</span><strong>{company.ticker || "비상장"}</strong></div></div>
     <div className="company-card-keywords">{Object.entries(KEYWORD_LABELS).map(([type, label]) => <div key={type}><span className="mini-label">{label}</span><p>{grouped[type].join(" · ") || "등록 없음"}</p></div>)}</div>
   </article>;
 }
@@ -184,7 +186,7 @@ function SetupPage({ companyRole = "competitor", onCreated, onOpenCompany, onEdi
         ].map((group) => {
           const roleCompanies = companies.filter((company) => company.company_role === group.role);
           return <section className={`company-role-section ${group.role}`} key={group.role}>
-            <div className="section-title company-role-section-title"><div><h3>{group.title}</h3></div>{group.role === "competitor" && onRegister && <button className="company-register-button" type="button" onClick={onRegister}><span>{COMPETITOR_LABEL} 등록</span><b aria-hidden="true">＋</b></button>}</div>
+            <div className="section-title company-role-section-title"><div><span className="mg-kicker">{group.kicker}</span><h3>{group.title}</h3></div>{group.role === "competitor" && onRegister && <button className="company-register-button" type="button" onClick={onRegister}><span>{COMPETITOR_LABEL} 등록</span><b aria-hidden="true">＋</b></button>}</div>
             {roleCompanies.length ? <div className="company-list">{roleCompanies.map((company) => <CompanyCard company={company} key={company.id} onOpen={onOpenCompany} onEdit={onEditCompany} />)}</div> : <p className="empty-state">{group.empty}</p>}
           </section>;
         })}

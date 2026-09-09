@@ -166,15 +166,19 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
   };
 
   return <section className={`${embedded ? "risk-management-embedded" : "workspace"} analysis-statistics-workspace risk-management-workspace pipeline-stage-content`}>
-    <div className="pipeline-stat-grid risk-stage-stat-grid" aria-label="대응 위험 이슈 분류">
-      <button className={`pipeline-stat danger selectable${eventView === "all" ? " active" : ""}`} type="button" aria-pressed={eventView === "all"} onClick={() => updateQuery({ view: "all", response: null }, { resetPage: true, clearSelection: true })}><span>위험</span><strong>{formatNumber(riskCount)}건</strong><small>활성·종료 통합</small></button>
-      <button className={`pipeline-stat warning selectable${eventView === "needs_response" ? " active" : ""}`} type="button" aria-pressed={eventView === "needs_response"} onClick={() => updateQuery({ view: "needs_response", response: null }, { resetPage: true, clearSelection: true })}><span>검토 필요</span><strong>{formatNumber(pageData.summary.needs_response)}건</strong><small>미생성·보류·실패</small></button>
-    </div>
-
     {error && <div className="notice error">{error}</div>}
     {!companies.length && !loading ? <p className="empty-state">먼저 기업 등록 페이지에서 관리할 기업을 등록해 주세요.</p> : <>
       <section className="panel pipeline-panel pipeline-risk-picker-panel">
-        <div className="pipeline-panel-heading pipeline-risk-list-heading"><PanelTitle title={listTitle} />{!hasDateRange && <div className="pipeline-risk-list-controls"><select aria-label="조회 기간" value={period} onChange={(event) => updateQuery({ days: event.target.value }, { resetPage: true, clearSelection: true })}>{PERIOD_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></div>}</div>
+        <div className="pipeline-panel-heading pipeline-risk-list-heading">
+          <PanelTitle title={listTitle} />
+          <div className="pipeline-risk-list-controls">
+            <div className="risk-class-toggle" role="group" aria-label="대응 위험 이슈 분류 선택">
+              <button type="button" className={`danger${eventView === "all" ? " active" : ""}`} aria-pressed={eventView === "all"} onClick={() => updateQuery({ view: "all", response: null }, { resetPage: true, clearSelection: true })}>위험 {formatNumber(riskCount)}건</button>
+              <button type="button" className={`warning${eventView === "needs_response" ? " active" : ""}`} aria-pressed={eventView === "needs_response"} onClick={() => updateQuery({ view: "needs_response", response: null }, { resetPage: true, clearSelection: true })}>검토 필요 {formatNumber(pageData.summary.needs_response)}건</button>
+            </div>
+            {!hasDateRange && <select aria-label="조회 기간" value={period} onChange={(event) => updateQuery({ days: event.target.value }, { resetPage: true, clearSelection: true })}>{PERIOD_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>}
+          </div>
+        </div>
         {selectedRisk ? <div className={`pipeline-risk-dropdown${listOpen ? " open" : ""}`} ref={dropdownRef}>
           <button className="pipeline-risk-dropdown-trigger risk-event-list-item selected" type="button" aria-expanded={listOpen} aria-controls="response-risk-event-list" onClick={() => setListOpen((open) => !open)}>
             <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selectedRisk} judgmentCompact /></div>

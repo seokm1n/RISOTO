@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { api, getErrorMessage } from "../../api";
 
+import "./LoginPage.css";
+
 function LoginPage({ onAuthenticated, initialMode = null }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
