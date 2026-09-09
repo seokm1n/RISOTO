@@ -69,7 +69,7 @@
 .bf-hero { display: grid; grid-template-columns: 520px minmax(0, 1fr); overflow: hidden; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); }
 .bf-gauge-side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px 32px; background: var(--primary-soft); border-right: 1px solid var(--border); }
 .bf-gauge-company { display: grid; justify-items: center; gap: 4px; text-align: center; }
-.bf-gauge-company strong { display: inline-block; max-width: 100%; padding: 8px 20px; border: 1px solid var(--primary); border-radius: 10px; background: #fff; color: var(--primary); font-size: 28px; font-weight: 700; letter-spacing: -.7px; overflow-wrap: anywhere; }
+.bf-gauge-company strong { font-size: 44px; font-weight: 700; letter-spacing: -.7px; }
 .bf-gauge-company span { color: var(--muted-foreground); font-size: 12.5px; }
 
 .bf-chart-tooltip { position: fixed; z-index: 10000; left: 0; top: 0; max-width: min(320px, calc(100vw - 16px)); box-sizing: border-box; padding: 12px 16px; border: 1px solid #ddd6fe; border-radius: 10px; background: #fff; color: #27272a; box-shadow: 0 6px 24px rgb(39 39 42 / .16); font: 500 13px/1.8 var(--font-soft, sans-serif); white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; }
@@ -85,7 +85,7 @@
 .bf-ring-segment { pointer-events: visibleStroke; }
 .bf-ring-segment:focus-visible { outline: none; filter: drop-shadow(0 0 3px var(--violet-600)); }
 .bf-gauge-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; pointer-events: none; }
-.bf-gauge-label strong { font: 700 56px/1 var(--font-num); letter-spacing: -2.4px; font-variant-numeric: tabular-nums; }
+.bf-gauge-label strong { font: 700 44px/1 var(--font-num); letter-spacing: -2.4px; font-variant-numeric: tabular-nums; }
 .bf-gauge-label strong small { margin-left: 2px; font-size: 20px; font-weight: 600; letter-spacing: 0; color: var(--muted-foreground); }
 .bf-gauge-label > span { color: var(--muted-foreground); font-size: 14px; font-weight: 500; }
 .bf-gauge-delta { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); font: 600 12px/1.4 var(--font-soft); font-style: normal; color: var(--foreground); }
@@ -110,7 +110,11 @@
 
 .bf-story { display: flex; flex-direction: column; justify-content: center; gap: 24px; min-width: 0; padding: 40px 44px; }
 .bf-story .bf-badge { align-self: flex-start; }
+.bf-period-context { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.bf-previous-period { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
+.bf-previous-period small { display: block; font-size: inherit; }
 .bf-headline { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.4; letter-spacing: -.6px; white-space: pre-line; word-break: keep-all; }
+.bf-headline .bf-headline-risk-count { color: var(--primary); font-size: 1.25em; font-weight: 800; white-space: nowrap; }
 .bf-legend { display: grid; gap: 14px; }
 .bf-legend-row { display: grid; gap: 6px; }
 .bf-legend-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -210,7 +214,6 @@
   .bf-filters { width: 100%; margin-left: 0; }
   .bf-select { width: 100%; }
   .bf-gauge { width: 200px; height: 200px; }
-  .bf-gauge-label strong { font-size: 44px; }
   .bf-event > summary { grid-template-columns: 48px minmax(0, 1fr) 16px; gap: 10px; padding: 10px 12px; }
   .bf-prob { width: 48px; height: 48px; }
   .bf-event-response { margin-left: 8px; }

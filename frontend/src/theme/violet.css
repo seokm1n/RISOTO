@@ -117,7 +117,7 @@ html body { background: var(--page-bg); }
 :is(.general-app, .admin-app) .notification-siren:hover, :is(.general-app, .admin-app) .notification-siren:focus-visible { border-color: var(--ring); background: var(--accent-surface); color: var(--foreground); outline-color: rgba(139, 92, 246, .3); }
 :is(.general-app, .admin-app) .notification-siren svg { width: 16px; height: 16px; }
 :is(.general-app, .admin-app) .notification-badge { top: -4px; right: -5px; min-width: 18px; height: 18px; border-color: var(--background); background: var(--primary); font-size: 11px; }
-:is(.general-app, .admin-app) .account-button { border-left: 1px solid var(--border); padding: 2px 0 2px 10px; }
+:is(.general-app, .admin-app) .account-button { height: 36px; min-height: 36px; box-sizing: border-box; align-content: center; line-height: 14px; border-left: 1px solid var(--border); padding: 2px 0 2px 10px; }
 :is(.general-app, .admin-app) .account-button span { font-size: 12px; color: var(--muted-foreground); }
 :is(.general-app, .admin-app) .account-button strong { font-size: 12px; color: var(--foreground); }
 :is(.general-app, .admin-app) .logout-button { min-height: 36px; padding: 0 12px; border: 1px solid var(--input); border-radius: var(--radius-md); color: var(--foreground); font-size: 13px; font-weight: 500; background: var(--background); }

@@ -205,6 +205,19 @@
 .analysis-pipeline-shell.analysis-pipeline-shell .pagination button { min-height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); font-size: 13px; font-weight: 500; }
 .analysis-pipeline-shell.analysis-pipeline-shell .pagination button:hover:not(:disabled) { background: var(--accent-surface); }
 
+/* 대응 페이지의 제목 행: 버튼 유무와 관계없이 같은 높이와 정렬을 사용한다. */
+.analysis-pipeline-shell .risk-management-workspace .pipeline-panel-heading { align-items: center; min-height: 61px; box-sizing: border-box; }
+.analysis-pipeline-shell .risk-management-workspace .pipeline-panel-heading > .panel-title { margin: 0; }
+.analysis-pipeline-shell .risk-management-workspace .panel-title h2 { margin: 0; line-height: 1.5; }
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-head { align-items: center; min-height: 36px; }
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-head h3,
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-status { margin-top: 0; }
+.analysis-pipeline-shell .risk-management-workspace .risk-detail-status { align-self: center; }
+.analysis-pipeline-shell .risk-management-workspace .response-draft :is(h4, h5) { margin: 0; line-height: 1.5; }
+.analysis-pipeline-shell .risk-management-workspace .response-draft :is(.response-command-title, .response-section-heading, .response-hold-heading) { align-items: center; }
+.analysis-pipeline-shell .risk-management-workspace .response-draft .response-section-heading { min-height: 44px; padding-bottom: 12px; box-sizing: border-box; }
+.analysis-pipeline-shell .risk-management-workspace .response-option-split > article.recommended { padding-top: 16px; }
+
 /* ---------- 대응 방안 (RiskManagementPage/MainResponseContent/PeerRecommendationContent 공용) ----------
  * 이 컴포넌트들은 .response-*, .draft-* 클래스 수백 개가 --divider/--text-heading/--surface-muted 같은
  * 기존(갈색) 전역 변수를 그대로 쓴다. 이 스코프 안에서 그 변수들을 violet 값으로 다시 정의하면
@@ -240,11 +253,10 @@
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-quality-alert > strong, .response-avoid-card h5, .response-avoid-card li) { color: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-quality-alert.neutral > strong { color: var(--warning-vi); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-no-action-card > strong, .response-metric-chips > span) { color: var(--success-vi); }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-metric-chips > span { border-color: var(--success-vi); }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-metric-chips > span { border-color: var(--border); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.draft-review-flag, .draft-verify-first, .draft-orphan-channel) { color: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-scenario.selected, .response-draft-v3 .response-scenario.selected) { border-color: var(--primary); }
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.selected-mark, .response-draft-v3 .draft-no-recommendation) { color: var(--primary); }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-draft-v3 .draft-no-recommendation { border-left-color: var(--primary); }
 .analysis-pipeline-shell.analysis-pipeline-shell .draft-kind.main { background: var(--primary); }
 .analysis-pipeline-shell.analysis-pipeline-shell .draft-kind.competitor { background: #52525b; }
 .analysis-pipeline-shell.analysis-pipeline-shell .draft-kind.hold { background: var(--muted-foreground); }
@@ -268,7 +280,7 @@
 .analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.urgent { border-color: var(--destructive) !important; border-left-color: var(--destructive); background: linear-gradient(135deg, var(--destructive-soft) 0%, var(--muted) 100%); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.caution { border-color: var(--warning-vi) !important; border-left-color: var(--warning-vi); background: linear-gradient(135deg, var(--warning-vi-soft) 0%, var(--muted) 100%); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.watch { border-color: var(--primary) !important; border-left-color: var(--primary); background: linear-gradient(135deg, var(--primary-soft) 0%, var(--muted) 100%); }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.opportunity { border-color: var(--success-vi) !important; border-left-color: var(--success-vi); background: linear-gradient(135deg, var(--success-vi-soft) 0%, var(--muted) 100%); }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-operations-view .response-command-card.opportunity { border-color: var(--border) !important; background: linear-gradient(135deg, var(--success-vi-soft) 0%, var(--muted) 100%); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill { background: var(--primary); color: #fff; }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill.urgent { background: var(--destructive); }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-priority-pill.caution { background: var(--warning-vi); }
@@ -278,10 +290,8 @@
 /* 현재 권고 카드는 다른 대응 카드와 같은 중립 테두리를 사용한다. */
 .analysis-pipeline-shell.analysis-pipeline-shell :is(.response-peer-brief, .response-brief) > article.recommended,
 .analysis-pipeline-shell.analysis-pipeline-shell .response-option-split > article.recommended { border-color: var(--border) !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-no-action-card { border-color: var(--success-vi) !important; border-left-width: 1px !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-limitations { border-left-width: 1px !important; border-left-color: var(--warning-vi) !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-quality-alert { border-left-width: 1px !important; border-left-color: var(--destructive) !important; }
-.analysis-pipeline-shell.analysis-pipeline-shell .response-quality-alert.neutral { border-left-width: 1px !important; border-left-color: var(--warning-vi) !important; }
+.analysis-pipeline-shell.analysis-pipeline-shell .response-no-action-card { border-color: var(--border) !important; }
+.analysis-pipeline-shell.analysis-pipeline-shell :is(.response-limitations, .response-quality-alert, .response-quality-alert.neutral) { border: 1px solid var(--border) !important; }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-draft.response-draft-hold { border-left-width: 1px; }
 .analysis-pipeline-shell.analysis-pipeline-shell .response-draft-v3 :is(.draft-channel-group, .draft-no-recommendation, .draft-verification, .draft-avoid) { border-left: 0; border-radius: var(--radius-md); }
 

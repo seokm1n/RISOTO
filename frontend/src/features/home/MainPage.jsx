@@ -6,7 +6,6 @@ import { api, getErrorMessage } from "../../api";
 import { Pagination } from "../../shared/components";
 import Icon from "../../shared/Icon";
 import {
-  RISK_TYPE_LABELS,
   formatNumber,
   riskEventTitle,
 } from "../../shared/presentation";
@@ -514,10 +513,10 @@ export default function MainPage({ onOpenCompany }) {
       return comparison ? `${averageHeadline}\n${comparison}` : averageHeadline;
     }
     if (!selectedStoryCount) return "이 기간에 위험 여부를 판정한 이슈가 없습니다. 다른 기간을 선택해 보세요.";
-    const base = `이슈 ${formatNumber(selectedStoryCount)}건 중 ${formatNumber(selectedRiskCount)}건이 위험으로 판정됐습니다.`;
+    const base = <>이슈 {formatNumber(selectedStoryCount)}건 중 <strong className="bf-headline-risk-count">{formatNumber(selectedRiskCount)}건</strong>이 위험으로 판정됐습니다.</>;
     const diff = previousStoryCount > 0 ? selectedRiskCount - previousRiskCount : null;
     const change = diff === null ? null : diff > 0 ? `지난 기간보다 ${formatNumber(diff)}건 늘었` : diff < 0 ? `지난 기간보다 ${formatNumber(-diff)}건 줄었` : "지난 기간과 같";
-    if (change) return `${base} ${change}습니다.`;
+    if (change) return <>{base}<br />{change}습니다.</>;
     return base;
   })();
 
@@ -576,7 +575,10 @@ export default function MainPage({ onOpenCompany }) {
 
         </div>
         <div className="bf-story">
-          <span className="bf-badge soft-primary">{periodShortLabel} · {periodDays}일</span>
+          <div className="bf-period-context">
+            <span className="bf-badge soft-primary">{periodShortLabel} · {periodDays}일</span>
+            {!isAverageView && <span className="bf-previous-period">지난 기간: {previousStart} ~ {previousEnd}<small>선택 기간 바로 이전의 동일한 {periodDays}일 구간과 비교합니다.</small></span>}
+          </div>
           <h2 className="bf-headline">{headline}</h2>
           <div className="bf-legend">
             {legendRows.map((row) => <div className={`bf-legend-row ${row.key}`} key={row.key} title={`${row.label} · ${statisticsReady ? `${formatNumber(Math.round(row.count))}건 · ${percentOne(row.ratio)}` : "수치를 불러오는 중입니다."}`}>
@@ -600,7 +602,6 @@ export default function MainPage({ onOpenCompany }) {
           <div className="bf-event-list">{!riskPageData && !riskPageError ? <p className="bf-empty-inline" role="status">선택한 기간의 위험 사건을 불러오는 중입니다.</p> : riskPageError && !riskPageData ? <p className="bf-empty-inline">선택한 기간의 위험 사건을 불러오지 못했습니다.</p> : riskyStories.length ? riskyStories.map((risk, index) => {
             const open = expandedRiskId === risk.id;
             const severity = SEVERITY_META[risk.severity] ?? { label: risk.severity ?? "판정", className: "neutral" };
-            const typeLabel = RISK_TYPE_LABELS[risk.primary_type] ?? risk.risk_types?.[0]?.label ?? risk.primary_type ?? "유형 분류 중";
             const probability = Number.isFinite(risk.risk_probability) ? `${Math.round(risk.risk_probability * 100)}%` : "—";
             return <details className={`bf-event${open ? " open" : ""}${index === 0 && riskPage === 1 ? " lead" : ""}`} key={risk.id} open={open}>
               <summary aria-expanded={open} aria-controls={`briefing-risk-response-${risk.id}`} onClick={(event) => { event.preventDefault(); setExpandedRiskId((current) => (current === risk.id ? null : risk.id)); }}>
@@ -609,7 +610,6 @@ export default function MainPage({ onOpenCompany }) {
                   <strong className="bf-event-title">{riskEventTitle(risk)}</strong>
                   <span className="bf-event-meta">
                     <span className={`bf-badge severity-${severity.className}`}>{severity.label}</span>
-                    <span className="bf-event-type">{typeLabel}</span>
                     <span className="bf-event-sub">{shortDate(risk.last_evidence_at ?? risk.issue_latest_at ?? risk.detected_at)} · 기사 {formatNumber(risk.risk_article_count || risk.evidence_article_count)} · 언론사 {formatNumber(risk.risk_source_count || risk.source_count)}</span>
                   </span>
                 </span>
