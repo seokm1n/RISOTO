@@ -72,7 +72,16 @@ _REFINE_PROMPT = """당신은 기업 리스크 모니터링 시스템의 대응 
   제품 소개처럼 대응할 일이 없는 내용이면 false로 두세요.
 - evidence_sufficient: 이 원문만으로 대응 방향을 정할 수 있습니까? 제목만 있거나 사건의
   실체를 알 수 없으면 false로 두세요.
-- 이 둘은 유형 선택을 바꾸지 않습니다. false여도 risk_type은 하나 고르세요."""
+- 이 둘은 유형 선택을 바꾸지 않습니다. false여도 risk_type은 하나 고르세요.
+
+[검색 키워드]
+- search_keywords에는 **이번 사안과 비슷한 다른 사건을 찾을 때 쓸 핵심어 2~3개**를 넣으세요.
+  유사 사례 검색에 그대로 들어가는 값입니다.
+- 사안의 성격을 가리키는 말로 쓰세요. "라면 먹고 식중독"이면 핵심은 "식중독"이지 "라면"이나
+  "먹고"가 아닙니다.
+- **회사명·매체명·날짜는 넣지 마세요.** 그 회사 기사만 다시 걸려 비교할 사례를 못 찾습니다.
+- 제목에 없는 말이라도 사안을 더 정확히 가리킨다면 쓰세요.
+  예: "이중국적 논란" -> ["법인 국적", "관할권 분쟁"] / "정산 지연" -> ["정산 지연", "대금 미지급"]"""
 
 
 _SYSTEM_PROMPT = """당신은 기업 리스크 모니터링 시스템의 유형 분류기입니다.
@@ -187,6 +196,9 @@ def refine(
         result["safety_checked"] = "is_actionable" in result
         result.setdefault("is_actionable", True)
         result.setdefault("evidence_sufficient", True)
+        # 키워드 경로·드라이런은 LLM을 안 타므로 비어 있다. case_search가 유형 키워드
+        # 사전으로 폴백한다.
+        result.setdefault("search_keywords", [])
         return result
 
     texts = _negative_texts(payload)
@@ -240,9 +252,11 @@ def _refine_llm(
             "reason": {"type": "string"},
             "is_actionable": {"type": "boolean"},
             "evidence_sufficient": {"type": "boolean"},
+            "search_keywords": {"type": "array", "items": {"type": "string"}},
         },
         "required": [
             "risk_type", "confidence", "reason", "is_actionable", "evidence_sufficient",
+            "search_keywords",
         ],
         "additionalProperties": False,
     }
@@ -270,6 +284,11 @@ def _refine_llm(
         "reason": parsed["reason"],
         "is_actionable": bool(parsed["is_actionable"]),
         "evidence_sufficient": bool(parsed["evidence_sufficient"]),
+        # 유사 사례 검색이 쓸 핵심어. 이 호출은 이미 사건 제목과 원문을 읽고 있으므로
+        # 호출을 늘리지 않고 얻는다(규칙 기반 추출은 구어체·신조어에 약하다).
+        "search_keywords": [
+            str(w).strip() for w in (parsed.get("search_keywords") or []) if str(w).strip()
+        ][:3],
         # 안전장치가 걸리면 확신도와 무관하게 사람이 봐야 한다.
         "needs_review": (
             confidence < 0.6
