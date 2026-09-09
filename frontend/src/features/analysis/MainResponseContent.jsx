@@ -520,7 +520,7 @@ function AppendixSection({ content, report }) {
       )}
 
       {evidence.length > 0 && (
-        <FoldSection title={`근거 기사 ${evidence.length}건`}>
+        <FoldSection title={`관련 반응 ${evidence.length}건`}>
           <ul className="response-appendix-list response-appendix-articles">
             {evidence.map((article, index) => (
               <li key={`${article.mention_id ?? "mention"}-${index}`}>

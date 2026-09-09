@@ -21,6 +21,15 @@ const positiveInteger = (value, fallback = 1) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
+const uniqueRiskIssues = (items = []) => {
+  const seen = new Set();
+  return items.filter((risk) => {
+    const key = risk.story_cluster_id ?? risk.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 
 // 기사 판정과 스토리 군집으로 확정된 위험 이슈의 대응방안을 관리한다.
 export default function RiskManagementPage({ canReview = false, initialCompanyId = null, initialRiskEventId = null, initialPeriodDays = "all", embedded = false, dateRange = null }) {
@@ -97,7 +106,7 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
     }
     return {
       queryKey,
-      items: [...new Map(items.map((risk) => [risk.id, risk])).values()],
+      items: uniqueRiskIssues(items),
       total,
       summary: data.summary ?? EMPTY_PAGE_DATA.summary,
     };
@@ -149,7 +158,9 @@ export default function RiskManagementPage({ canReview = false, initialCompanyId
     return () => window.clearInterval(timer);
   }, [loadRisks, selectedRisk]);
 
-  const riskCount = (pageData.summary.active ?? 0) + (pageData.summary.history ?? 0);
+  const riskCount = eventView === "all"
+    ? pageData.items.length
+    : (pageData.summary.active ?? 0) + (pageData.summary.history ?? 0);
   const listTitle = eventView === "needs_response" ? "검토 필요 목록" : "위험 목록";
   const emptyMessage = eventView === "needs_response"
     ? "선택한 기간에 검토가 필요한 위험 이슈가 없습니다."

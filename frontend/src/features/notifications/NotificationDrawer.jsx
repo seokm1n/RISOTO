@@ -23,8 +23,8 @@ function NotificationDrawer({ open, onClose, notifications, error, readIds = EMP
   return <div className="notification-layer">
     <button className="notification-backdrop" type="button" aria-label="알림 패널 닫기" onClick={onClose} />
     <aside className="notification-drawer" id="notification-drawer" role="dialog" aria-modal="true" aria-labelledby="notification-drawer-title">
-      <div className="notification-drawer-head"><div><h2 id="notification-drawer-title">위험 알림</h2><p>최근 관련 기사 날짜 기준, 오늘을 포함한 최근 3일의 위험 이슈입니다.</p></div><button className="notification-close" type="button" onClick={onClose} aria-label="알림 닫기">×</button></div>
-      <div className="notification-drawer-tabs" aria-label="알림 유형"><span className="active">위험 <strong>{riskCount}</strong></span></div>
+      <div className="notification-drawer-head"><div><h2 id="notification-drawer-title">위험 알림</h2><p>최근 관련 기사 날짜 기준, 최근 3일의 위험 이슈입니다.</p></div><button className="notification-close" type="button" onClick={onClose} aria-label="알림 닫기">×</button></div>
+      <div className="notification-drawer-tabs" aria-label="알림 유형"><span className="active">전체 <strong>{riskCount}</strong></span></div>
       <div className="notification-drawer-tools"><span aria-live="polite">읽지 않음 {unreadCount}</span><button type="button" onClick={onMarkAllRead} disabled={unreadCount === 0 || markingAllRead}>{markingAllRead ? "처리 중..." : unreadCount === 0 ? "모두 읽음 완료" : "모두 읽음"}</button></div>
       {error && <div className="notification-load-error" role="status">알림을 갱신하지 못했습니다. 마지막 결과를 표시합니다.</div>}
       <div className="notification-drawer-list">{allowedItems.length ? allowedItems.map((item) => {
