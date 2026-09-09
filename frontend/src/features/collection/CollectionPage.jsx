@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, getErrorMessage } from "../../api";
 import { useSharedResource } from "../../shared/useSharedResource";
 import { Pagination, PanelTitle, useAppConfirm } from "../../shared/components";
+
+import "./CollectionPage.css";
 import {
   FILTERED_DATA_MODE,
   FILTER_REASON_LABELS,
@@ -242,7 +244,7 @@ export default function CollectionPage({ onOpenCompany, initialArticleCompanyId 
       if (event.target.closest("button, a, input, select, textarea, summary, [role='button'], [role='link']")) return;
       setArticleCompany(company);
     }} key={company.id}>
-      <div><span className={`status-dot ${company.monitoring_status}`} /><div><button className="collection-company-name" type="button" onClick={() => setArticleCompany(company)}>{company.name}</button><small>{company.industry_name} · {MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</small></div></div>
+      <div><span className={`status-dot ${company.monitoring_status}`} /><div><div className="collection-name-row"><button className="collection-company-name" type="button" onClick={() => setArticleCompany(company)}>{company.name}</button><span className={`mg-role-badge ${company.company_role}`}>{company.company_role === "main" ? "나의 기업" : "비교 기업"}</span></div><small>{company.industry_name} · <span className={`mg-status-pill ${company.monitoring_status}`}>{MONITORING_LABELS[company.monitoring_status] ?? company.monitoring_status}</span></small></div></div>
       <dl><div><dt>마지막 수집</dt><dd>{formatDate(summary?.last_collected_at)}</dd></div></dl>
       <div className="collection-row-actions"><button className="collection-history-button" type="button" aria-label={`${company.name} 수집 이력 보기`} onClick={() => onOpenCompany(company.id)}>수집 이력 보기</button>{canToggle && <button className={`collection-toggle ${company.monitoring_status === "paused" ? "start" : "stop"}`} type="button" onClick={() => changeCompany(company)} disabled={Boolean(busy)}>{busy === company.id ? "처리 중..." : company.monitoring_status === "paused" ? "수집 재개" : "수집 중지"}</button>}</div>
     </article>;

@@ -1,0 +1,40 @@
+/* 로그인 랜딩 페이지 · Violet shadcn (pen.dev 프레임 참고: 랜딩 페이지 · Violet shadcn / 로그인 팝업 · Violet shadcn)
+ * 토큰은 ../../theme/violet.css 에서 온다. 문구/구조는 그대로 두고 배경·강조색만 violet으로 바꾼다. */
+.login-page {
+  --divider: var(--border);
+  --divider-strong: var(--border);
+  --panel-surface: var(--card);
+  --page-surface: var(--background);
+  --surface-muted: var(--muted);
+  --text-heading: var(--foreground);
+  --text-copy: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --accent: var(--primary);
+  --accent-hover: #6d28d9;
+  --focus: var(--ring);
+  --focus-ring: rgba(139, 92, 246, .16);
+}
+
+/* 히어로 배경: 갈색 라디얼 틴트 → 옅은 violet 틴트, 링 장식도 violet로
+ * (styles.css의 원본 규칙과 특이도가 같은 단일 클래스라 소스 순서로 지면 안 되므로 .login-page로 특이도를 올린다) */
+.login-page .login-story {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(124, 58, 237, .06), transparent 35%),
+    linear-gradient(145deg, #fff 0%, var(--page-surface) 100%);
+}
+.login-page .login-story::before {
+  border-color: rgba(124, 58, 237, .1);
+  box-shadow:
+    0 0 0 90px rgba(124, 58, 237, .04),
+    0 0 0 180px rgba(124, 58, 237, .03),
+    0 0 0 270px rgba(124, 58, 237, .02);
+}
+
+.login-page .login-start { border-color: var(--primary); }
+.login-page .login-role-switch button.active { color: var(--primary); }
+.login-page .login-close:hover { color: var(--primary); }
+.login-page .login-submit { background: var(--primary); }
+.login-page .login-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.login-page .login-error { border-left-color: var(--destructive); background: var(--destructive-soft); color: var(--destructive); }
+.login-page .auth-switch-button { color: var(--primary); }
+.login-page .auth-switch-button:hover { color: var(--accent-hover); }

@@ -1,0 +1,83 @@
+/* Violet shadcn theme · pen.dev "리스크 브리핑 · Violet shadcn" 프레임 기준 토큰과 공통 셸(상단바) 스타일.
+ * 기존 갈색 토큰(--accent 등)은 다른 화면이 아직 쓰므로 그대로 두고, 새 토큰만 추가한다. */
+
+:root {
+  --background: #ffffff;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --primary-soft: #f5f3ff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent-surface: #f4f4f5;
+  --destructive: #dc2626;
+  --destructive-soft: #fef2f2;
+  --success-vi: #16a34a;
+  --success-vi-soft: #f0fdf4;
+  --warning-vi: #d97706;
+  --warning-vi-soft: #fffbeb;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #8b5cf6;
+  --violet-100: #ede9fe;
+  --violet-200: #ddd6fe;
+  --violet-300: #c4b5fd;
+  --violet-600: #7c3aed;
+  --violet-800: #5b21b6;
+  --zinc-100: #f4f4f5;
+  --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
+  --zinc-400: #a1a1aa;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-card: 0 1px 3px rgb(9 9 11 / .06);
+  --shadow-button: 0 1px 2px rgb(9 9 11 / .08);
+  --font-num: "Inter", var(--font-soft);
+  --font-mono-vi: "JetBrains Mono", ui-monospace, monospace;
+
+}
+
+/* 페이지 배경을 디자인과 같은 흰색으로 맞춘다. styles.css의 :root 선언보다 우선하도록 특이도를 올린다. */
+:root:root { --page-surface: var(--background); }
+
+/* ---------- Topbar (전 화면 공통) ---------- */
+:is(.general-app, .admin-app) .topbar {
+  min-height: 56px;
+  padding: 0 max(24px, calc((100% - 1392px) / 2));
+  gap: 16px;
+  column-gap: 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  box-shadow: none;
+}
+:is(.general-app, .admin-app) .topbar .brand { font-size: 15px; font-weight: 600; letter-spacing: -.3px; color: var(--foreground); gap: 10px; }
+:is(.general-app, .admin-app) .topbar .brand-icon { width: 28px; height: 28px; margin-right: 0; border-radius: var(--radius-sm); }
+:is(.general-app, .admin-app) .topbar .brand > .brand-copy { gap: 0; }
+:is(.general-app, .admin-app) .topbar .brand-copy small { display: none; }
+:is(.general-app, .admin-app) .topbar .main-nav { gap: 2px; }
+:is(.general-app, .admin-app) .topbar .main-nav button { min-height: 32px; padding: 6px 12px; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: 14px; font-weight: 500; gap: 6px; }
+:is(.general-app, .admin-app) .topbar .main-nav button .ui-icon { width: 16px; height: 16px; --icon-color: currentColor; }
+:is(.general-app, .admin-app) .topbar .main-nav button:hover { background: var(--accent-surface); color: var(--foreground); }
+:is(.general-app, .admin-app) .topbar .main-nav button.active { background: var(--accent-surface); color: var(--foreground); box-shadow: none; font-weight: 500; }
+:is(.general-app, .admin-app) .topbar .main-nav button.active .ui-icon { --icon-color: currentColor; }
+:is(.general-app, .admin-app) .topbar .main-nav button:hover:not(.active) .ui-icon { --icon-color: currentColor; }
+:is(.general-app, .admin-app) .topbar-actions { gap: 8px; }
+:is(.general-app, .admin-app) .topbar-live-collecting { min-height: 24px; padding: 2px 10px; border-radius: 999px; background: var(--success-vi-soft); color: var(--success-vi); font-size: 12px; font-weight: 600; letter-spacing: 0; gap: 6px; }
+:is(.general-app, .admin-app) .topbar-live-collecting .topbar-live-spinner { width: 8px; height: 8px; border: 0; background: var(--success-vi); animation: none; }
+:is(.general-app, .admin-app) .topbar-live-collecting.stopped { background: var(--destructive-soft); color: var(--destructive); }
+:is(.general-app, .admin-app) .topbar-live-collecting.stopped .topbar-live-spinner { width: 8px; height: 8px; background: var(--destructive); box-shadow: none; }
+:is(.general-app, .admin-app) .topbar-live-collecting:hover .topbar-live-label { text-decoration: none; }
+:is(.general-app, .admin-app) .notification-siren { width: 36px; height: 36px; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); color: var(--foreground); }
+:is(.general-app, .admin-app) .notification-siren:hover, :is(.general-app, .admin-app) .notification-siren:focus-visible { border-color: var(--ring); background: var(--accent-surface); color: var(--foreground); outline-color: rgba(139, 92, 246, .3); }
+:is(.general-app, .admin-app) .notification-siren svg { width: 16px; height: 16px; }
+:is(.general-app, .admin-app) .notification-badge { top: -4px; right: -5px; min-width: 18px; height: 18px; border-color: var(--background); background: var(--primary); font-size: 11px; }
+:is(.general-app, .admin-app) .account-button { border-left: 1px solid var(--border); padding: 2px 0 2px 10px; }
+:is(.general-app, .admin-app) .account-button span { font-size: 12px; color: var(--muted-foreground); }
+:is(.general-app, .admin-app) .account-button strong { font-size: 12px; color: var(--foreground); }
+:is(.general-app, .admin-app) .logout-button { min-height: 36px; padding: 0 12px; border: 1px solid var(--input); border-radius: var(--radius-md); color: var(--foreground); font-size: 13px; font-weight: 500; background: var(--background); }
+:is(.general-app, .admin-app) .logout-button:hover, :is(.general-app, .admin-app) .logout-button:focus-visible { border-color: var(--ring); background: var(--accent-surface); color: var(--foreground); outline: 2px solid rgba(139, 92, 246, .3); }

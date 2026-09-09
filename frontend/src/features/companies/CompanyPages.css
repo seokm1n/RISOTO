@@ -1,0 +1,78 @@
+/* 관리 · 기업 관리 + 기업 수정 다이얼로그 (pen.dev 프레임 wfTkO / HEHHO 기준)
+ * 토큰은 ../../theme/violet.css 에서 온다. 이 파일은 .company-admin-page 안에서만 적용된다
+ * (수정/등록 다이얼로그도 이 wrapper 안에 렌더링되므로 함께 적용된다). */
+
+.company-admin-page {
+  --divider: var(--border);
+  --divider-strong: var(--border);
+  --divider-accent: var(--border);
+  --panel-surface: var(--card);
+  --page-surface: var(--background);
+  --surface-muted: var(--muted);
+  --surface-soft: var(--secondary);
+  --title-surface: var(--secondary);
+  --text-heading: var(--foreground);
+  --text-copy: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --accent: var(--primary);
+  --accent-hover: #6d28d9;
+  --success-strong: var(--success-vi);
+  --success: var(--success-vi);
+  --success-soft: var(--success-vi-soft);
+  --focus: var(--ring);
+  --shadow-panel: var(--shadow-card);
+  --card-padding: 20px;
+  --card-radius: var(--radius-lg);
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 20px 48px 48px;
+  color: var(--foreground);
+}
+.company-admin-page .company-page-intro { color: var(--muted-foreground); font-size: 13px; font-weight: 400; }
+.company-admin-page .panel-title-band { padding: 0; border-radius: 0; background: transparent; }
+.company-admin-page .icon-tone-neutral { --icon-color: var(--muted-foreground); --icon-surface: var(--secondary); }
+.company-admin-page .icon-tone-accent { --icon-color: var(--primary); --icon-surface: var(--primary-soft); }
+
+/* 섹션 제목 위 킥커(MY COMPANY / REGISTERED COMPETITORS) */
+.mg-kicker { display: block; margin-bottom: 4px; font: 600 11px/1 var(--font-mono-vi); letter-spacing: .6px; color: var(--primary); }
+
+/* 카드 테두리에 남아있던 갈색 rgba를 옅은 회색으로 통일 */
+.company-admin-page :is(.company-role-section, .company-card, .empty-state) { border-color: var(--border) !important; }
+.company-admin-page .company-role-section-title { border-bottom-color: var(--border); }
+
+/* 역할 배지: 나의 기업 = 채워진 primary, 비교 기업 = 아웃라인 */
+.company-admin-page .company-role-badge { background: var(--secondary); color: var(--secondary-foreground); }
+.company-admin-page .company-role-badge.main { background: var(--primary); color: var(--primary-foreground); }
+.company-admin-page .company-role-badge.competitor { background: var(--background); color: var(--foreground); border: 1px solid var(--border); }
+.company-admin-page :is(.company-role-section-title .eyebrow, .mini-label) { background: var(--secondary); color: var(--secondary-foreground); }
+
+/* 기업 규모 · 연매출 · 종목코드를 한 줄로 나란히 */
+.company-admin-page .company-finance-summary { display: flex !important; gap: 28px; }
+.company-admin-page .company-finance-summary > div { gap: 2px !important; }
+.company-admin-page .company-finance-summary span { color: var(--muted-foreground); font-size: 11px; font-weight: 500; }
+.company-admin-page .company-finance-summary strong { font-size: 13px; font-weight: 600; font-family: var(--font-num); }
+
+/* 하드코딩된 강조색을 primary로 통일 */
+.company-admin-page :is(.company-name-link:hover, .company-name-link:focus-visible, .company-card-controls button:hover, .company-card-controls .company-edit-icon:hover, .company-edit-icon:focus-visible, .company-register-button:hover, .company-edit-close:hover) { color: var(--primary); }
+.company-admin-page .company-card-controls .company-edit-icon:hover { background: var(--secondary); border-color: var(--border); }
+.company-admin-page .status-dot { background: var(--muted-foreground); }
+.company-admin-page :is(.status-dot.active, .status-dot.backfilling, .status-dot.warming, .status-dot.running) { background: var(--success-vi); }
+.company-admin-page :is(.status-dot.paused, .status-dot.archived, .status-dot.error, .status-dot.stopped) { background: var(--destructive); }
+.company-admin-page .keyword-chip { background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius-sm); }
+.company-admin-page .keyword-chip button { color: var(--muted-foreground); }
+.company-admin-page .text-field, .company-admin-page .keyword-shell { border-color: var(--input); border-radius: var(--radius-md); background: var(--background); }
+.company-admin-page .text-field:focus, .company-admin-page .keyword-shell:focus-within { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(139, 92, 246, .2); }
+.company-admin-page .field-label { font-size: 13px; font-weight: 500; }
+.company-admin-page .field-hint { font-size: 12px; }
+.company-admin-page .submit-button, .company-admin-page .company-register-button { border-radius: var(--radius-md); box-shadow: var(--shadow-button); }
+.company-admin-page .delete-button { border-color: var(--destructive); color: var(--destructive); background: var(--background); border-radius: var(--radius-md); }
+.company-admin-page .delete-button:hover:not(:disabled) { background: var(--destructive-soft); }
+.company-admin-page .secondary-button { border-color: var(--input); border-radius: var(--radius-md); }
+.company-admin-page .secondary-button:hover:not(:disabled) { border-color: var(--ring); background: var(--secondary); color: var(--foreground); }
+
+/* 수정/등록 다이얼로그 */
+.company-admin-page .company-edit-dialog { border-radius: var(--radius-lg); box-shadow: 0 16px 48px rgb(9 9 11 / .2); }
+.company-admin-page .company-edit-dialog-head h1 { font-size: 20px; font-weight: 600; }
+.company-admin-page .company-edit-close { border-radius: var(--radius-md); border-color: var(--input); }
+.company-admin-page .edit-card { border-radius: var(--radius-lg); }
+.company-admin-page .card-heading { border-bottom-color: var(--border); }

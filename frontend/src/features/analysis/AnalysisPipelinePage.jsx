@@ -1,4 +1,4 @@
-import { IconBadge } from "../../shared/Icon";
+import Icon, { IconBadge } from "../../shared/Icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 
@@ -31,13 +31,15 @@ import {
 } from "../../shared/presentation";
 import { RecentCollectionDate, RiskEventListContent, RiskJudgmentModelInfo } from "./AnalysisStatisticsPage";
 
+import "./AnalysisPipelinePage.css";
+
 const STAGES = [
-  { id: "collection", step: "01", label: "실시간 수집 (15분)", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다." },
-  { id: "filtering", step: "02", label: "수집 결과 필터링", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다." },
-  { id: "sentiment", step: "03", label: "감성 분석", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다." },
-  { id: "stories", step: "04", label: "주제별 이슈 모음", description: "같은 사건을 다룬 기사들을 하나의 이슈로 묶습니다." },
-  { id: "risk", step: "05", label: "위험 판정", description: "이슈별 위험도와 유형, 사건 발생 근거를 확인합니다." },
-  { id: "response", step: "06", label: "대응 방안", description: "위험 이슈의 대응방안을 생성하고 검토·승인 이력을 관리합니다." },
+  { id: "collection", step: "01", label: "실시간 수집 (15분)", description: "15분 단위 수집 품질과 처리량, 최근 실행 이력을 확인합니다.", icon: "collection" },
+  { id: "filtering", step: "02", label: "수집 결과 필터링", description: "수집 원문의 관련성·광고성·중복 판정과 보류 결과를 확인합니다.", icon: "filtering" },
+  { id: "sentiment", step: "03", label: "감성 분석", description: "정제 기사별 긍정·중립·부정 판정과 기간 분포를 확인합니다.", icon: "sentiment" },
+  { id: "stories", step: "04", label: "주제별 이슈 모음", description: "같은 사건을 다룬 기사들을 하나의 이슈로 묶습니다.", icon: "events" },
+  { id: "risk", step: "05", label: "위험 판정", description: "이슈별 위험도와 유형, 사건 발생 근거를 확인합니다.", icon: "risk" },
+  { id: "response", step: "06", label: "대응 방안", description: "위험 이슈의 대응방안을 생성하고 검토·승인 이력을 관리합니다.", icon: "response" },
 ];
 const STAGE_IDS = new Set(STAGES.map((stage) => stage.id));
 const FILTER_PAGE_SIZE = 5;
@@ -452,10 +454,33 @@ export default function AnalysisPipelinePage() {
   const competitorCompanies = companies.filter((company) => company.company_role === "competitor");
   const selectedCompany = companies.find((company) => String(company.id) === selectedCompanyId) ?? null;
 
+  const activeStageIndex = STAGES.findIndex((item) => item.id === stageId);
+
   return <section className="analysis-pipeline-shell">
-    <aside className="analysis-pipeline-sidebar"><div><h2>분석 파이프라인</h2></div><nav aria-label="분석 파이프라인">{STAGES.map((item, index) => <button type="button" className={stageId === item.id ? "active" : ""} aria-current={stageId === item.id ? "page" : undefined} onClick={() => moveStage(item.id)} key={item.id}><span>{item.step}</span><strong>{item.label}</strong>{index < STAGES.length - 1 && <i aria-hidden="true" />}</button>)}</nav></aside>
+    <header className="ap-head">
+      <div className="ap-head-copy">
+        <nav className="ap-crumb" aria-label="현재 위치"><span>Pipeline</span><Icon name="chevronRight" tone="inherit" /><strong>{stage.label}</strong></nav>
+        <h1>분석 파이프라인</h1>
+      </div>
+      <div className="ap-filters">
+        <label className="ap-select" htmlFor="pipeline-company">
+          <Icon name="search" tone="inherit" />
+          <span className="sr-only">분석 기업</span>
+          <select id="pipeline-company" value={selectedCompanyId} onChange={(event) => selectCompany(event.target.value)}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}</select>
+          <Icon name="chevronDown" tone="inherit" className="ap-select-chevron" />
+        </label>
+        {stageId !== "collection" && <AnalysisPeriodControl period={period} onChange={(field, value) => { setPage(1); changePeriod(field, value); }} />}
+      </div>
+    </header>
+
+    <nav className="ap-stepper" aria-label="분석 파이프라인 단계">{STAGES.map((item, index) => <button type="button" className={`ap-step${stageId === item.id ? " active" : ""}${activeStageIndex > index ? " done" : ""}`} aria-current={stageId === item.id ? "page" : undefined} onClick={() => moveStage(item.id)} key={item.id}>
+      <span className="ap-step-icon"><Icon name={item.icon} tone="inherit" /></span>
+      <span className="ap-step-text"><b>{item.step}</b><strong>{item.label}</strong></span>
+    </button>)}</nav>
+
+    <div className="ap-stage-head"><h2>{stage.label}</h2><p>{stage.description}</p></div>
+
     <main className="workspace analysis-statistics-workspace analysis-pipeline-workspace">
-      <header className="pipeline-heading"><div><h1>{stage.label}</h1><p>{stage.description}</p></div><div className="pipeline-heading-filters">{stageId !== "collection" && <AnalysisPeriodControl period={period} onChange={(field, value) => { setPage(1); changePeriod(field, value); }} />}<label><span>분석 기업</span><select value={selectedCompanyId} onChange={(event) => selectCompany(event.target.value)}><option value="" disabled>기업을 선택하세요</option>{mainCompanies.length > 0 && <optgroup label="나의 기업">{mainCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}{competitorCompanies.length > 0 && <optgroup label="비교 기업">{competitorCompanies.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}</optgroup>}</select></label></div></header>
       {error && <div className="notice error">{error}</div>}
       {companiesLoading || (companies.length > 0 && selectedCompanyId && stageId !== "response" && !error && loading && !Object.keys(visibleData).length) ? <p className="empty-state">{stage.label} 데이터를 불러오는 중입니다.</p> : !companies.length ? <p className="empty-state">먼저 기업을 등록해 주세요.</p> : <>
         {stageId === "collection" && <CollectionStage data={visibleData} date={collectionDate} page={page} onDateChange={(value) => { if (!value) return; setCollectionDate(value); setPage(1); }} onPageChange={setPage} onOpenWindow={setArticleWindow} />}

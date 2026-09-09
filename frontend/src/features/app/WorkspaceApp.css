@@ -1,0 +1,16 @@
+/* 관리 페이지 공용 헤더(수집 관리/기업 관리 전환) · pen.dev 프레임 SdbD6/wfTkO 기준.
+ * 토큰은 ../../theme/violet.css 에서 온다. 두 라우트(/collection, /companies) 모두에서 렌더링된다. */
+.mg-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; max-width: 1440px; margin: 0 auto; padding: 32px 48px 0; }
+.mg-head-copy { display: grid; gap: 6px; }
+.mg-crumb { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.mg-crumb .ui-icon { width: 12px; height: 12px; }
+.mg-crumb strong { color: var(--foreground); font-weight: 500; }
+.mg-head h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.8px; line-height: 1.25; color: var(--foreground); }
+.mg-toggle { display: inline-flex; gap: 2px; padding: 4px; border-radius: var(--radius-md); background: var(--muted); }
+.mg-toggle button { min-height: 32px; padding: 0 16px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted-foreground); font: 500 14px/1 var(--font-soft); cursor: pointer; }
+.mg-toggle button.active { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgb(9 9 11 / .08); }
+.mg-toggle button:hover:not(.active) { color: var(--foreground); }
+.mg-toggle button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+@media (max-width: 767px) {
+  .mg-head { padding: 24px 16px 0; }
+}

@@ -28,6 +28,8 @@ import { useSharedResource } from "../../shared/useSharedResource";
 import { clearSelectedCompanyId } from "../../shared/selectedCompanySession";
 import { clearAnalysisPipelineRiskEventId } from "../../shared/analysisPipelineSession";
 
+import "./WorkspaceApp.css";
+
 const GENERAL_NAV_ITEMS = [
   { id: "main", icon: "briefing", label: "기업 리스크 브리핑", path: "/main" },
   { id: "statistics", icon: "analysis", label: "분석 파이프라인", path: "/analysis/collection" },
@@ -299,12 +301,16 @@ export default function WorkspaceApp({ session, onLogout, onAccountDeleted }) {
       </div>
     </header>
 
-    {isManagementPage && <div className="management-page-toolbar">
-      <nav className="management-view-toggle" aria-label="관리 화면 선택">
+    {isManagementPage && <header className="mg-head">
+      <div className="mg-head-copy">
+        <nav className="mg-crumb" aria-label="현재 위치"><span>Management</span><Icon name="chevronRight" tone="inherit" /><strong>{page === "collection" ? "수집 관리" : "기업 관리"}</strong></nav>
+        <h1>관리</h1>
+      </div>
+      <nav className="mg-toggle" aria-label="관리 화면 선택">
         <button type="button" className={page === "collection" ? "active" : ""} aria-current={page === "collection" ? "page" : undefined} onClick={() => goTo("/collection")}>수집 관리</button>
         <button type="button" className={page === "companies" ? "active" : ""} aria-current={page === "companies" ? "page" : undefined} onClick={() => goTo("/companies")}>기업 관리</button>
       </nav>
-    </div>}
+    </header>}
 
     <Routes>{isAdmin ? <>
       <Route path="/" element={<Navigate to="/admin/members" replace />} />

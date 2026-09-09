@@ -20,6 +20,17 @@ const ICONS = {
   check: <path d="m5 12 4 4L19 6" />,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-10h.01" /></>,
+  chevronRight: <path d="m9 6 6 6-6 6" />,
+  chevronDown: <path d="m6 9 6 6 6-6" />,
+  arrowRight: <path d="M5 12h14m-6-6 6 6-6 6" />,
+  arrowUpRight: <path d="M7 17 17 7M8 7h9v9" />,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  siren: <><path d="M7 18v-6a5 5 0 0 1 10 0v6" /><path d="M5 21a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H5Z" /><path d="M21 12h1M2.5 12H2M12 2v1m7.07 1.93-.7.7M4.93 4.93l.7.7" /></>,
+  gitBranch: <><path d="M6 3v12" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>,
+  trendingUp: <><path d="m22 7-8.5 8.5-5-5L2 17" /><path d="M16 7h6v6" /></>,
+  trendingDown: <><path d="m22 17-8.5-8.5-5 5L2 7" /><path d="M16 17h6v-6" /></>,
+  lightbulb: <><path d="M15 14c.2-1 .7-1.7 1.5-2.5A6 6 0 1 0 7.5 11.5c.8.8 1.3 1.5 1.5 2.5" /><path d="M9 18h6m-5 4h4" /></>,
+  minus: <path d="M5 12h14" />,
 };
 
 const accentIcons = new Set(["risk", "sentiment", "events", "bell"]);
