@@ -1,7 +1,7 @@
 /* 관리 · 수집 관리 (pen.dev 프레임 SdbD6 기준)
- * 토큰은 ../../theme/violet.css 에서 온다. 이 파일은 .collection-workspace 안에서만 적용된다. */
+ * 토큰은 ../../theme/violet.css 에서 온다. 이 파일은 .collection-workspace.collection-workspace 안에서만 적용된다. */
 
-.collection-workspace {
+.collection-workspace.collection-workspace {
   --divider: var(--border);
   --divider-strong: var(--border);
   --divider-accent: var(--border);
@@ -27,48 +27,48 @@
   padding: 20px 48px 48px;
   color: var(--foreground);
 }
-.collection-workspace .workspace-head p { color: var(--muted-foreground); font-size: 13px; }
-.collection-workspace .panel-title-band { padding: 0; border-radius: 0; background: transparent; }
-.collection-workspace .panel-title h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.collection-workspace .eyebrow { color: var(--primary); }
-.collection-workspace .icon-tone-neutral { --icon-color: var(--muted-foreground); --icon-surface: var(--secondary); }
-.collection-workspace .icon-tone-accent { --icon-color: var(--primary); --icon-surface: var(--primary-soft); }
+.collection-workspace.collection-workspace .workspace-head p { color: var(--muted-foreground); font-size: 13px; }
+.collection-workspace.collection-workspace .panel-title-band { padding: 0; border-radius: 0; background: transparent; }
+.collection-workspace.collection-workspace .panel-title h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.collection-workspace.collection-workspace .eyebrow { color: var(--primary); }
+.collection-workspace.collection-workspace .icon-tone-neutral { --icon-color: var(--muted-foreground); --icon-surface: var(--secondary); }
+.collection-workspace.collection-workspace .icon-tone-accent { --icon-color: var(--primary); --icon-surface: var(--primary-soft); }
 
 /* 카드 테두리/그림자에 남아있던 갈색 rgba를 옅은 회색으로 통일 */
-.collection-workspace :is(.panel, .collection-company-row, .collection-group-empty, .empty-state) { border-color: var(--border) !important; }
-.collection-workspace .panel-title { border-bottom-color: var(--border); }
-.collection-workspace .collection-company-row dt { background: var(--secondary); }
-.collection-workspace .collection-company-row:hover { border-color: var(--ring); box-shadow: var(--shadow-card); }
-.collection-workspace .collection-activity-track { background: var(--muted); }
-.collection-workspace .collection-incident-summary { border-color: var(--border) !important; box-shadow: var(--shadow-card); }
-.collection-workspace .collection-articles-modal { border-color: var(--border) !important; }
+.collection-workspace.collection-workspace :is(.panel, .collection-company-row, .collection-group-empty, .empty-state) { border-color: var(--border) !important; }
+.collection-workspace.collection-workspace .panel-title { border-bottom-color: var(--border); }
+.collection-workspace.collection-workspace .collection-company-row dt { background: var(--secondary); }
+.collection-workspace.collection-workspace .collection-company-row:hover { border-color: var(--ring); box-shadow: var(--shadow-card); }
+.collection-workspace.collection-workspace .collection-activity-track { background: var(--muted); }
+.collection-workspace.collection-workspace .collection-incident-summary { border-color: var(--border) !important; box-shadow: var(--shadow-card); }
+.collection-workspace.collection-workspace .collection-articles-modal { border-color: var(--border) !important; }
 
 /* 상태별 하드코딩 색(정지/장애) 통일 */
-.collection-workspace .collection-activity.stopped .collection-activity-light { background: var(--destructive); }
-.collection-workspace .collection-activity.stopped strong { color: var(--destructive); }
-.collection-workspace .collection-activity.stopped .collection-activity-track i { background: var(--destructive); }
-.collection-workspace .collection-incident-indicator { background: var(--muted-foreground); }
-.collection-workspace .collection-incident-summary.healthy { background: var(--success-vi-soft); }
-.collection-workspace .collection-incident-summary.degraded .collection-incident-indicator { background: var(--warning-vi); }
-.collection-workspace .collection-incident-summary.unavailable .collection-incident-indicator { background: var(--destructive); }
-.collection-workspace .collection-incident-status { background: var(--muted); color: var(--destructive); }
-.collection-workspace .collection-incident-status.retrying { color: var(--warning-vi); }
-.collection-workspace .health-state.unavailable { color: var(--destructive); }
-.collection-workspace :is(.collection-company-name:hover, .collection-company-name:focus-visible, .collection-row-actions button:hover, .collection-articles-close:hover) { color: var(--primary); }
-.collection-workspace .collection-articles-filter select:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(139, 92, 246, .2); }
-.collection-workspace .collection-row-actions .collection-toggle.stop { border-color: var(--destructive); color: var(--destructive); }
-.collection-workspace .monitor-control { border-color: var(--destructive); color: var(--destructive); background: var(--background); }
-.collection-workspace .monitor-control.start { border-color: var(--success-vi); }
-.collection-workspace .status-dot { background: var(--muted-foreground); }
-.collection-workspace :is(.status-dot.active, .status-dot.backfilling, .status-dot.warming, .status-dot.running) { background: var(--success-vi); }
-.collection-workspace :is(.status-dot.paused, .status-dot.archived, .status-dot.error, .status-dot.stopped) { background: var(--destructive); }
-.collection-workspace .secondary-button { border-color: var(--input); }
-.collection-workspace .secondary-button:hover:not(:disabled) { border-color: var(--ring); background: var(--secondary); color: var(--foreground); }
-.collection-workspace .filter-pill.rejected { background: var(--destructive-soft); color: var(--destructive); }
-.collection-workspace .filter-pill.review_required { background: var(--warning-vi-soft); color: var(--warning-vi); }
-.collection-workspace .sentiment-pill.positive { background: var(--success-vi-soft); color: var(--success-vi); }
-.collection-workspace .sentiment-pill.negative { background: var(--destructive-soft); color: var(--destructive); }
-.collection-workspace :is(.sentiment-pill.neutral, .sentiment-pill.pending) { background: var(--muted); color: var(--muted-foreground); }
+.collection-workspace.collection-workspace .collection-activity.stopped .collection-activity-light { background: var(--destructive); }
+.collection-workspace.collection-workspace .collection-activity.stopped strong { color: var(--destructive); }
+.collection-workspace.collection-workspace .collection-activity.stopped .collection-activity-track i { background: var(--destructive); }
+.collection-workspace.collection-workspace .collection-incident-indicator { background: var(--muted-foreground); }
+.collection-workspace.collection-workspace .collection-incident-summary.healthy { background: var(--success-vi-soft); }
+.collection-workspace.collection-workspace .collection-incident-summary.degraded .collection-incident-indicator { background: var(--warning-vi); }
+.collection-workspace.collection-workspace .collection-incident-summary.unavailable .collection-incident-indicator { background: var(--destructive); }
+.collection-workspace.collection-workspace .collection-incident-status { background: var(--muted); color: var(--destructive); }
+.collection-workspace.collection-workspace .collection-incident-status.retrying { color: var(--warning-vi); }
+.collection-workspace.collection-workspace .health-state.unavailable { color: var(--destructive); }
+.collection-workspace.collection-workspace :is(.collection-company-name:hover, .collection-company-name:focus-visible, .collection-row-actions button:hover, .collection-articles-close:hover) { color: var(--primary); }
+.collection-workspace.collection-workspace .collection-articles-filter select:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(139, 92, 246, .2); }
+.collection-workspace.collection-workspace .collection-row-actions .collection-toggle.stop { border-color: var(--destructive); color: var(--destructive); }
+.collection-workspace.collection-workspace .monitor-control { border-color: var(--destructive); color: var(--destructive); background: var(--background); }
+.collection-workspace.collection-workspace .monitor-control.start { border-color: var(--success-vi); }
+.collection-workspace.collection-workspace .status-dot { background: var(--muted-foreground); }
+.collection-workspace.collection-workspace :is(.status-dot.active, .status-dot.backfilling, .status-dot.warming, .status-dot.running) { background: var(--success-vi); }
+.collection-workspace.collection-workspace :is(.status-dot.paused, .status-dot.archived, .status-dot.error, .status-dot.stopped) { background: var(--destructive); }
+.collection-workspace.collection-workspace .secondary-button { border-color: var(--input); }
+.collection-workspace.collection-workspace .secondary-button:hover:not(:disabled) { border-color: var(--ring); background: var(--secondary); color: var(--foreground); }
+.collection-workspace.collection-workspace .filter-pill.rejected { background: var(--destructive-soft); color: var(--destructive); }
+.collection-workspace.collection-workspace .filter-pill.review_required { background: var(--warning-vi-soft); color: var(--warning-vi); }
+.collection-workspace.collection-workspace .sentiment-pill.positive { background: var(--success-vi-soft); color: var(--success-vi); }
+.collection-workspace.collection-workspace .sentiment-pill.negative { background: var(--destructive-soft); color: var(--destructive); }
+.collection-workspace.collection-workspace :is(.sentiment-pill.neutral, .sentiment-pill.pending) { background: var(--muted); color: var(--muted-foreground); }
 
 /* 역할/모니터링 상태 배지 — 실제 company_role · monitoring_status 값을 그대로 뱃지로 표시한다 */
 .collection-name-row { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }

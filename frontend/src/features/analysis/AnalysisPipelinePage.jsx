@@ -294,12 +294,14 @@ function RiskStage({ data, selectedRiskId, classification, onSelect, onClassific
   const listTitle = `${classificationLabel} 목록`;
   const emptyMessage = `선택 기간의 판정 대상 중 ${classificationLabel} 이슈가 없습니다.`;
   return <div className="pipeline-stage-content">
-    <div className="pipeline-stat-grid risk-stage-stat-grid">
-      <Stat label="위험 이슈" value={`${formatNumber(summary.risk)}건`} note="위험으로 판정" tone="danger" active={isRisk} onClick={() => onClassificationChange("risk")} />
-      <Stat label="비위험 이슈" value={`${formatNumber(summary.non_risk)}건`} note="비위험으로 판정" tone="success" active={classification === "non_risk"} onClick={() => onClassificationChange("non_risk")} />
-    </div>
     <section className="panel pipeline-panel pipeline-risk-picker-panel">
-      <div className="pipeline-panel-heading pipeline-risk-list-heading"><PanelTitle title={listTitle} /></div>
+      <div className="pipeline-panel-heading pipeline-risk-list-heading">
+        <PanelTitle title={listTitle} />
+        <div className="risk-class-toggle" role="group" aria-label="위험 판정 분류 선택">
+          <button type="button" className={`danger${isRisk ? " active" : ""}`} aria-pressed={isRisk} onClick={() => onClassificationChange("risk")}>위험 {formatNumber(summary.risk)}건</button>
+          <button type="button" className={`success${classification === "non_risk" ? " active" : ""}`} aria-pressed={classification === "non_risk"} onClick={() => onClassificationChange("non_risk")}>비위험 {formatNumber(summary.non_risk)}건</button>
+        </div>
+      </div>
       {selected ? <div className={`pipeline-risk-dropdown${listOpen ? " open" : ""}`} ref={dropdownRef}>
         <button className="pipeline-risk-dropdown-trigger risk-event-list-item selected" type="button" aria-expanded={listOpen} aria-controls="risk-judgment-event-list" onClick={() => setListOpen((open) => !open)}>
           <div className="pipeline-risk-dropdown-value"><RiskEventListContent risk={selected} judgmentCompact /></div>
