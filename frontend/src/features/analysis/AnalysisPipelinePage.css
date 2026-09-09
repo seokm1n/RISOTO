@@ -135,6 +135,16 @@
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-window-row:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 
 /* ---------- 결과 목록 (필터/감성/실행 이력 공용) ---------- */
+.collection-history-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 24px; align-items: stretch; min-width: 0; }
+.collection-history-grid > .pipeline-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.analysis-pipeline-shell .collection-history-grid .collection-window-heading { flex: 0 0 auto; min-height: 84px; box-sizing: border-box; align-items: center; }
+.analysis-pipeline-shell .collection-history-grid .collection-window-heading > .panel-title { margin: 0; }
+.collection-history-list { flex: 1 1 0; min-height: 200px; contain: size; overflow-y: auto; align-content: start; }
+.collection-windows-panel > .pagination { margin-top: auto; padding-top: 16px; }
+@media (max-width: 1023px) {
+  .collection-history-grid { grid-template-columns: minmax(0, 1fr); }
+  .collection-history-list { flex: auto; contain: none; min-height: 0; max-height: 400px; }
+}
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-result-row { border-bottom: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; }
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-result-row.linked:hover { background: var(--accent-surface); }
 .analysis-pipeline-shell.analysis-pipeline-shell .pipeline-result-row strong { color: var(--foreground); font-weight: 600; }

@@ -115,17 +115,19 @@ function CollectionStage({ data, date, page, onDateChange, onPageChange, onOpenW
       <Stat label="출처" value={`${formatNumber(latest?.publisher_count)}곳`} note="최근 15분" />
       <Stat label="수집 품질" value={latest ? DATA_QUALITY_LABELS[latest.data_quality] : "대기"} note={latest ? formatDate(latest.window_end) : "생성 전"} tone={latest?.data_quality ?? ""} />
     </div>
-    <section className="panel pipeline-panel">
+    <div className="collection-history-grid">
+    <section className="panel pipeline-panel collection-history-panel">
+      <div className="pipeline-panel-heading collection-window-heading"><PanelTitle title="최근 수집 실행 이력" /></div>
+      <div className="pipeline-result-list collection-history-list">{(data.jobs?.items ?? []).map((job) => <article className="pipeline-result-row" key={job.id}><div><span className={`pipeline-status ${job.status}`}>{job.status === "completed" ? "완료" : job.status === "partial" ? "부분 완료" : job.status === "failed" ? "실패" : "진행 중"}</span><strong>{job.job_type === "realtime" ? "실시간 수집" : job.job_type === "backfill" ? "과거 기사 수집" : "수동 수집"}</strong></div><p>조회 {formatNumber(job.query_count)}회 · 수집 {formatNumber(job.fetched_count)}건 · 신규 {formatNumber(job.new_count)}건 · 연결 {formatNumber(job.matched_count)}건</p><small>{(job.sources ?? []).map((source) => SOURCE_LABELS[source] ?? source).join(", ")} · {formatDate(job.completed_at ?? job.started_at)}</small></article>)}</div>
+      {!data.jobs?.items?.length && <p className="panel-empty">수집 실행 이력이 없습니다.</p>}
+    </section>
+    <section className="panel pipeline-panel collection-windows-panel">
       <div className="pipeline-panel-heading collection-window-heading"><PanelTitle title="날짜별 수집 구간" /><div className="briefing-date-field"><span>조회 날짜</span><DatePicker label="조회 날짜" value={date} max={seoulDateValue()} onChange={onDateChange} /></div></div>
       <div className="pipeline-table-wrap"><table className="pipeline-table"><thead><tr><th>구간</th><th>품질</th><th>기사</th><th>스토리</th><th>확산</th><th>출처</th><th>위험도</th></tr></thead><tbody>{visibleWindows.map((window) => <tr className="pipeline-window-row" tabIndex={0} role="link" aria-label={`${formatDate(window.window_start)} 수집 기사 보기`} onClick={() => onOpenWindow(window)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenWindow(window); } }} key={window.id}><td>{formatDate(window.window_start)}</td><td><span className={`quality-pill ${window.data_quality}`}>{DATA_QUALITY_LABELS[window.data_quality]}</span></td><td>{formatNumber(window.article_count)}</td><td>{formatNumber(window.story_count)}</td><td>{formatNumber(window.amplification_count)}</td><td>{formatNumber(window.publisher_count)}</td><td>{formatRiskProbability(window.risk_probability)}</td></tr>)}</tbody></table></div>
       {!windows.length && <p className="panel-empty">선택한 날짜에 생성된 15분 수집 구간이 없습니다.</p>}
       <Pagination page={page} pageSize={COLLECTION_PAGE_SIZE} total={windows.length} onChange={onPageChange} />
     </section>
-    <section className="panel pipeline-panel">
-      <PanelTitle title="최근 수집 실행 이력" />
-      <div className="pipeline-result-list">{(data.jobs?.items ?? []).map((job) => <article className="pipeline-result-row" key={job.id}><div><span className={`pipeline-status ${job.status}`}>{job.status === "completed" ? "완료" : job.status === "partial" ? "부분 완료" : job.status === "failed" ? "실패" : "진행 중"}</span><strong>{job.job_type === "realtime" ? "실시간 수집" : job.job_type === "backfill" ? "과거 기사 수집" : "수동 수집"}</strong></div><p>조회 {formatNumber(job.query_count)}회 · 수집 {formatNumber(job.fetched_count)}건 · 신규 {formatNumber(job.new_count)}건 · 연결 {formatNumber(job.matched_count)}건</p><small>{(job.sources ?? []).map((source) => SOURCE_LABELS[source] ?? source).join(", ")} · {formatDate(job.completed_at ?? job.started_at)}</small></article>)}</div>
-      {!data.jobs?.items?.length && <p className="panel-empty">수집 실행 이력이 없습니다.</p>}
-    </section>
+    </div>
   </div>;
 }
 
